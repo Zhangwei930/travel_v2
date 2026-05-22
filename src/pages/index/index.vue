@@ -60,6 +60,7 @@
           title="按场景索引"
           sub="9 类常见出游场景"
         />
+        <view v-if="!scenes.length" class="list-empty mono">加载中…</view>
         <view class="scenes-grid">
           <view
             v-for="scene in scenes"
@@ -94,6 +95,7 @@
           action="换一批"
           @action="refreshNearby"
         />
+        <view v-if="!nearbyVisible.length" class="list-empty mono">定位中，加载附近地点…</view>
         <view class="poi-list">
           <view
             v-for="poi in nearbyVisible"
@@ -141,6 +143,7 @@
           sub="人工策划 · 已审核"
           action="全部"
         />
+        <view v-if="!routes.length" class="list-empty mono">加载中…</view>
         <scroll-view scroll-x class="routes-scroll" :show-scrollbar="false">
           <view class="routes-row">
             <view
@@ -293,6 +296,14 @@ async function goResult(route) {
 .page {
   min-height: 100vh;
   background: $z-bg;
+}
+
+.list-empty {
+  color: $z-muted;
+  font-family: $mono;
+  font-size: $font-mono;
+  padding: 20rpx 0;
+  display: block;
 }
 
 // ── Header ──────────────────────────────────────────────────

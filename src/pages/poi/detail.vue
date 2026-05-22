@@ -123,7 +123,9 @@ onMounted(async () => {
     poi.value = await api.getPoiDetail(poiId)
     trackVisit(poiId)
     saved.value = isSavedPoi(poiId)
-  } catch (_) {}
+  } catch (_) {
+    uni.showToast({ title: '地点信息加载失败', icon: 'none' })
+  }
 })
 
 function goBack()      { uni.navigateBack() }

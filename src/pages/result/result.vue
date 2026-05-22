@@ -53,7 +53,7 @@
         <view class="map-card">
           <view class="map-header">
             <text class="map-label">🗺 路线总览</text>
-            <text class="map-meta mono">{{ plan.stops.length }} STOPS · ~90 MIN</text>
+            <text class="map-meta mono">{{ plan.stops?.length ?? 0 }} STOPS · ~90 MIN</text>
           </view>
           <!-- SVG 简化地图 -->
           <view class="mini-map">

@@ -77,6 +77,7 @@
           :title="'推荐路线'"
           :sub="(currentScene?.label ?? '场景') + ' · 已策划'"
         />
+        <view v-if="!sceneRoutes.length" class="list-empty mono">暂无该场景路线</view>
         <view class="routes-list">
           <view
             v-for="route in sceneRoutes"
@@ -110,9 +111,10 @@
         <z-section-header
           no="P"
           :title="'推荐地点'"
-          :sub="currentScene.label + ' · POI'"
+          :sub="(currentScene?.label ?? '场景') + ' · POI'"
         />
 
+        <view v-if="!scenePois.length" class="list-empty mono">暂无该场景地点</view>
         <!-- 钓鱼场景：单列大卡 -->
         <view v-if="isFish" class="poi-list-single">
           <view
@@ -246,6 +248,14 @@ function goPoi(id) {
 
 <style lang="scss">
 @import '../../uni.scss';
+
+.list-empty {
+  color: $z-muted;
+  font-family: $mono;
+  font-size: $font-mono;
+  padding: 20rpx 0;
+  display: block;
+}
 
 .page {
   min-height: 100vh;

@@ -107,7 +107,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { api } from '../../api/mock.js'
 
 const statusBarHeight = ref(44)
@@ -201,7 +201,7 @@ function startGenerate() {
   }).then((plan) => {
     uni.setStorageSync('lastPlan', plan)
   }).catch(() => {
-    // 接口失败时结果页降级读 mock 兜底数据
+    uni.showToast({ title: '生成失败，请检查网络后重试', icon: 'none', duration: 2000 })
   }).finally(() => {
     clearInterval(progressTimer)
     clearInterval(stepTimer)
@@ -217,7 +217,6 @@ function startGenerate() {
 }
 
 // 离开时清理
-import { onUnmounted } from 'vue'
 onUnmounted(() => {
   clearInterval(progressTimer)
   clearInterval(stepTimer)
