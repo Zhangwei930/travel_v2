@@ -165,6 +165,8 @@ def poi_detail(
         best_time=(kn.best_time if kn else None),
         fit_items=fit_items,
         avoid_tips=avoid_tips,
+        lat=poi.lat,
+        lng=poi.lng,
     )
 
 

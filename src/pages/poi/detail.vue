@@ -66,7 +66,7 @@
     <!-- 底部操作栏 -->
     <view class="bottom-bar" :style="{ paddingBottom: safeBottom }">
       <view class="bottom-btn outline" @tap="goAssistant">💬 问助手</view>
-      <view class="bottom-btn primary flex2">🧭 地图导航前往</view>
+      <view class="bottom-btn primary flex2" @tap="goNav">🧭 地图导航前往</view>
     </view>
   </view>
 </template>
@@ -126,6 +126,18 @@ onMounted(async () => {
 function goBack()      { uni.navigateBack() }
 function toggleFav()   { saved.value = !saved.value }
 function goAssistant() { uni.switchTab({ url: '/pages/assistant/chat' }) }
+function goNav() {
+  if (poi.value.lat && poi.value.lng) {
+    uni.openLocation({
+      latitude:  poi.value.lat,
+      longitude: poi.value.lng,
+      name:      poi.value.name,
+      address:   poi.value.cat,
+    })
+  } else {
+    uni.showToast({ title: '暂无坐标，无法导航', icon: 'none' })
+  }
+}
 </script>
 
 <style lang="scss">

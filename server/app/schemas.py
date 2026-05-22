@@ -46,6 +46,8 @@ class PoiDetailOut(PoiOut):
     best_time: str | None = None
     fit_items: list[FitItem] = []
     avoid_tips: list[str] = []
+    lat: float | None = None
+    lng: float | None = None
 
 
 # ---------- 路线 ----------
