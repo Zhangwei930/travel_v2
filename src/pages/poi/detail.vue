@@ -74,6 +74,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../api/mock.js'
+import { toggleSavedPoi, isSavedPoi, trackVisit } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTag from '../../components/ZTag.vue'
 
@@ -120,11 +121,20 @@ onMounted(async () => {
 
   try {
     poi.value = await api.getPoiDetail(poiId)
+    trackVisit(poiId)
+    saved.value = isSavedPoi(poiId)
   } catch (_) {}
 })
 
 function goBack()      { uni.navigateBack() }
-function toggleFav()   { saved.value = !saved.value }
+function toggleFav() {
+  saved.value = toggleSavedPoi({
+    id: poi.value.id, no: poi.value.no,
+    name: poi.value.name, cat: poi.value.cat,
+    dist: poi.value.dist, img: poi.value.img,
+  })
+  uni.showToast({ title: saved.value ? '已收藏' : '已取消收藏', icon: 'none' })
+}
 function goAssistant() { uni.switchTab({ url: '/pages/assistant/chat' }) }
 function goNav() {
   if (poi.value.lat && poi.value.lng) {

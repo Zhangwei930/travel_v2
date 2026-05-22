@@ -7,7 +7,7 @@
       </view>
       <text class="explorer-mono mono">EXPLORER · LV.2</text>
       <text class="nickname serif">出游探索家</text>
-      <text class="explore-sub">已探索 12 个地方</text>
+      <text class="explore-sub">已探索 {{ exploredCount }} 个地方</text>
     </view>
 
     <scroll-view scroll-y class="scroll-body" :style="{ paddingBottom: tabBarHeight }" :show-scrollbar="false">
@@ -22,7 +22,7 @@
       <!-- 知识贡献横幅 -->
       <view class="contribute-banner">
         <view class="contribute-left">
-          <text class="contribute-title">🌱 已贡献 3 条反馈</text>
+          <text class="contribute-title">🌱 已贡献 {{ feedbackCount }} 条反馈</text>
           <text class="contribute-sub">帮助系统更懂本地出游</text>
         </view>
         <view class="contribute-btn">查看 ›</view>
@@ -90,9 +90,18 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import ZTabBar from '../../components/ZTabBar.vue'
+import { getProfileStats, getPlanHistory, getSavedPois } from '../../api/storage.js'
 
 const statusBarHeight = ref(44)
 const tabBarHeight    = ref('80px')
+
+const stats = ref([
+  { num: '0', label: '已生成方案' },
+  { num: '0', label: '已收藏' },
+  { num: '0', label: '足迹地点' },
+])
+const feedbackCount  = ref(0)
+const exploredCount  = ref(0)
 
 onMounted(() => {
   try {
@@ -100,20 +109,27 @@ onMounted(() => {
     statusBarHeight.value = sys.statusBarHeight || 44
     tabBarHeight.value = (sys.safeAreaInsets?.bottom || 18) + 56 + 'px'
   } catch (_) {}
+
+  const s = getProfileStats()
+  stats.value = [
+    { num: String(s.plans),   label: '已生成方案' },
+    { num: String(s.saved),   label: '已收藏' },
+    { num: String(s.visited), label: '足迹地点' },
+  ]
+  exploredCount.value = s.visited
+  feedbackCount.value = 0
+  menuContent.value[0].sub = `${s.plans} 份已生成`
+  menuContent.value[1].sub = s.saved > 0 ? `${s.saved} 个已收藏` : '地点 · 路线'
+  menuContent.value[2].sub = `${s.visited} 个地点`
+  menuContent.value[3].sub = `${feedbackCount.value} 条已贡献`
 })
 
-const stats = [
-  { num: '7',  label: '已生成方案' },
-  { num: '12', label: '已收藏' },
-  { num: '23', label: '足迹地点' },
-]
-
-const menuContent = [
-  { icon: '📋', title: '我的攻略',  sub: '7 份已生成' },
+const menuContent = ref([
+  { icon: '📋', title: '我的攻略',  sub: '0 份已生成' },
   { icon: '❤️', title: '我的收藏',  sub: '地点 · 路线' },
-  { icon: '👣', title: '我的足迹',  sub: '23 个地点' },
-  { icon: '💬', title: '我的反馈',  sub: '3 条已贡献' },
-]
+  { icon: '👣', title: '我的足迹',  sub: '0 个地点' },
+  { icon: '💬', title: '我的反馈',  sub: '0 条已贡献' },
+])
 
 const menuSettings = [
   { icon: '📍', title: '位置与城市',  sub: '乌鲁木齐' },

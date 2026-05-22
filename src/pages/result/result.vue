@@ -155,6 +155,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../api/mock.js'
+import { addPlanHistory } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 
 const statusBarHeight = ref(44)
@@ -188,6 +189,7 @@ onMounted(async () => {
     const cached = uni.getStorageSync('lastPlan')
     if (cached && cached.stops) {
       plan.value = cached
+      addPlanHistory(cached)
     } else {
       uni.showToast({ title: '暂无攻略，请先生成', icon: 'none' })
       setTimeout(() => uni.navigateBack(), 1200)
