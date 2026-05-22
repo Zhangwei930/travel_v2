@@ -1,0 +1,62 @@
+// ── 周密出游 Design Tokens ──────────────────────────────────
+
+// 主色调
+$z-primary:   #0D4F4A;   // 墨青绿
+$z-primary-d: #062E2B;   // 深墨青
+$z-accent:    #FF6B35;   // 暖橙
+$z-amber:     #F4B942;   // 琥珀
+$z-mint:      #4FD1C5;   // 薄荷
+
+// 中性色
+$z-bg:     #F5F1EB;   // 暖米白
+$z-card:   #FFFFFF;   // 卡片白
+$z-text:   #1A2E2C;   // 主文字
+$z-text2:  #3B4A40;   // 次文字
+$z-muted:  #8B9594;   // 弱化文字
+$z-border: #E8E2D8;   // 边框
+$z-line:   #EFEADF;   // 分割线
+
+// 场景色
+$scene-family: #FF6B35;
+$scene-couple: #EC4B85;
+$scene-rainy:  #5B7CFA;
+$scene-budget: #4FD1C5;
+$scene-fish:   #3E5C3A;
+$scene-photo:  #A855F7;
+$scene-night:  #1F2937;
+$scene-walk:   #84CC16;
+$scene-old:    #F4B942;
+
+// 字体（rpx, 750基准）
+$font-h1:      52rpx;   // ~26px
+$font-h2:      48rpx;   // ~24px
+$font-h3:      42rpx;   // ~21px
+$font-title:   30rpx;   // ~15px
+$font-card-t:  28rpx;   // ~14px
+$font-body:    26rpx;   // ~13px
+$font-sm:      24rpx;   // ~12px
+$font-xs:      22rpx;   // ~11px
+$font-mono:    20rpx;   // ~10px
+$font-mono-sm: 18rpx;   // ~9px
+
+// 圆角
+$radius-card:  26rpx;   // 13px
+$radius-small: 22rpx;   // 11px
+$radius-btn:   22rpx;
+$radius-tag:   12rpx;   // 6px
+$radius-icon:  20rpx;   // 10px
+$radius-pill:  9999rpx;
+
+// 阴影（用 CSS 变量方式，scss 无法直接用在 uni box-shadow）
+// 参考值：box-shadow: 0 1px 6px rgba(13, 79, 74, 0.06);
+
+// 间距
+$pad-page:   32rpx;   // 16px
+$pad-card:   28rpx;   // 14px
+$pad-gap:    18rpx;   // 9px
+$pad-sec:    36rpx;   // 18px
+
+// 字族
+$serif: 'Noto Serif SC', 'Songti SC', serif;
+$sans:  'Noto Sans SC', -apple-system, 'PingFang SC', sans-serif;
+$mono:  'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
