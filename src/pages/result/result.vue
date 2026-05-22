@@ -1,5 +1,12 @@
 <template>
   <view class="page">
+    <!-- 无数据时的占位（onMounted 跳回前短暂显示） -->
+    <view v-if="!plan" class="loading-state" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="back-btn-plain" @tap="goBack">←</view>
+      <text class="loading-tip mono">加载中…</text>
+    </view>
+
+    <template v-if="plan">
     <!-- Header 深墨青渐变 -->
     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
       <!-- 操作行 -->
@@ -141,19 +148,20 @@
       <view class="bottom-btn outline" @tap="onFeedback(false)">💬 反馈</view>
       <view class="bottom-btn primary flex2" @tap="onStart">🧭 开始出发</view>
     </view>
+    </template>
   </view>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { PLAN_RESULT, api } from '../../api/mock.js'
+import { api } from '../../api/mock.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 
 const statusBarHeight = ref(44)
 const safeBottom      = ref('18px')
 const saved           = ref(false)
 
-const plan = ref(PLAN_RESULT)
+const plan = ref(null)
 
 const pages = getCurrentPages()
 const currentPage = pages[pages.length - 1]
@@ -161,12 +169,12 @@ const isGenerated = computed(() => {
   try { return !!currentPage.$page?.fullPath?.includes('generated=1') } catch (_) { return false }
 })
 
-const planMeta = computed(() => [
+const planMeta = computed(() => plan.value ? [
   { icon: '⏱', val: plan.value.totalTime },
   { icon: '💰', val: plan.value.totalBudget },
   { icon: '👥', val: plan.value.people },
   { icon: '🌤', val: plan.value.weather },
-])
+] : [])
 
 onMounted(async () => {
   try {
@@ -175,11 +183,18 @@ onMounted(async () => {
     safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
   } catch (_) {}
 
-  // 优先读取生成页存入的真实攻略结果
+  // 读取生成页存入的真实攻略结果，无数据则返回上一页
   try {
     const cached = uni.getStorageSync('lastPlan')
-    if (cached && cached.stops) plan.value = cached
-  } catch (_) {}
+    if (cached && cached.stops) {
+      plan.value = cached
+    } else {
+      uni.showToast({ title: '暂无攻略，请先生成', icon: 'none' })
+      setTimeout(() => uni.navigateBack(), 1200)
+    }
+  } catch (_) {
+    uni.navigateBack()
+  }
 })
 
 function goBack() { uni.navigateBack() }
@@ -201,6 +216,14 @@ function onStart() { uni.showToast({ title: '调起地图导航', icon: 'none' }
   display: flex;
   flex-direction: column;
 }
+
+.loading-state {
+  padding: 16rpx 32rpx;
+  background: $z-primary;
+  min-height: 100vh;
+}
+.back-btn-plain { color: #fff; font-size: 36rpx; padding: 8rpx; }
+.loading-tip { display: block; color: rgba(255,255,255,0.6); font-family: $mono; font-size: $font-mono; margin-top: 40rpx; text-align: center; }
 
 // Header
 .header {

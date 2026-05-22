@@ -107,10 +107,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '../../api/mock.js'
 
 const statusBarHeight = ref(44)
+
+onMounted(() => {
+  try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {}
+})
 const loading     = ref(false)
 const progress    = ref(0)
 const currentStep = ref(0)
