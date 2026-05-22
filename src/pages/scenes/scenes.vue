@@ -82,7 +82,7 @@
             v-for="route in sceneRoutes"
             :key="route.id"
             class="route-card"
-            @tap="goResult(route.id)"
+            @tap="goResult(route)"
           >
             <view class="route-cover">
               <image :src="route.img" class="route-img" mode="aspectFill" lazy-load />
@@ -218,8 +218,21 @@ function setActive(id) {
   active.value = id
 }
 
-function goResult(routeId) {
-  uni.navigateTo({ url: `/pages/result/result?routeId=${routeId}` })
+const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
+
+async function goResult(route) {
+  uni.showLoading({ title: '生成中…', mask: true })
+  try {
+    const plan = await api.generateTrip({
+      city: '乌鲁木齐', scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
+    })
+    uni.setStorageSync('lastPlan', plan)
+    uni.hideLoading()
+    uni.navigateTo({ url: '/pages/result/result?generated=1' })
+  } catch (_) {
+    uni.hideLoading()
+    uni.switchTab({ url: '/pages/generate/generate' })
+  }
 }
 
 function goPoi(id) {

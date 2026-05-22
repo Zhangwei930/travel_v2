@@ -59,6 +59,20 @@
         "navigationStyle": "custom",
         "navigationBarTitleText": "知识库审核"
       }
+    },
+    {
+      "path": "pages/saved/plans",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "我的攻略"
+      }
+    },
+    {
+      "path": "pages/saved/pois",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "我的收藏"
+      }
     }
   ],
   "tabBar": {

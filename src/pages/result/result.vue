@@ -20,7 +20,7 @@
           <view class="icon-btn" @tap="toggleFav">
             <text>{{ saved ? '❤️' : '🤍' }}</text>
           </view>
-          <view class="icon-btn">
+          <view class="icon-btn" @tap="onShare">
             <text>📤</text>
           </view>
         </view>
@@ -155,7 +155,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../api/mock.js'
-import { addPlanHistory } from '../../api/storage.js'
+import { addPlanHistory, toggleSavedPlan, isSavedPlan } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 
 const statusBarHeight = ref(44)
@@ -190,6 +190,7 @@ onMounted(async () => {
     if (cached && cached.stops) {
       plan.value = cached
       addPlanHistory(cached)
+      saved.value = isSavedPlan(cached.no)
     } else {
       uni.showToast({ title: '暂无攻略，请先生成', icon: 'none' })
       setTimeout(() => uni.navigateBack(), 1200)
@@ -200,7 +201,14 @@ onMounted(async () => {
 })
 
 function goBack() { uni.navigateBack() }
-function toggleFav() { saved.value = !saved.value }
+function toggleFav() {
+  if (!plan.value) return
+  saved.value = toggleSavedPlan(plan.value)
+  uni.showToast({ title: saved.value ? '已收藏' : '已取消收藏', icon: 'none' })
+}
+function onShare() {
+  uni.showShareMenu({ withShareTicket: false, menus: ['shareAppMessage', 'shareTimeline'] })
+}
 function onNav(stop) {
   if (stop.lat && stop.lng) {
     uni.openLocation({ latitude: stop.lat, longitude: stop.lng, name: stop.name, address: stop.cat })
@@ -212,7 +220,14 @@ function onFeedback(useful) {
   api.sendFeedback({ target_type: 'plan', target_id: plan.value.no, useful }).catch(() => {})
   uni.showToast({ title: '感谢反馈', icon: 'success' })
 }
-function onStart() { uni.showToast({ title: '调起地图导航', icon: 'none' }) }
+function onStart() {
+  const first = plan.value?.stops?.[0]
+  if (first?.lat && first?.lng) {
+    uni.openLocation({ latitude: first.lat, longitude: first.lng, name: first.name, address: first.cat })
+  } else {
+    uni.showToast({ title: '暂无坐标，请手动导航', icon: 'none' })
+  }
+}
 </script>
 
 <style lang="scss">

@@ -32,7 +32,7 @@
       <view class="section">
         <text class="menu-group-label mono">§ M1 · 我的内容</text>
         <view class="menu-card">
-          <view class="menu-item" v-for="(item, i) in menuContent" :key="item.title">
+          <view class="menu-item" v-for="(item, i) in menuContent" :key="item.title" @tap="onMenuContent(i)">
             <text class="menu-no mono">{{ String(i + 1).padStart(2, '0') }}</text>
             <text class="menu-icon">{{ item.icon }}</text>
             <view class="menu-text">
@@ -138,8 +138,12 @@ const menuSettings = [
   { icon: 'ℹ️', title: '关于周密出游', sub: 'v1.0.0' },
 ]
 
-function goAdmin() {
-  uni.navigateTo({ url: '/pages/admin/admin' })
+function goAdmin() { uni.navigateTo({ url: '/pages/admin/admin' }) }
+
+function onMenuContent(i) {
+  if (i === 0) uni.navigateTo({ url: '/pages/saved/plans' })
+  else if (i === 1) uni.navigateTo({ url: '/pages/saved/pois' })
+  else uni.showToast({ title: '敬请期待', icon: 'none' })
 }
 </script>
 

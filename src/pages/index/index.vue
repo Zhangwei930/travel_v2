@@ -147,7 +147,7 @@
               v-for="route in routes"
               :key="route.id"
               class="route-card"
-              @tap="goResult(route.id)"
+              @tap="goResult(route)"
             >
               <!-- 封面 -->
               <view class="route-cover">
@@ -266,8 +266,21 @@ function goPoi(id) {
   uni.navigateTo({ url: `/pages/poi/detail?id=${id}` })
 }
 
-function goResult(id) {
-  uni.navigateTo({ url: `/pages/result/result?routeId=${id}` })
+const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
+
+async function goResult(route) {
+  uni.showLoading({ title: '生成中…', mask: true })
+  try {
+    const plan = await api.generateTrip({
+      city: CITY, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
+    })
+    uni.setStorageSync('lastPlan', plan)
+    uni.hideLoading()
+    uni.navigateTo({ url: '/pages/result/result?generated=1' })
+  } catch (_) {
+    uni.hideLoading()
+    uni.switchTab({ url: '/pages/generate/generate' })
+  }
 }
 </script>
 

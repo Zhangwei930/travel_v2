@@ -40,6 +40,18 @@ export function trackVisit(id) {
 }
 export function getVisitedCount() { return get(KEY_VISITED).length }
 
+// 收藏方案（心形按钮手动操作，区别于自动追加的历史）
+const KEY_SAVED_PLANS = 'zhoumi_saved_plans_fav'
+export function toggleSavedPlan(plan) {
+  const list = get(KEY_SAVED_PLANS)
+  const idx  = list.findIndex(p => p.no === plan.no)
+  if (idx >= 0) { list.splice(idx, 1) } else { list.unshift(plan) }
+  set(KEY_SAVED_PLANS, list)
+  return idx < 0
+}
+export function isSavedPlan(no) { return get(KEY_SAVED_PLANS).some(p => p.no === no) }
+export function getSavedPlans() { return get(KEY_SAVED_PLANS) }
+
 // Profile 汇总
 export function getProfileStats() {
   return {
