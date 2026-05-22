@@ -14,7 +14,7 @@
             <path d="M1 2.5l3.5 4 3.5-4" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round"/>
           </svg>
         </view>
-        <view class="weather-pill">
+        <view v-if="weather" class="weather-pill">
           <text class="weather-icon">{{ weather.icon }}</text>
           <text class="weather-text">{{ weather.temp }}° {{ weather.cond }}</text>
         </view>
@@ -25,7 +25,7 @@
 
       <!-- 大标题 -->
       <text class="main-title serif">今天想去哪玩？</text>
-      <text class="main-sub">{{ weather.advice }} · 已为你准备 {{ routes.length }} 条本地路线</text>
+      <text class="main-sub">{{ weather?.advice ?? '加载中…' }} · 已为你准备 {{ routes.length }} 条本地路线</text>
     </view>
 
     <!-- 滚动区域（Tab Bar 高度留白） -->
@@ -191,7 +191,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { CITY, WEATHER, SCENES, NEARBY, ROUTES, api } from '../../api/mock.js'
+import { CITY, api } from '../../api/mock.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTag from '../../components/ZTag.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
@@ -200,14 +200,15 @@ const statusBarHeight = ref(44)
 const tabBarHeight = ref('80px')
 
 const city    = ref(CITY)
-const weather = ref(WEATHER)
-const scenes  = ref(SCENES)
-const nearby  = ref(NEARBY)
-const routes  = ref(ROUTES)
+const weather = ref(null)
+const scenes  = ref([])
+const nearby  = ref([])
+const routes  = ref([])
 
 // 每次显示 3 条，换一批轮换
 const nearbyPage = ref(0)
 const nearbyVisible = computed(() => {
+  if (!nearby.value.length) return []
   const start = (nearbyPage.value * 3) % nearby.value.length
   return nearby.value.slice(start, start + 3).concat(
     nearby.value.slice(0, Math.max(0, start + 3 - nearby.value.length))
@@ -241,7 +242,9 @@ onMounted(async () => {
     scenes.value  = s
     nearby.value  = n
     routes.value  = r
-  } catch (_) {}
+  } catch (e) {
+    uni.showToast({ title: '数据加载失败，请检查网络', icon: 'none' })
+  }
 })
 
 function refreshNearby() {

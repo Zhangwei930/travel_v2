@@ -75,7 +75,7 @@
         <z-section-header
           no="R"
           :title="'推荐路线'"
-          :sub="currentScene.label + ' · 已策划'"
+          :sub="(currentScene?.label ?? '场景') + ' · 已策划'"
         />
         <view class="routes-list">
           <view
@@ -162,17 +162,17 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { SCENES, GEAR_LIST, api } from '../../api/mock.js'
+import { GEAR_LIST, api } from '../../api/mock.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 
 const statusBarHeight = ref(44)
 const tabBarHeight    = ref('80px')
 
-const scenes = ref(SCENES)
+const scenes = ref([])
 const active = ref('fish')  // 默认钓鱼
 
-const currentScene = computed(() => scenes.value.find(s => s.id === active.value) || scenes.value[0])
+const currentScene = computed(() => scenes.value.find(s => s.id === active.value) || scenes.value[0] || null)
 const isFish       = computed(() => active.value === 'fish')
 const gearList     = ref(GEAR_LIST)
 
@@ -186,7 +186,9 @@ async function loadScene(id) {
     ])
     sceneRoutes.value = routes
     scenePois.value   = pois
-  } catch (_) {}
+  } catch (e) {
+    uni.showToast({ title: '场景数据加载失败', icon: 'none' })
+  }
 }
 
 watch(active, loadScene)
@@ -201,7 +203,9 @@ onMounted(async () => {
 
   try {
     scenes.value = await api.getScenes()
-  } catch (_) {}
+  } catch (e) {
+    uni.showToast({ title: '场景列表加载失败', icon: 'none' })
+  }
   loadScene(active.value)
 
   // 监听从首页传过来的场景切换事件

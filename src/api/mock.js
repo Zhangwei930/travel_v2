@@ -159,21 +159,24 @@ export const PLAN_RESULT = {
   ],
 }
 
-// API 函数 — 调用真实后端，失败时回退到上方兜底常量
+// API 函数 — 纯真实后端调用，不做 mock 回退
 export const api = {
-  getWeather: () => request('/api/weather').catch(() => WEATHER),
-  getNearby:  (lat, lng) =>
-    request(`/api/poi/list${lat != null && lng != null ? `?lat=${lat}&lng=${lng}` : ''}`).catch(() => NEARBY),
-  getRoutes:  () => request('/api/route/recommend').catch(() => ROUTES),
-  getScenes:  () => request('/api/scene/list').catch(() => SCENES),
+  getWeather: () =>
+    request('/api/weather'),
+  getNearby: (lat, lng) =>
+    request(`/api/poi/list${lat != null && lng != null ? `?lat=${lat}&lng=${lng}` : ''}`),
+  getRoutes: () =>
+    request('/api/route/recommend'),
+  getScenes: () =>
+    request('/api/scene/list'),
   getSceneRoutes: (sceneId) =>
-    request(`/api/route/recommend?scene=${sceneId}`).catch(() => SCENE_ROUTES[sceneId] || ROUTES.slice(0, 2)),
+    request(`/api/route/recommend?scene=${sceneId}`),
   getScenePois: (sceneId) =>
-    request(`/api/poi/list?scene=${sceneId}`).catch(() => SCENE_POIS[sceneId] || NEARBY.slice(0, 4)),
+    request(`/api/poi/list?scene=${sceneId}`),
   getPoiDetail: (id) =>
-    request(`/api/poi/detail?id=${id}`).catch(() => NEARBY.find(p => p.id === Number(id)) || NEARBY[0]),
+    request(`/api/poi/detail?id=${id}`),
   generateTrip: (payload) =>
-    request('/api/trip/generate', { method: 'POST', data: payload }).catch(() => PLAN_RESULT),
+    request('/api/trip/generate', { method: 'POST', data: payload }),
   ask: (question, city) =>
     request('/api/kb/ask', { method: 'POST', data: { question, city } }),
   sendFeedback: (payload) =>
