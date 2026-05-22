@@ -119,7 +119,7 @@
 
               <view class="stop-footer">
                 <text class="stop-budget">💰 {{ stop.budget }}</text>
-                <text class="nav-btn" @tap="onNav(stop.name)">导航 →</text>
+                <text class="nav-btn" @tap="onNav(stop)">导航 →</text>
               </view>
             </view>
           </view>
@@ -199,7 +199,13 @@ onMounted(async () => {
 
 function goBack() { uni.navigateBack() }
 function toggleFav() { saved.value = !saved.value }
-function onNav(name) { uni.showToast({ title: `导航至 ${name}`, icon: 'none' }) }
+function onNav(stop) {
+  if (stop.lat && stop.lng) {
+    uni.openLocation({ latitude: stop.lat, longitude: stop.lng, name: stop.name, address: stop.cat })
+  } else {
+    uni.showToast({ title: '暂无坐标，无法导航', icon: 'none' })
+  }
+}
 function onFeedback(useful) {
   api.sendFeedback({ target_type: 'plan', target_id: plan.value.no, useful }).catch(() => {})
   uni.showToast({ title: '感谢反馈', icon: 'success' })

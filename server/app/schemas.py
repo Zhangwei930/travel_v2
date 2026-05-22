@@ -87,6 +87,8 @@ class PlanStop(BaseModel):
     reason: str
     tip: str
     transport: str
+    lat: float | None = None
+    lng: float | None = None
 
 
 class PlanSource(BaseModel):

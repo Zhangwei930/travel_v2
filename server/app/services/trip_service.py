@@ -85,6 +85,8 @@ def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
             reason=reason,
             tip=tip,
             transport=map_provider.transport_hint(payload.transport),
+            lat=poi.lat,
+            lng=poi.lng,
         ))
         arrive = _add_minutes(arrive, 150)
 
