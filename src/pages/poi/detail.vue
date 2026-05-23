@@ -121,7 +121,7 @@ onMounted(async () => {
 
   try {
     poi.value = await api.getPoiDetail(poiId)
-    trackVisit(poiId)
+    trackVisit({ id: poi.value.id, name: poi.value.name, cat: poi.value.cat, img: poi.value.img })
     saved.value = isSavedPoi(poiId)
   } catch (_) {
     uni.showToast({ title: '地点信息加载失败', icon: 'none' })

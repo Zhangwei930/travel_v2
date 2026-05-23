@@ -174,7 +174,8 @@ const tabBarHeight    = ref('80px')
 const scenes = ref([])
 const active = ref('fish')  // 默认钓鱼
 
-const currentScene = computed(() => scenes.value.find(s => s.id === active.value) || scenes.value[0] || null)
+const SCENE_FALLBACK = { id: '', no: '--', label: '加载中', icon: '⏳', color: '#8B9594', desc: '' }
+const currentScene = computed(() => scenes.value.find(s => s.id === active.value) || scenes.value[0] || SCENE_FALLBACK)
 const isFish       = computed(() => active.value === 'fish')
 const gearList     = ref(GEAR_LIST)
 
@@ -487,7 +488,10 @@ function goPoi(id) {
 
 .route-cover-mask {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: linear-gradient(to top, rgba(13, 79, 74, 0.72), transparent 60%);
 }
 

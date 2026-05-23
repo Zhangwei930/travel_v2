@@ -133,6 +133,30 @@ def amap_driving_distances(origin: tuple[float, float],
         return [None] * len(locations)
 
 
+def amap_reverse_city(lat: float, lng: float) -> str | None:
+    """高德逆地理编码：返回城市名（如"乌鲁木齐市"）。未配置 Amap 时返回 None。"""
+    if provider_name() != "amap":
+        return None
+    try:
+        resp = httpx.get(
+            f"{AMAP_BASE}/v3/geocode/regeo",
+            params={"key": settings.amap_key, "location": f"{lng},{lat}", "extensions": "base"},
+            timeout=5.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return None
+        comp = data.get("regeocode", {}).get("addressComponent", {})
+        # 优先取 city，直辖市时 city 为 [] 则取 province
+        city = comp.get("city") or comp.get("province") or None
+        if isinstance(city, list):
+            city = None
+        return str(city).replace("市", "").strip() if city else None
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
 def parse_amap_poi(poi: dict) -> dict | None:
     """把高德 POI 标准化为入库字段。坐标缺失则返回 None。"""
     loc = poi.get("location") or ""
@@ -148,6 +172,8 @@ def parse_amap_poi(poi: dict) -> dict | None:
     image = ""
     if isinstance(photos, list) and photos and isinstance(photos[0], dict):
         image = photos[0].get("url") or ""
+    if image.startswith("http://"):
+        image = "https://" + image[7:]
     distance = poi.get("distance")
     try:
         distance_m = float(distance) if distance not in (None, "", []) else None

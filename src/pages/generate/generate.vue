@@ -2,9 +2,24 @@
   <view class="page">
     <!-- Header -->
     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
-      <text class="header-mono mono">§ GENERATE</text>
+      <view class="header-top-row">
+        <view class="back-btn" @tap="goBack">
+          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
+            <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#FF6B35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+          <text class="back-text">返回</text>
+        </view>
+        <text class="header-mono mono">§ GENERATE</text>
+      </view>
       <text class="header-title serif">一键生成方案</text>
-      <text class="header-sub">告诉我你的偏好 · AI 帮你规划可执行路线</text>
+      <view class="city-row" @tap="onCityTap">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none">
+          <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" stroke="#8B9594" stroke-width="2"/>
+          <circle cx="12" cy="9" r="3" stroke="#8B9594" stroke-width="2"/>
+        </svg>
+        <text class="city-name">{{ city }}</text>
+        <text class="city-change mono">切换 ›</text>
+      </view>
     </view>
 
     <!-- 加载中态 -->
@@ -92,7 +107,7 @@
         <view class="summary-bar">
           <text class="summary-mono mono">※ 我将基于以下条件规划</text>
           <text class="summary-content">
-            {{ form.time }} · {{ form.people }} · {{ form.budget }} · {{ form.transport }}
+            📍 {{ city }} · {{ form.time }} · {{ form.people }} · {{ form.budget }} · {{ form.transport }}
             <text v-if="form.prefs.length" class="summary-prefs"> · {{ form.prefs.join(' / ') }}</text>
           </text>
         </view>
@@ -109,12 +124,29 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { api } from '../../api/mock.js'
+import { getCity, setCity, getCoords } from '../../api/storage.js'
 
 const statusBarHeight = ref(44)
+const city = ref(getCity())
+
+const CITY_LIST = ['乌鲁木齐', '喀什', '伊宁', '库尔勒', '阿克苏', '北京', '上海', '成都', '西安', '深圳']
 
 onMounted(() => {
   try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {}
+  city.value = getCity()
 })
+
+function goBack() { uni.navigateBack() }
+
+function onCityTap() {
+  uni.showActionSheet({
+    itemList: CITY_LIST,
+    success: (res) => {
+      city.value = CITY_LIST[res.tapIndex]
+      setCity(city.value)
+    },
+  })
+}
 const loading     = ref(false)
 const progress    = ref(0)
 const currentStep = ref(0)
@@ -190,8 +222,12 @@ function startGenerate() {
     if (currentStep.value < steps.length - 1) currentStep.value++
   }, 720)
 
+  let generateOk = false
+  const coords = getCoords()
   api.generateTrip({
-    city: '乌鲁木齐',
+    city: city.value,
+    lat: coords?.lat ?? null,
+    lng: coords?.lng ?? null,
     time: form.value.time,
     people_type: form.value.people,
     budget: form.value.budget,
@@ -200,19 +236,26 @@ function startGenerate() {
     scene,
   }).then((plan) => {
     uni.setStorageSync('lastPlan', plan)
+    generateOk = true
   }).catch(() => {
     uni.showToast({ title: '生成失败，请检查网络后重试', icon: 'none', duration: 2000 })
   }).finally(() => {
     clearInterval(progressTimer)
     clearInterval(stepTimer)
     clearTimeout(slowTipTimer)
-    slowTip.value     = false
-    progress.value    = 100
-    currentStep.value = steps.length - 1
-    setTimeout(() => {
-      uni.navigateTo({ url: '/pages/result/result?generated=1' })
-      loading.value = false
-    }, 500)
+    slowTip.value = false
+    if (generateOk) {
+      progress.value    = 100
+      currentStep.value = steps.length - 1
+      setTimeout(() => {
+        uni.navigateTo({ url: '/pages/result/result?generated=1' })
+        loading.value = false
+      }, 500)
+    } else {
+      progress.value    = 0
+      currentStep.value = 0
+      loading.value     = false
+    }
   })
 }
 
@@ -237,13 +280,43 @@ onUnmounted(() => {
   padding: 0 32rpx 32rpx;
 }
 
+.header-top-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding-top: 16rpx;
+  margin-bottom: 12rpx;
+}
+
+.city-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 10rpx;
+  cursor: pointer;
+}
+.city-name  { font-size: 25rpx; color: $z-muted; }
+.city-change { font-size: $font-mono; color: $z-accent; font-family: $mono; }
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 8rpx 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.back-text {
+  font-size: 28rpx;
+  color: $z-accent;
+}
+
 .header-mono {
   display: block;
   font-size: 20rpx;
   color: $z-muted;
   letter-spacing: 3rpx;
-  margin-bottom: 8rpx;
-  padding-top: 16rpx;
 }
 
 .header-title {

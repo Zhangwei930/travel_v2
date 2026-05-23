@@ -90,7 +90,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import ZTabBar from '../../components/ZTabBar.vue'
-import { getProfileStats, getPlanHistory, getSavedPois } from '../../api/storage.js'
+import { getProfileStats } from '../../api/storage.js'
 
 const statusBarHeight = ref(44)
 const tabBarHeight    = ref('80px')
@@ -117,11 +117,11 @@ onMounted(() => {
     { num: String(s.visited), label: '足迹地点' },
   ]
   exploredCount.value = s.visited
-  feedbackCount.value = 0
+  feedbackCount.value = s.feedback
   menuContent.value[0].sub = `${s.plans} 份已生成`
   menuContent.value[1].sub = s.saved > 0 ? `${s.saved} 个已收藏` : '地点 · 路线'
   menuContent.value[2].sub = `${s.visited} 个地点`
-  menuContent.value[3].sub = `${feedbackCount.value} 条已贡献`
+  menuContent.value[3].sub = s.feedback > 0 ? `${s.feedback} 条已贡献` : '帮助系统更懂你'
 })
 
 const menuContent = ref([
@@ -143,7 +143,8 @@ function goAdmin() { uni.navigateTo({ url: '/pages/admin/admin' }) }
 function onMenuContent(i) {
   if (i === 0) uni.navigateTo({ url: '/pages/saved/plans' })
   else if (i === 1) uni.navigateTo({ url: '/pages/saved/pois' })
-  else uni.showToast({ title: '敬请期待', icon: 'none' })
+  else if (i === 2) uni.navigateTo({ url: '/pages/profile/footprint' })
+  else if (i === 3) uni.navigateTo({ url: '/pages/profile/feedback' })
 }
 </script>
 

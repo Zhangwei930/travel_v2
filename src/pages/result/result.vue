@@ -67,7 +67,7 @@
               <path d="M 0 80 Q 100 50 200 85 T 360 75" stroke="#fff" stroke-width="13" fill="none"/>
               <path d="M 0 80 Q 100 50 200 85 T 360 75" stroke="#CCD9D5" stroke-width="1.5" fill="none"/>
               <path d="M 40 90 L 160 35 L 300 70" stroke="#FF6B35" stroke-width="2.5" stroke-dasharray="5 4" fill="none"/>
-              <g v-for="(stop, i) in plan.stops" :key="i">
+              <g v-for="(stop, i) in plan.stops.slice(0, 3)" :key="i">
                 <circle :cx="[40,160,300][i]" :cy="[90,35,70][i]" r="11" fill="#fff" stroke="#FF6B35" stroke-width="2.2"/>
                 <text :x="[40,160,300][i]" :y="[90,35,70][i]+4" text-anchor="middle" font-size="11" font-weight="700" fill="#FF6B35">{{ i+1 }}</text>
               </g>
@@ -155,7 +155,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../api/mock.js'
-import { addPlanHistory, toggleSavedPlan, isSavedPlan } from '../../api/storage.js'
+import { addPlanHistory, toggleSavedPlan, isSavedPlan, addFeedback } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 
 const statusBarHeight = ref(44)
@@ -217,7 +217,9 @@ function onNav(stop) {
   }
 }
 function onFeedback(useful) {
-  api.sendFeedback({ target_type: 'plan', target_id: plan.value.no, useful }).catch(() => {})
+  const fb = { target_type: 'plan', target_id: plan.value.no, useful }
+  api.sendFeedback(fb).catch(() => {})
+  addFeedback(fb)
   uni.showToast({ title: '感谢反馈', icon: 'success' })
 }
 function onStart() {
@@ -442,7 +444,7 @@ function onStart() {
 .timeline-line {
   flex: 1;
   width: 2rpx;
-  background: linear-gradient(to bottom, $z-accent, $z-accent + '44');
+  background: linear-gradient(to bottom, $z-accent, rgba(255, 107, 53, 0.27));
   margin: 8rpx 0;
   min-height: 40rpx;
 }

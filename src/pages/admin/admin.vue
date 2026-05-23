@@ -96,7 +96,7 @@ async function review(id, status) {
     })
     list.value = list.value.filter(i => i.id !== id)
     uni.showToast({ title: status === 'approved' ? '已通过' : '已处理', icon: 'success' })
-  } catch {
+  } catch (_) {
     uni.showToast({ title: '操作失败', icon: 'none' })
   }
 }

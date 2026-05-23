@@ -25,7 +25,7 @@ def _poi_out(poi: PoiIndex, kn: TravelKnowledge | None, origin, dist_text: str |
         time=(kn.play_duration if kn else None) or "1-2h",
         budget=(kn.budget_level if kn else None) or "免费",
         tags=(kn.scene_tags if kn else None) or [],
-        img=(kn.cover_image if kn else None) or "",
+        img=(kn.cover_image if kn else None) or poi.image or "",
         reason=(kn.recommend_reason if kn else None) or "",
     )
 
@@ -56,12 +56,14 @@ def _amap_nearby(lat: float, lng: float, db: Session) -> list[PoiOut] | None:
         if row:
             row.name, row.lat, row.lng = p["name"], p["lat"], p["lng"]
             row.category, row.address = p["category"], p["address"]
+            row.image = p["image"] or row.image
             row.fetched_at, row.expires_at = now, expires
         else:
             row = PoiIndex(
                 provider="amap", provider_poi_id=p["provider_poi_id"], name=p["name"],
                 city=settings.default_city, address=p["address"], lat=p["lat"], lng=p["lng"],
-                category=p["category"], source="amap", fetched_at=now, expires_at=expires,
+                category=p["category"], image=p["image"] or None,
+                source="amap", fetched_at=now, expires_at=expires,
             )
             db.add(row)
             db.flush()
@@ -81,6 +83,13 @@ def _amap_nearby(lat: float, lng: float, db: Session) -> list[PoiOut] | None:
         ))
     db.commit()
     return out
+
+
+@router.get("/geo/city")
+def geo_city(lat: float = Query(...), lng: float = Query(...)):
+    """逆地理编码：根据坐标返回城市名，供前端自动更新城市显示。"""
+    city = map_provider.amap_reverse_city(lat, lng) or settings.default_city
+    return {"city": city}
 
 
 @router.get("/weather", response_model=WeatherOut)

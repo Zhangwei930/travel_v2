@@ -161,8 +161,10 @@ export const PLAN_RESULT = {
 
 // API 函数 — 纯真实后端调用，不做 mock 回退
 export const api = {
-  getWeather: () =>
-    request('/api/weather'),
+  getWeather: (city) =>
+    request(city ? `/api/weather?city=${encodeURIComponent(city)}` : '/api/weather'),
+  getLocationCity: (lat, lng) =>
+    request(`/api/geo/city?lat=${lat}&lng=${lng}`),
   getNearby: (lat, lng) =>
     request(`/api/poi/list${lat != null && lng != null ? `?lat=${lat}&lng=${lng}` : ''}`),
   getRoutes: () =>

@@ -93,11 +93,14 @@ def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
     if route and route.review_status == "approved":
         sources.append(PlanSource(kind="知识库", t=f"路线模板 {route.display_no or route.id} · 已审核"))
 
+    route_city = (route.city if route else None) or city
+    city_mismatch = route and route.city and route.city != city
     title = (route.title if route else f"{city}出游方案")
     summary_fallback = (
         f"根据{payload.time or '出行时段'}与天气（{weather.icon}{weather.temp}°{weather.cond}），"
         f"为{payload.people_type or '出游'}人群安排的{route.duration if route else '半日'}方案，"
         f"路线顺路、强度适中。"
+        + (f"（注：当前数据覆盖城市为{route_city}，{city}数据扩充中）" if city_mismatch else "")
     )
     stop_details = "\n".join(
         f"  {s.idx}. {s.name}（{s.cat}）抵达{s.arrive}，停留{s.stay}，预算{s.budget}，"

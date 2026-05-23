@@ -73,6 +73,20 @@
         "navigationStyle": "custom",
         "navigationBarTitleText": "我的收藏"
       }
+    },
+    {
+      "path": "pages/profile/footprint",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "我的足迹"
+      }
+    },
+    {
+      "path": "pages/profile/feedback",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "我的反馈"
+      }
     }
   ],
   "tabBar": {
@@ -82,11 +96,10 @@
     "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [
-      { "pagePath": "pages/index/index",      "text": "首页" },
-      { "pagePath": "pages/scenes/scenes",    "text": "场景" },
-      { "pagePath": "pages/generate/generate","text": "生成" },
-      { "pagePath": "pages/assistant/chat",   "text": "助手" },
-      { "pagePath": "pages/profile/profile",  "text": "我的" }
+      { "pagePath": "pages/index/index",   "text": "首页" },
+      { "pagePath": "pages/scenes/scenes", "text": "场景" },
+      { "pagePath": "pages/assistant/chat","text": "助手" },
+      { "pagePath": "pages/profile/profile","text": "我的" }
     ]
   },
   "globalStyle": {

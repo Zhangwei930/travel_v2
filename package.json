@@ -1,0 +1,27 @@
+{
+  "name": "zhoumi-travel",
+  "version": "1.0.0",
+  "description": "周密出游 — 智能本地出游规划系统",
+  "scripts": {
+    "dev:h5": "uni",
+    "build:h5": "uni build",
+    "dev:mp-weixin": "uni -p mp-weixin",
+    "build:mp-weixin": "uni build -p mp-weixin"
+  },
+  "dependencies": {
+    "@dcloudio/uni-app": "3.0.0-5000720260410001",
+    "@dcloudio/uni-components": "3.0.0-5000720260410001",
+    "@dcloudio/uni-h5": "3.0.0-5000720260410001",
+    "@dcloudio/uni-mp-weixin": "3.0.0-5000720260410001",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@dcloudio/types": "^3.4.10",
+    "@dcloudio/vite-plugin-uni": "3.0.0-5000720260410001",
+    "@vitejs/plugin-vue": "^4.4.0",
+    "sass": "^1.69.5",
+    "typescript": "^5.3.2",
+    "vite": "^4.5.1"
+  }
+}

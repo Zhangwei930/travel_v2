@@ -2,9 +2,20 @@ node_modules/
 dist/
 unpackage/
 
+.env
+.env.*
+!**/.env.example
+*.log
+*.jar
+*.pem
+*.key
+*.crt
+*.p12
+target/
+ssl/
+
 server/.venv/
-server/__pycache__/
-server/**/__pycache__/
+**/__pycache__/
 server/*.db
 server/.env
 

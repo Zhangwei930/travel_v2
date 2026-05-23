@@ -86,6 +86,7 @@
 import { ref, nextTick, onMounted } from 'vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 import { api } from '../../api/mock.js'
+import { getCity } from '../../api/storage.js'
 
 const statusBarHeight = ref(44)
 const safeBottom      = ref('18px')
@@ -116,7 +117,7 @@ function sendMsg(text) {
 
   scrollToBottom()
 
-  api.ask(text.trim())
+  api.ask(text.trim(), getCity())
     .then((res) => {
       typing.value = false
       messages.value.push({
