@@ -27,11 +27,12 @@ START_TIME = {"上午": "09:00", "下午": "14:00", "傍晚": "17:00", "晚上":
 
 def _pick_route(payload: TripGenerateIn, city: str, db: Session) -> TravelRoute | None:
     q = db.query(TravelRoute).filter(TravelRoute.review_status == "approved")
+    city_q = q.filter(TravelRoute.city == city)
     if payload.scene:
-        scene_match = q.filter(TravelRoute.scene == payload.scene).first()
+        scene_match = city_q.filter(TravelRoute.scene == payload.scene).first()
         if scene_match:
             return scene_match
-    return q.filter(TravelRoute.city == city).first() or q.first()
+    return city_q.first()
 
 
 def _add_minutes(hhmm: str, minutes: int) -> str:
