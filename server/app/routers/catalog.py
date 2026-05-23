@@ -7,32 +7,59 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import PoiIndex, TravelKnowledge, TravelRoute
-from app.schemas import FitItem, PoiDetailOut, PoiOut, RouteOut, SceneOut, WeatherOut
-from app.services import map_provider
+from app.schemas import FitItem, PoiDetailOut, PoiOut, RouteOut, SceneOut, TripPlanOut, WeatherOut
+from app.services import map_provider, trip_service
 from app.services.weather_provider import get_weather
 from app.taxonomy import SCENES
 
 router = APIRouter(prefix="/api", tags=["catalog"])
 
+SCENE_AMAP_TYPES = {
+    "family": "140100|140600|110000|080000",
+    "couple": "110000|050000|080000|060000",
+    "rainy": "140100|140200|140400|140600|060100",
+    "budget": "110000|140100|060000",
+    "fish": "110000|071400",
+    "photo": "110000|140400|080000",
+    "night": "110000|050000|080000",
+    "walk": "110000|140100|060000",
+    "old": "110000|140100|080000",
+}
+
+
+def _norm_city(city: str | None) -> str:
+    return (city or "").replace("市", "").strip()
+
+
+def _city_matches(row_city: str | None, city: str | None) -> bool:
+    if not city:
+        return True
+    return _norm_city(row_city) == _norm_city(city)
+
 
 def _poi_out(poi: PoiIndex, kn: TravelKnowledge | None, origin, dist_text: str | None = None) -> PoiOut:
+    is_amap = poi.provider == "amap" and kn is None
+    tags = (kn.scene_tags if kn else None) or ([poi.category] if is_amap and poi.category else [])
+    reason = (kn.recommend_reason if kn else None) or (poi.address if is_amap and poi.address else "")
     return PoiOut(
         id=poi.id,
         no=(kn.display_no if kn else None) or f"NO.{poi.id:03d}",
         name=poi.name,
         cat=poi.category or "地点",
         dist=dist_text if dist_text is not None else map_provider.distance_text(origin, poi.lat, poi.lng),
-        time=(kn.play_duration if kn else None) or "1-2h",
-        budget=(kn.budget_level if kn else None) or "免费",
-        tags=(kn.scene_tags if kn else None) or [],
+        time=(kn.play_duration if kn else None) or ("以现场为准" if is_amap else "1-2h"),
+        budget=(kn.budget_level if kn else None) or ("以现场为准" if is_amap else "免费"),
+        tags=tags,
         img=(kn.cover_image if kn else None) or poi.image or "",
-        reason=(kn.recommend_reason if kn else None) or "",
+        reason=reason or "参考地图实时地点信息，出发前请确认营业状态",
     )
 
 
-def _amap_nearby(lat: float, lng: float, db: Session) -> list[PoiOut] | None:
+def _amap_nearby(lat: float, lng: float, db: Session,
+                 city: str | None = None, scene: str | None = None) -> list[PoiOut] | None:
     """高德实时附近搜索：查 POI → 写入 poi_index 短期缓存 → 组装返回（方案 4.3）。"""
-    raw = map_provider.amap_search_around(lat, lng)
+    types = SCENE_AMAP_TYPES.get(scene or "", map_provider.AMAP_DEFAULT_TYPES)
+    raw = map_provider.amap_search_around(lat, lng, types=types)
     parsed = [p for p in (map_provider.parse_amap_poi(x) for x in raw) if p and p["name"]]
     if not parsed:
         return None
@@ -56,12 +83,13 @@ def _amap_nearby(lat: float, lng: float, db: Session) -> list[PoiOut] | None:
         if row:
             row.name, row.lat, row.lng = p["name"], p["lat"], p["lng"]
             row.category, row.address = p["category"], p["address"]
+            row.city = city or row.city or settings.default_city
             row.image = p["image"] or row.image
             row.fetched_at, row.expires_at = now, expires
         else:
             row = PoiIndex(
                 provider="amap", provider_poi_id=p["provider_poi_id"], name=p["name"],
-                city=settings.default_city, address=p["address"], lat=p["lat"], lng=p["lng"],
+                city=city or settings.default_city, address=p["address"], lat=p["lat"], lng=p["lng"],
                 category=p["category"], image=p["image"] or None,
                 source="amap", fetched_at=now, expires_at=expires,
             )
@@ -111,15 +139,17 @@ def poi_list(
     keyword: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    # 带定位、无场景/关键词筛选时，走高德实时附近搜索
-    if lat is not None and lng is not None and not scene and not keyword:
-        nearby = _amap_nearby(lat, lng, db)
+    # 带定位时优先走高德实时附近搜索；场景通过 POI 类型码收窄范围。
+    if lat is not None and lng is not None and not keyword:
+        nearby = _amap_nearby(lat, lng, db, city=city, scene=scene)
         if nearby is not None:
             return nearby
 
     # 知识库分支：仅取种子/精编 POI（不含高德实时缓存）
     origin = map_provider.resolve_origin(city or settings.default_city, lat, lng)
     pois = db.query(PoiIndex).filter(PoiIndex.provider != "amap").all()
+    if city:
+        pois = [p for p in pois if _city_matches(p.city, city)]
     kn_map = {k.poi_id: k for k in db.query(TravelKnowledge).all() if k.poi_id}
 
     # 带定位时用高德真实驾车路程替换直线估算
@@ -155,23 +185,24 @@ def poi_detail(
     kn = db.query(TravelKnowledge).filter(TravelKnowledge.poi_id == id).first()
     origin = map_provider.resolve_origin(poi.city or settings.default_city, lat, lng)
     base = _poi_out(poi, kn, origin)
+    is_amap = poi.provider == "amap" and kn is None
 
     people = (kn.suitable_people if kn else None) or []
     weather = (kn.suitable_weather if kn else None) or []
     fit_items = [
         FitItem(icon="👨‍👩‍👧", label="人群", val="·".join(people) or "通用"),
-        FitItem(icon="🌤", label="天气", val="·".join(weather) or "晴天最佳"),
-        FitItem(icon="⏰", label="时段", val=(kn.best_time if kn else None) or "全天"),
+        FitItem(icon="🌤", label="天气", val="·".join(weather) or ("以现场为准" if is_amap else "晴天最佳")),
+        FitItem(icon="⏰", label="时段", val=(kn.best_time if kn else None) or ("以现场为准" if is_amap else "全天")),
         FitItem(icon="💪", label="强度", val="轻量"),
     ]
-    tips_raw = (kn.avoid_tips if kn else None) or ""
+    tips_raw = (kn.avoid_tips if kn else None) or ("出发前请在地图中确认营业状态、客流和路线耗时" if is_amap else "")
     avoid_tips = [t.strip() for t in tips_raw.replace("；", "\n").splitlines() if t.strip()]
 
     return PoiDetailOut(
         **base.model_dump(),
         suitable_people=people,
         suitable_weather=weather,
-        best_time=(kn.best_time if kn else None),
+        best_time=(kn.best_time if kn else None) or ("以现场为准" if is_amap else None),
         fit_items=fit_items,
         avoid_tips=avoid_tips,
         lat=poi.lat,
@@ -201,11 +232,24 @@ def route_recommend(
     db: Session = Depends(get_db),
 ):
     base = db.query(TravelRoute).filter(TravelRoute.review_status == "approved")
-    if city:
-        base = base.filter(TravelRoute.city == city)
     rows = base.all()
+    if city:
+        rows = [r for r in rows if _city_matches(r.city, city)]
     if scene:
         matched = [r for r in rows if r.scene == scene]
-        # 该场景无专属路线时回退到全部路线（与前端 mock 行为一致）
-        rows = matched or rows
+        rows = matched
     return [_route_out(r) for r in rows]
+
+
+@router.get("/route/plan", response_model=TripPlanOut)
+def route_plan(
+    id: int = Query(...),
+    city: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    route = db.get(TravelRoute, id)
+    if not route or route.review_status != "approved":
+        raise HTTPException(status_code=404, detail="路线不存在")
+    if city and route.city and not _city_matches(route.city, city):
+        raise HTTPException(status_code=404, detail="路线不属于当前城市")
+    return trip_service.route_plan_from_template(route, city, db)

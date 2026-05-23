@@ -166,7 +166,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { GEAR_LIST, api } from '../../api/mock.js'
-import { consumePendingScene, getCity } from '../../api/storage.js'
+import { consumePendingScene, getCity, getCoords } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 
@@ -186,8 +186,10 @@ const scenePois    = ref([])
 
 async function loadScene(id) {
   try {
+    const coords = getCoords()
     const [routes, pois] = await Promise.all([
-      api.getSceneRoutes(id), api.getScenePois(id),
+      api.getSceneRoutes(id, getCity()),
+      api.getScenePois(id, getCity(), coords?.lat, coords?.lng),
     ])
     sceneRoutes.value = routes
     scenePois.value   = pois
@@ -241,14 +243,10 @@ function setActive(id) {
   active.value = id
 }
 
-const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
-
 async function goResult(route) {
-  uni.showLoading({ title: '生成中…', mask: true })
+  uni.showLoading({ title: '加载路线…', mask: true })
   try {
-    const plan = await api.generateTrip({
-      city: getCity(), scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
-    })
+    const plan = await api.getRoutePlan(route.id, getCity())
     uni.setStorageSync('lastPlan', plan)
     uni.hideLoading()
     uni.navigateTo({ url: '/pages/result/result?generated=1' })

@@ -159,24 +159,33 @@ export const PLAN_RESULT = {
   ],
 }
 
+function query(params = {}) {
+  const parts = Object.entries(params)
+    .filter(([, val]) => val !== undefined && val !== null && val !== '')
+    .map(([key, val]) => `${encodeURIComponent(key)}=${encodeURIComponent(val)}`)
+  return parts.length ? `?${parts.join('&')}` : ''
+}
+
 // API 函数 — 纯真实后端调用，不做 mock 回退
 export const api = {
   getWeather: (city) =>
-    request(city ? `/api/weather?city=${encodeURIComponent(city)}` : '/api/weather'),
+    request(`/api/weather${query({ city })}`),
   getLocationCity: (lat, lng) =>
-    request(`/api/geo/city?lat=${lat}&lng=${lng}`),
-  getNearby: (lat, lng) =>
-    request(`/api/poi/list${lat != null && lng != null ? `?lat=${lat}&lng=${lng}` : ''}`),
-  getRoutes: () =>
-    request('/api/route/recommend'),
+    request(`/api/geo/city${query({ lat, lng })}`),
+  getNearby: (city, lat, lng) =>
+    request(`/api/poi/list${query({ city, lat, lng })}`),
+  getRoutes: (city) =>
+    request(`/api/route/recommend${query({ city })}`),
   getScenes: () =>
     request('/api/scene/list'),
-  getSceneRoutes: (sceneId) =>
-    request(`/api/route/recommend?scene=${sceneId}`),
-  getScenePois: (sceneId) =>
-    request(`/api/poi/list?scene=${sceneId}`),
-  getPoiDetail: (id) =>
-    request(`/api/poi/detail?id=${id}`),
+  getSceneRoutes: (sceneId, city) =>
+    request(`/api/route/recommend${query({ scene: sceneId, city })}`),
+  getScenePois: (sceneId, city, lat, lng) =>
+    request(`/api/poi/list${query({ scene: sceneId, city, lat, lng })}`),
+  getPoiDetail: (id, lat, lng) =>
+    request(`/api/poi/detail${query({ id, lat, lng })}`),
+  getRoutePlan: (id, city) =>
+    request(`/api/route/plan${query({ id, city })}`),
   generateTrip: (payload) =>
     request('/api/trip/generate', { method: 'POST', data: payload }),
   ask: (question, city) =>

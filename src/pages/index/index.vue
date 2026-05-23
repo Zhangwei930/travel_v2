@@ -225,12 +225,13 @@ async function loadData() {
   try {
     const [w, n, r] = await Promise.all([
       api.getWeather(city.value),
-      api.getNearby(cachedCoords.latitude, cachedCoords.longitude),
-      api.getRoutes(),
+      api.getNearby(city.value, cachedCoords.latitude, cachedCoords.longitude),
+      api.getRoutes(city.value),
     ])
     weather.value = w
     nearby.value  = n
     routes.value  = r
+    nearbyPage.value = 0
   } catch (e) {
     uni.showToast({ title: '数据加载失败，请检查网络', icon: 'none' })
   }
@@ -315,14 +316,10 @@ function goPoi(id) {
   uni.navigateTo({ url: `/pages/poi/detail?id=${id}` })
 }
 
-const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
-
 async function goResult(route) {
-  uni.showLoading({ title: '生成中…', mask: true })
+  uni.showLoading({ title: '加载路线…', mask: true })
   try {
-    const plan = await api.generateTrip({
-      city: city.value, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
-    })
+    const plan = await api.getRoutePlan(route.id, city.value)
     uni.setStorageSync('lastPlan', plan)
     uni.hideLoading()
     uni.navigateTo({ url: '/pages/result/result?generated=1' })

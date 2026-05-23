@@ -60,7 +60,7 @@
     </scroll-view>
 
     <!-- 输入区 -->
-    <view class="input-bar" :style="{ paddingBottom: safeBottom }">
+    <view class="input-bar" :style="{ paddingBottom: safeBottom, marginBottom: tabBarHeight }">
       <view class="input-wrap">
         <input
           class="msg-input"
@@ -90,6 +90,7 @@ import { getCity } from '../../api/storage.js'
 
 const statusBarHeight = ref(44)
 const safeBottom      = ref('18px')
+const tabBarHeight    = ref('80px')
 const scrollTop       = ref(0)
 const inputText       = ref('')
 const typing          = ref(false)
@@ -106,6 +107,7 @@ onMounted(() => {
     const sys = uni.getSystemInfoSync()
     statusBarHeight.value = sys.statusBarHeight || 44
     safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
+    tabBarHeight.value = (sys.safeAreaInsets?.bottom || 18) + 56 + 'px'
   } catch (_) {}
 })
 

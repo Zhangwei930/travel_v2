@@ -60,22 +60,6 @@
         </view>
       </view>
 
-      <!-- §M3 管理 -->
-      <view class="section">
-        <text class="menu-group-label mono">§ M3 · 管理</text>
-        <view class="menu-card">
-          <view class="menu-item" @tap="goAdmin">
-            <text class="menu-no mono">01</text>
-            <text class="menu-icon">🛡️</text>
-            <view class="menu-text">
-              <text class="menu-title">知识库审核</text>
-              <text class="menu-sub">待审核 · 通过 · 拒绝</text>
-            </view>
-            <text class="menu-arrow">›</text>
-          </view>
-        </view>
-      </view>
-
       <!-- 底部署名 -->
       <view class="footer">
         <text class="footer-mono mono">地图 API · Dify · 本地 AI · WebSearch</text>
@@ -137,8 +121,6 @@ const menuSettings = [
   { icon: '🔒', title: '隐私与授权',  sub: '' },
   { icon: 'ℹ️', title: '关于周密出游', sub: 'v1.0.0' },
 ]
-
-function goAdmin() { uni.navigateTo({ url: '/pages/admin/admin' }) }
 
 function onMenuContent(i) {
   if (i === 0) uni.navigateTo({ url: '/pages/saved/plans' })

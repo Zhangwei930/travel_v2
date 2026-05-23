@@ -76,18 +76,6 @@
         </view>
       </view>
 
-      <!-- 数据源标签 -->
-      <view class="section">
-        <scroll-view scroll-x :show-scrollbar="false">
-          <view class="sources-row">
-            <view class="source-chip" v-for="s in plan.sources" :key="s.kind">
-              <text class="source-kind mono">[{{ s.kind }}]</text>
-              <text class="source-t">{{ s.t }}</text>
-            </view>
-          </view>
-        </scroll-view>
-      </view>
-
       <!-- §ITN 路线时间线 -->
       <view class="section">
         <z-section-header no="ITN" title="详细路线" sub="行程时间线" />
@@ -139,6 +127,18 @@
         <view class="disclaimer">
           <text class="disclaimer-text">ℹ️ {{ plan.disclaimer }}</text>
         </view>
+      </view>
+
+      <!-- 数据源标签 -->
+      <view class="section">
+        <scroll-view scroll-x :show-scrollbar="false">
+          <view class="sources-row">
+            <view class="source-chip" v-for="s in plan.sources" :key="s.kind">
+              <text class="source-kind mono">[{{ s.kind }}]</text>
+              <text class="source-t">{{ s.t }}</text>
+            </view>
+          </view>
+        </scroll-view>
       </view>
     </scroll-view>
 

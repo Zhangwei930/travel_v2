@@ -54,13 +54,6 @@
       }
     },
     {
-      "path": "pages/admin/admin",
-      "style": {
-        "navigationStyle": "custom",
-        "navigationBarTitleText": "知识库审核"
-      }
-    },
-    {
       "path": "pages/saved/plans",
       "style": {
         "navigationStyle": "custom",

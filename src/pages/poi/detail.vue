@@ -75,7 +75,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
-import { toggleSavedPoi, isSavedPoi, trackVisit } from '../../api/storage.js'
+import { toggleSavedPoi, isSavedPoi, trackVisit, getCoords } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTag from '../../components/ZTag.vue'
 
@@ -126,7 +126,8 @@ onMounted(async () => {
   }
 
   try {
-    poi.value = await api.getPoiDetail(poiId.value)
+    const coords = getCoords()
+    poi.value = await api.getPoiDetail(poiId.value, coords?.lat, coords?.lng)
     trackVisit({ id: poi.value.id, name: poi.value.name, cat: poi.value.cat, img: poi.value.img })
     saved.value = isSavedPoi(poiId.value)
   } catch (_) {
