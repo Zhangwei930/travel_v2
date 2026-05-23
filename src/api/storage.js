@@ -5,6 +5,7 @@ const KEY_POIS       = 'zhoumi_saved_pois'
 const KEY_VISITED    = 'zhoumi_visited_pois'   // 存完整 POI 摘要对象
 const KEY_FEEDBACKS  = 'zhoumi_feedbacks'
 const KEY_CITY       = 'zhoumi_city'
+const KEY_PENDING_SCENE = 'zhoumi_pending_scene'
 
 function get(key) {
   try { return uni.getStorageSync(key) || [] } catch (_) { return [] }
@@ -73,6 +74,20 @@ export function getCity() {
 }
 export function setCity(city) {
   try { uni.setStorageSync(KEY_CITY, city) } catch (_) {}
+}
+
+// ── Tab 场景切换（switchTab 不支持参数，落地一次性 pending 值）────────────
+export function setPendingScene(sceneId) {
+  try { uni.setStorageSync(KEY_PENDING_SCENE, sceneId) } catch (_) {}
+}
+export function consumePendingScene() {
+  try {
+    const sceneId = uni.getStorageSync(KEY_PENDING_SCENE)
+    if (sceneId) uni.removeStorageSync(KEY_PENDING_SCENE)
+    return sceneId || ''
+  } catch (_) {
+    return ''
+  }
 }
 
 // ── 用户坐标（供 generate/chat 页使用真实位置）────────────────────────────

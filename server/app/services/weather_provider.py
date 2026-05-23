@@ -35,3 +35,10 @@ def get_weather(city: str | None = None) -> WeatherOut:
         advice=_advice(temp, cond),
         wind="东北风 2 级",
     )
+
+
+def weather_source_label() -> str:
+    """数据源展示文案。未接入真实天气时避免误称实时数据。"""
+    if settings.weather_api_key:
+        return "实时气象 API"
+    return "示例天气 · 未接入实时 API"

@@ -164,7 +164,9 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { GEAR_LIST, api } from '../../api/mock.js'
+import { consumePendingScene, getCity } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 
@@ -196,6 +198,19 @@ async function loadScene(id) {
 
 watch(active, loadScene)
 
+function applyPendingScene() {
+  const sceneId = consumePendingScene()
+  if (sceneId && sceneId !== active.value) {
+    active.value = sceneId
+    return true
+  }
+  return false
+}
+
+onShow(() => {
+  applyPendingScene()
+})
+
 onMounted(async () => {
   try {
     const sys = uni.getSystemInfoSync()
@@ -209,7 +224,8 @@ onMounted(async () => {
   } catch (e) {
     uni.showToast({ title: '场景列表加载失败', icon: 'none' })
   }
-  loadScene(active.value)
+  const changed = applyPendingScene()
+  if (!changed) loadScene(active.value)
 
   // 监听从首页传过来的场景切换事件
   uni.$on('switchScene', (sceneId) => {
@@ -231,7 +247,7 @@ async function goResult(route) {
   uni.showLoading({ title: '生成中…', mask: true })
   try {
     const plan = await api.generateTrip({
-      city: '乌鲁木齐', scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
+      city: getCity(), scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
     })
     uni.setStorageSync('lastPlan', plan)
     uni.hideLoading()

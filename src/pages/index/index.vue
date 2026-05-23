@@ -195,7 +195,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../api/mock.js'
-import { getCity, setCity, setCoords } from '../../api/storage.js'
+import { getCity, setCity, setCoords, setPendingScene } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTag from '../../components/ZTag.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
@@ -280,6 +280,7 @@ function onImgError(e, poi) {
 }
 
 function refreshNearby() {
+  if (!nearby.value.length) return
   nearbyPage.value = (nearbyPage.value + 1) % Math.ceil(nearby.value.length / 3)
 }
 
@@ -306,9 +307,8 @@ function goGenerate() {
 }
 
 function goScene(sceneId) {
+  setPendingScene(sceneId)
   uni.switchTab({ url: '/pages/scenes/scenes' })
-  // 通过全局事件传递选中 scene（switchTab 不支持参数）
-  uni.$emit('switchScene', sceneId)
 }
 
 function goPoi(id) {
@@ -321,7 +321,7 @@ async function goResult(route) {
   uni.showLoading({ title: '生成中…', mask: true })
   try {
     const plan = await api.generateTrip({
-      city: CITY, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
+      city: city.value, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
     })
     uni.setStorageSync('lastPlan', plan)
     uni.hideLoading()

@@ -9,7 +9,7 @@ from app.config import settings
 from app.models import PoiIndex, TravelKnowledge, TravelRoute, UserRequest
 from app.schemas import PlanSource, PlanStop, TripGenerateIn, TripPlanOut
 from app.services import ai_provider, map_provider
-from app.services.weather_provider import get_weather
+from app.services.weather_provider import get_weather, weather_source_label
 
 # 场景对应的出游装备清单
 GEAR_BY_SCENE: dict[str, list[str]] = {
@@ -57,7 +57,7 @@ def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
     stops: list[PlanStop] = []
     sources: list[PlanSource] = [
         PlanSource(kind="地图", t=f"{city} POI · 距离/路线"),
-        PlanSource(kind="天气", t="实时气象 API"),
+        PlanSource(kind="天气", t=weather_source_label()),
     ]
     gear_scene = payload.scene or (route.scene if route else "")
 

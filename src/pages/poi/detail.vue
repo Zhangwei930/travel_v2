@@ -73,6 +73,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import { toggleSavedPoi, isSavedPoi, trackVisit } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
@@ -80,12 +81,12 @@ import ZTag from '../../components/ZTag.vue'
 
 const safeBottom = ref('18px')
 const saved      = ref(false)
+const poiId      = ref(null)
 
-// 从路由参数获取 id
-const pages = getCurrentPages()
-const currentPage = pages[pages.length - 1]
-let poiId = 1
-try { poiId = Number(currentPage.$page?.fullPath?.match(/id=(\d+)/)?.[1]) || 1 } catch (_) {}
+onLoad((query = {}) => {
+  const id = Number(query.id)
+  poiId.value = Number.isFinite(id) && id > 0 ? id : null
+})
 
 const poi = ref({
   no: '', name: '', cat: '', dist: '', time: '', budget: '',
@@ -119,10 +120,15 @@ onMounted(async () => {
     safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
   } catch (_) {}
 
+  if (!poiId.value) {
+    uni.showToast({ title: '缺少地点 ID', icon: 'none' })
+    return
+  }
+
   try {
-    poi.value = await api.getPoiDetail(poiId)
+    poi.value = await api.getPoiDetail(poiId.value)
     trackVisit({ id: poi.value.id, name: poi.value.name, cat: poi.value.cat, img: poi.value.img })
-    saved.value = isSavedPoi(poiId)
+    saved.value = isSavedPoi(poiId.value)
   } catch (_) {
     uni.showToast({ title: '地点信息加载失败', icon: 'none' })
   }
