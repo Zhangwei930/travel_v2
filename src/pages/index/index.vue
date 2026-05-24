@@ -29,7 +29,15 @@
       :style="{ paddingBottom: tabBarHeight }"
       :show-scrollbar="false"
     >
-      <view v-if="locationError" class="location-gate">
+      <view v-if="feedLoading && !loaded" class="locating-panel">
+        <view class="locating-pulse">
+          <text>⌖</text>
+        </view>
+        <text class="locating-title serif">正在获取当前位置</text>
+        <text class="locating-sub">定位成功后，会立即推荐附近可导航的目的地。</text>
+      </view>
+
+      <view v-else-if="locationError" class="location-gate">
         <text class="gate-title serif">需要开启定位后，才能推荐附近目的地</text>
         <text class="gate-sub">系统不会在未定位时展示假附近数据。</text>
         <view class="gate-actions">
@@ -40,6 +48,16 @@
 
       <template v-else>
         <view class="intent-wrap">
+          <view class="location-summary">
+            <view>
+              <text class="summary-label mono">当前位置</text>
+              <text class="summary-city serif">{{ cityStore.current }}</text>
+            </view>
+            <view class="summary-weather">
+              <text>{{ weather?.icon || '⌖' }}</text>
+              <text>{{ weather ? weather.temp + '° ' + weather.cond : '已定位' }}</text>
+            </view>
+          </view>
           <text class="intent-title serif">你现在想怎么出去玩？</text>
           <view class="intent-grid">
             <view
@@ -208,6 +226,7 @@ const scenes  = ref([])
 const nearby  = ref([])
 const routes  = ref([])
 const loaded = ref(false)
+const feedLoading = ref(false)
 const locationError = ref(false)
 
 const nearbyPage = ref(0)
@@ -234,6 +253,7 @@ const headerSub = computed(() => {
 async function loadFeed() {
   if (cityStore.locating) return
   cityStore.locating = true
+  feedLoading.value = true
   locationError.value = false
   try {
     const coords = await new Promise((resolve, reject) => {
@@ -266,6 +286,7 @@ async function loadFeed() {
     uni.showToast({ title: '需要开启定位后推荐附近目的地', icon: 'none' })
   } finally {
     cityStore.locating = false
+    feedLoading.value = false
   }
 }
 
@@ -300,10 +321,10 @@ function onCityTap() {
 
 function entryIcon(id) {
   return {
-    place_index: '▦',
+    place_index: '□',
     nearby_now: '⌖',
-    hot_routes: '↬',
-    assistant: '✦',
+    hot_routes: '↱',
+    assistant: '＋',
   }[id] || '•'
 }
 
@@ -314,6 +335,10 @@ function goEntry(id) {
     uni.switchTab({ url: '/pages/assistant/chat' })
   } else if (id === 'nearby_now') {
     refreshNearby()
+  } else if (id === 'hot_routes') {
+    const route = routes.value.find(r => r.nav_ready) || routes.value[0]
+    if (route) openRoute(route)
+    else uni.showToast({ title: '暂无可导航路线', icon: 'none' })
   }
 }
 
@@ -1050,5 +1075,167 @@ function openRoute(route) {
   font-size: 21rpx;
   color: $z-muted;
   flex-shrink: 0;
+}
+
+// ── 首页体验重排：定位优先、入口清晰 ─────────────────────────
+.header {
+  background: $z-primary;
+  padding: 0 32rpx 72rpx;
+}
+
+.header-top {
+  margin-bottom: 34rpx;
+}
+
+.issue-label {
+  color: rgba(255, 255, 255, 0.62);
+  letter-spacing: 1.5rpx;
+}
+
+.main-title {
+  font-size: 46rpx;
+  letter-spacing: 0;
+}
+
+.main-sub {
+  max-width: 640rpx;
+  line-height: 1.45;
+}
+
+.locating-panel {
+  margin: -46rpx 28rpx 0;
+  background: $z-card;
+  border-radius: 20rpx;
+  padding: 48rpx 34rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  box-shadow: 0 14rpx 42rpx rgba(13, 79, 74, 0.14);
+}
+
+.locating-pulse {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 48rpx;
+  background: rgba(13, 79, 74, 0.1);
+  color: $z-primary;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44rpx;
+  font-weight: 900;
+  margin-bottom: 24rpx;
+}
+
+.locating-title {
+  font-size: 34rpx;
+  font-weight: 900;
+  color: $z-text;
+  margin-bottom: 8rpx;
+}
+
+.locating-sub {
+  font-size: 24rpx;
+  color: $z-muted;
+  line-height: 1.5;
+}
+
+.location-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18rpx;
+  padding-bottom: 22rpx;
+  margin-bottom: 22rpx;
+  border-bottom: 1rpx solid $z-border;
+}
+
+.summary-label {
+  display: block;
+  color: $z-muted;
+  font-size: 18rpx;
+  margin-bottom: 4rpx;
+}
+
+.summary-city {
+  display: block;
+  color: $z-text;
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.summary-weather {
+  height: 56rpx;
+  padding: 0 18rpx;
+  border-radius: 12rpx;
+  background: rgba(13, 79, 74, 0.08);
+  color: $z-primary;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 23rpx;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.intent-wrap,
+.location-gate {
+  border-radius: 20rpx;
+}
+
+.intent-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10rpx;
+}
+
+.intent-card {
+  min-height: 132rpx;
+  padding: 16rpx 10rpx;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  gap: 12rpx;
+}
+
+.intent-icon {
+  border-radius: 12rpx;
+  font-size: 26rpx;
+}
+
+.intent-label {
+  font-size: 21rpx;
+  line-height: 1.25;
+}
+
+.section {
+  padding-top: 30rpx;
+}
+
+.poi-card,
+.route-card,
+.scene-card {
+  border-radius: 16rpx;
+  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
+}
+
+.poi-card {
+  padding: 20rpx;
+}
+
+.poi-score {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 16rpx;
+}
+
+.poi-name {
+  font-size: 28rpx;
+}
+
+.nav-btn {
+  min-width: 108rpx;
+  height: 58rpx;
+  border-radius: 10rpx;
 }
 </style>
