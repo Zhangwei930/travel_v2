@@ -18,8 +18,8 @@
         </view>
       </view>
 
-      <text class="issue-label mono">LOCATION FIRST · NEARBY GUIDE</text>
-      <text class="main-title serif">附近现在去哪？</text>
+      <text class="issue-label mono">LOCATION FIRST · TRAVEL ASSISTANT</text>
+      <text class="main-title serif">出游助手</text>
       <text class="main-sub">{{ headerSub }}</text>
     </view>
 
@@ -27,6 +27,8 @@
       scroll-y
       class="scroll-body"
       :style="{ paddingBottom: tabBarHeight }"
+      :scroll-into-view="scrollTarget"
+      scroll-with-animation
       :show-scrollbar="false"
     >
       <view v-if="feedLoading && !loaded" class="locating-panel">
@@ -41,23 +43,34 @@
         <text class="gate-title serif">需要开启定位后，才能推荐附近目的地</text>
         <text class="gate-sub">系统不会在未定位时展示假附近数据。</text>
         <view class="gate-actions">
-          <view class="primary-btn" @tap="loadFeed">重新定位</view>
-          <view class="secondary-btn" @tap="goScene()">手动选择城市</view>
+          <view class="primary-btn" @tap="loadFeed()">重新定位</view>
+          <view class="secondary-btn" @tap="goEntry('place_index')">按场所索引</view>
         </view>
       </view>
 
       <template v-else>
-        <view class="intent-wrap">
-          <view class="location-summary">
-            <view>
+        <view class="assistant-home">
+          <view class="summary-grid">
+            <view class="summary-item">
               <text class="summary-label mono">当前位置</text>
               <text class="summary-city serif">{{ cityStore.current }}</text>
             </view>
-            <view class="summary-weather">
-              <text>{{ weather?.icon || '⌖' }}</text>
-              <text>{{ weather ? weather.temp + '° ' + weather.cond : '已定位' }}</text>
+            <view class="summary-item">
+              <text class="summary-label mono">附近位置</text>
+              <text class="summary-value">{{ locationText }}</text>
+            </view>
+            <view class="summary-item">
+              <text class="summary-label mono">天气</text>
+              <text class="summary-value">{{ weatherText }}</text>
+            </view>
+            <view class="summary-item">
+              <text class="summary-label mono">默认推荐距离</text>
+              <text class="summary-value">{{ radiusText }}</text>
             </view>
           </view>
+          <text class="assistant-home-kicker mono">TRAVEL ASSISTANT HOME</text>
+          <text class="assistant-home-title serif">出游助手首页</text>
+          <text class="assistant-home-sub">选择一个入口，再进入推荐结果、路线页或聊天定制。</text>
           <text class="intent-title serif">你现在想怎么出去玩？</text>
           <view class="intent-grid">
             <view
@@ -72,15 +85,15 @@
           </view>
         </view>
 
-        <view class="section">
+        <view id="nearby_now" class="section">
           <z-section-header
             no="01"
-            title="附近现在适合去"
-            sub="基于定位、天气、时段和知识库"
+            title="附近推荐"
+            sub="定位后实时推荐可导航目的地"
             action="换一批"
             @action="refreshNearby"
           />
-          <view v-if="!nearbyVisible.length" class="list-empty mono">定位中，加载附近地点…</view>
+          <view v-if="!nearbyVisible.length" class="list-empty mono">暂无附近推荐</view>
           <view class="poi-list">
             <view
               v-for="poi in nearbyVisible"
@@ -120,48 +133,21 @@
           </view>
         </view>
 
-        <view class="section">
+        <view id="routes" class="section">
           <z-section-header
             no="02"
-            title="场所索引"
-            sub="按亲子、雨天、夜游等场景筛附近地点"
+            title="路线推荐"
+            sub="2小时 / 半日 / 一日精选路线"
+            action="全部"
+            @action="goRoutes"
           />
-          <view v-if="!scenes.length" class="list-empty mono">加载中…</view>
-          <view class="scenes-grid">
-            <view
-              v-for="scene in scenes"
-              :key="scene.id"
-              class="scene-card"
-              @tap="goScene(scene.id)"
-            >
-              <text class="scene-no mono">{{ scene.no }}</text>
-              <view
-                class="scene-icon-bg"
-                :style="{ background: scene.color + '18' }"
-              >
-                <text class="scene-icon-emoji">{{ scene.icon }}</text>
-              </view>
-              <view class="scene-info">
-                <text class="scene-label serif">{{ scene.label }}</text>
-                <text class="scene-desc">{{ scene.desc }}</text>
-              </view>
-            </view>
-          </view>
-        </view>
-
-        <view class="section">
-          <z-section-header
-            no="03"
-            title="精选路线"
-            sub="2小时、半日、一日动态组合"
-          />
-          <view v-if="!routes.length" class="list-empty mono">暂无可导航路线</view>
+          <view v-if="!routes.length" class="list-empty mono">暂无精选路线</view>
           <view class="routes-list">
             <view
-              v-for="route in routes"
+              v-for="route in routes.slice(0, 3)"
               :key="route.id"
               class="route-card location-route"
-              @tap="openRoute(route)"
+              @tap="goRoutes"
             >
               <view class="route-body">
                 <view class="route-head">
@@ -186,14 +172,6 @@
             </view>
           </view>
         </view>
-
-        <view class="tip-banner">
-          <text class="tip-icon">🌱</text>
-          <view class="tip-content">
-            <text class="tip-title serif">越用越准</text>
-            <text class="tip-sub">地点知识库命中优先，缺失内容进入待补充流程</text>
-          </view>
-        </view>
       </template>
     </scroll-view>
 
@@ -202,34 +180,36 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { ref, computed, nextTick } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTag from '../../components/ZTag.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 import { useCityStore } from '../../store/city.js'
-import { setPendingScene } from '../../api/storage.js'
+import { setAssistantContext, setHomeFeedCache } from '../../api/storage.js'
 
 const cityStore = useCityStore()
 
 const statusBarHeight = ref(44)
 const tabBarHeight = ref('80px')
 const weather = ref(null)
-const entries = ref([
+const defaultEntries = [
   { id: 'place_index', title: '按场所索引' },
   { id: 'nearby_now', title: '附近现在适合去' },
   { id: 'hot_routes', title: '精选路线' },
-  { id: 'assistant', title: '问出游助手' },
-])
-const scenes  = ref([])
-const nearby  = ref([])
-const routes  = ref([])
+  { id: 'assistant', title: '直接咨询' },
+]
+const entries = ref(defaultEntries)
+const nearby = ref([])
+const routes = ref([])
 const loaded = ref(false)
 const feedLoading = ref(false)
 const locationError = ref(false)
-
 const nearbyPage = ref(0)
+const scrollTarget = ref('')
+const radiusText = '3-5km'
+
 const nearbyVisible = computed(() => {
   if (!nearby.value.length) return []
   const start = (nearbyPage.value * 3) % nearby.value.length
@@ -244,13 +224,40 @@ const cityLabel = computed(() => {
   return cityStore.current
 })
 
-const headerSub = computed(() => {
-  if (locationError.value) return '开启定位后推荐附近目的地'
-  const routeText = routes.value.length ? `已准备 ${routes.value.length} 条附近路线` : '正在加载附近路线'
-  return `${weather.value?.advice ?? '获取定位中…'} · ${routeText}`
+const locationText = computed(() => {
+  const lat = cityStore.coords?.lat
+  const lng = cityStore.coords?.lng
+  if (lat == null || lng == null) return '定位成功'
+  return `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}`
 })
 
-async function loadFeed() {
+const weatherText = computed(() => {
+  if (!weather.value) return '定位后获取'
+  return `${weather.value.icon || ''}${weather.value.temp}° ${weather.value.cond}`
+})
+
+const timeSlot = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 6) return '凌晨'
+  if (hour < 11) return '上午'
+  if (hour < 14) return '中午'
+  if (hour < 18) return '下午'
+  if (hour < 22) return '晚上'
+  return '深夜'
+})
+
+const headerSub = computed(() => {
+  if (locationError.value) return '开启定位后推荐附近目的地'
+  if (loaded.value) return `${cityStore.current} · ${weather.value?.advice ?? '已定位'} · ${radiusText}`
+  return '获取定位中…'
+})
+
+function normalizeEntries(feedEntries) {
+  const byId = new Map((feedEntries || []).map(item => [item.id, item]))
+  return defaultEntries.map(item => ({ ...item, ...(byId.get(item.id) || {}), title: item.title }))
+}
+
+async function loadFeed(intent = '') {
   if (cityStore.locating) return
   cityStore.locating = true
   feedLoading.value = true
@@ -266,22 +273,22 @@ async function loadFeed() {
       lat: coords.latitude,
       lng: coords.longitude,
       city: cityStore.current,
-      intent: 'nearby_now',
+      intent,
     })
     if (feed?.location?.city) cityStore.setFromLocation(feed.location.city)
     weather.value = feed.weather || null
-    entries.value = feed.entries || entries.value
-    scenes.value = feed.scene_index || []
+    entries.value = normalizeEntries(feed.entries)
     nearby.value = (feed.nearby_now || []).filter(p => p.nav_ready && p.lat != null && p.lng != null)
     routes.value = feed.routes || []
     nearbyPage.value = 0
+    setHomeFeedCache(feed)
     loaded.value = true
   } catch (_) {
     cityStore.locationDenied = true
     locationError.value = true
+    weather.value = null
     nearby.value = []
     routes.value = []
-    weather.value = null
     loaded.value = false
     uni.showToast({ title: '需要开启定位后推荐附近目的地', icon: 'none' })
   } finally {
@@ -290,7 +297,7 @@ async function loadFeed() {
   }
 }
 
-onMounted(async () => {
+onLoad(async () => {
   try {
     const sys = uni.getSystemInfoSync()
     statusBarHeight.value = sys.statusBarHeight || 44
@@ -304,11 +311,6 @@ onShow(() => {
   if (!loaded.value && !cityStore.locating) loadFeed()
 })
 
-function refreshNearby() {
-  if (!nearby.value.length) return
-  nearbyPage.value = (nearbyPage.value + 1) % Math.ceil(nearby.value.length / 3)
-}
-
 function onCityTap() {
   uni.showLoading({ title: '重新定位中…' })
   loadFeed().finally(() => {
@@ -316,6 +318,18 @@ function onCityTap() {
     if (!locationError.value) {
       uni.showToast({ title: `当前定位：${cityStore.current}`, icon: 'none' })
     }
+  })
+}
+
+function refreshNearby() {
+  if (!nearby.value.length) return
+  nearbyPage.value = (nearbyPage.value + 1) % Math.ceil(nearby.value.length / 3)
+}
+
+function scrollToSection(id) {
+  scrollTarget.value = ''
+  nextTick(() => {
+    scrollTarget.value = id
   })
 }
 
@@ -330,24 +344,48 @@ function entryIcon(id) {
 
 function goEntry(id) {
   if (id === 'place_index') {
-    goScene()
+    const context = buildAssistantContext()
+    uni.switchTab({
+      url: '/pages/scenes/scenes',
+      success: () => uni.$emit('homeLocationContext', context),
+    })
   } else if (id === 'assistant') {
-    uni.switchTab({ url: '/pages/assistant/chat' })
+    const context = buildAssistantContext()
+    setAssistantContext(context)
+    uni.switchTab({
+      url: '/pages/assistant/chat',
+      success: () => uni.$emit('assistantContext', context),
+    })
   } else if (id === 'nearby_now') {
-    refreshNearby()
+    if (!nearby.value.length) {
+      loadFeed('nearby_now').then(() => scrollToSection('nearby_now'))
+    } else {
+      scrollToSection('nearby_now')
+    }
   } else if (id === 'hot_routes') {
-    const route = routes.value.find(r => r.nav_ready) || routes.value[0]
-    if (route) openRoute(route)
-    else uni.showToast({ title: '暂无可导航路线', icon: 'none' })
+    goRoutes()
   }
 }
 
-function goScene(sceneId = '') {
-  if (sceneId) {
-    setPendingScene(sceneId)
+function buildAssistantContext() {
+  return {
+    lat: cityStore.coords?.lat ?? '',
+    lng: cityStore.coords?.lng ?? '',
+    city: cityStore.current,
+    weather: weatherText.value,
+    time_slot: timeSlot.value,
   }
-  uni.switchTab({ url: '/pages/scenes/scenes' })
-  if (sceneId) uni.$emit('switchScene', sceneId)
+}
+
+function buildContextQuery() {
+  const context = buildAssistantContext()
+  return '?' + Object.keys(context)
+    .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(context[key])}`)
+    .join('&')
+}
+
+function goRoutes() {
+  uni.navigateTo({ url: `/pages/routes/routes${buildContextQuery()}` })
 }
 
 function goPoi(id) {
@@ -1141,6 +1179,55 @@ function openRoute(route) {
   line-height: 1.5;
 }
 
+.assistant-home {
+  margin: -46rpx 28rpx 0;
+  position: relative;
+  z-index: 2;
+  background: $z-card;
+  border-radius: 20rpx;
+  padding: 26rpx;
+  box-shadow: 0 14rpx 42rpx rgba(13, 79, 74, 0.14);
+}
+
+.assistant-home-kicker {
+  display: block;
+  color: $z-muted;
+  font-size: 18rpx;
+  margin-bottom: 6rpx;
+}
+
+.assistant-home-title {
+  display: block;
+  color: $z-text;
+  font-size: 36rpx;
+  font-weight: 900;
+  margin-bottom: 6rpx;
+}
+
+.assistant-home-sub {
+  display: block;
+  color: $z-muted;
+  font-size: 23rpx;
+  line-height: 1.45;
+  margin-bottom: 22rpx;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+  padding-bottom: 22rpx;
+  margin-bottom: 22rpx;
+  border-bottom: 1rpx solid $z-border;
+}
+
+.summary-item {
+  min-height: 96rpx;
+  border-radius: 14rpx;
+  background: $z-bg;
+  padding: 16rpx;
+}
+
 .location-summary {
   display: flex;
   justify-content: space-between;
@@ -1161,8 +1248,18 @@ function openRoute(route) {
 .summary-city {
   display: block;
   color: $z-text;
-  font-size: 32rpx;
+  font-size: 30rpx;
   font-weight: 900;
+  line-height: 1.2;
+}
+
+.summary-value {
+  display: block;
+  color: $z-text;
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 1.3;
+  word-break: break-all;
 }
 
 .summary-weather {

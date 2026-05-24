@@ -237,6 +237,13 @@ function applyPendingScene() {
   return true
 }
 
+function applyHomeLocationContext(context = {}) {
+  const lat = Number(context.lat)
+  const lng = Number(context.lng)
+  if (Number.isFinite(lat) && Number.isFinite(lng)) cityStore.setCoords(lat, lng)
+  if (context.city) cityStore.setFromLocation(context.city)
+}
+
 onMounted(async () => {
   try {
     const sys = uni.getSystemInfoSync()
@@ -259,6 +266,7 @@ onMounted(async () => {
   uni.$on('switchScene', (sceneId) => {
     active.value = sceneId
   })
+  uni.$on('homeLocationContext', applyHomeLocationContext)
   // 城市切换时重新加载场景数据
   uni.$on('cityChanged', () => loadScene(active.value))
 })
@@ -269,6 +277,7 @@ onShow(() => {
 
 onUnmounted(() => {
   uni.$off('switchScene')
+  uni.$off('homeLocationContext', applyHomeLocationContext)
   uni.$off('cityChanged')
 })
 

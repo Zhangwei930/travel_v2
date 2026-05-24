@@ -70,7 +70,7 @@ onMounted(() => {
 const items = [
   { id: 'home',      path: '/pages/index/index',       label: '首页', tab: true },
   { id: 'scenes',    path: '/pages/scenes/scenes',     label: '发现', tab: true },
-  { id: 'assistant', path: '/pages/assistant/chat',    label: '助手', tab: true },
+  { id: 'assistant', path: '/pages/assistant/chat',    label: '咨询', tab: true },
   { id: 'profile',   path: '/pages/profile/profile',   label: '我的',  tab: true },
 ]
 

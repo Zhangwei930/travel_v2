@@ -41,9 +41,8 @@ onMounted(() => {
 
 const items = [
   { id: 'home',      path: 'pages/index/index',      label: '首页', icon: 'IconHome' },
-  { id: 'scenes',    path: 'pages/scenes/scenes',    label: '场景', icon: 'IconScenes' },
-  { id: 'generate',  path: 'pages/generate/generate', label: '生成', center: true },
-  { id: 'assistant', path: 'pages/assistant/chat',   label: '助手', icon: 'IconChat' },
+  { id: 'scenes',    path: 'pages/scenes/scenes',    label: '发现', icon: 'IconScenes' },
+  { id: 'assistant', path: 'pages/assistant/chat',   label: '咨询', icon: 'IconChat' },
   { id: 'profile',   path: 'pages/profile/profile',  label: '我的',  icon: 'IconUser' },
 ]
 

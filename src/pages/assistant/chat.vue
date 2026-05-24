@@ -20,24 +20,6 @@
       :scroll-top="scrollTop"
       :show-scrollbar="false"
     >
-      <view class="assistant-menu">
-        <view class="assistant-menu-head">
-          <text class="assistant-menu-title serif">选择出游类型</text>
-          <text class="assistant-menu-sub">带着当前位置进入对应功能</text>
-        </view>
-        <view class="assistant-menu-grid">
-          <view
-            v-for="item in assistantEntries"
-            :key="item.id"
-            class="assistant-menu-item"
-            @tap="chooseEntry(item.id)"
-          >
-            <text class="assistant-menu-icon">{{ item.icon }}</text>
-            <text class="assistant-menu-label">{{ item.title }}</text>
-          </view>
-        </view>
-      </view>
-
       <view class="msg-list">
         <view v-for="(msg, i) in messages" :key="i" class="msg-row" :class="msg.role">
           <!-- Bot 头像 -->
@@ -133,11 +115,13 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, watch } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import ZTabBar from '../../components/ZTabBar.vue'
 import { api } from '../../api/mock.js'
 import { streamAsk } from '../../api/stream.js'
 import { useCityStore } from '../../store/city.js'
+import { getAssistantContext } from '../../api/storage.js'
 
 const cityStore = useCityStore()
 
@@ -148,14 +132,15 @@ const scrollTop       = ref(0)
 const inputText       = ref('')
 const typing          = ref(false)
 const HISTORY_KEY     = 'zhoumi_assistant_messages'
+const chatContext     = ref({
+  city: cityStore.current,
+  lat: cityStore.coords?.lat ?? null,
+  lng: cityStore.coords?.lng ?? null,
+  weather: '',
+  time_slot: '',
+})
 
 const faqs = ['钓点限钓吗？', '需要钓鱼证吗？', '停车方便吗？', '下雨改去哪？', '适合带孩子吗？', '傍晚还能玩什么？']
-const assistantEntries = [
-  { id: 'place_index', title: '按场所索引', icon: '□' },
-  { id: 'nearby_now', title: '附近现在适合去', icon: '⌖' },
-  { id: 'hot_routes', title: '精选路线', icon: '↱' },
-  { id: 'assistant', title: '直接咨询', icon: '＋' },
-]
 
 const defaultMessages = [
   { role: 'bot', text: '你好👋 我是周密出游助手，可以帮你规划路线、查询地点、解决出游疑问。' },
@@ -176,6 +161,35 @@ watch(messages, (val) => {
   try { uni.setStorageSync(HISTORY_KEY, val.slice(-80)) } catch (_) {}
 }, { deep: true })
 
+function asNumber(value, fallback = null) {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : fallback
+}
+
+function readText(value) {
+  if (value == null) return ''
+  try { return decodeURIComponent(String(value)) } catch (_) { return String(value) }
+}
+
+function applyChatContext(options = {}) {
+  const cached = getAssistantContext() || {}
+  const source = { ...cached, ...options }
+  const lat = asNumber(source.lat, cityStore.coords?.lat ?? null)
+  const lng = asNumber(source.lng, cityStore.coords?.lng ?? null)
+  const city = readText(source.city) || cityStore.current
+
+  if (lat != null && lng != null) cityStore.setCoords(lat, lng)
+  if (city) cityStore.setFromLocation(city)
+
+  chatContext.value = {
+    city,
+    lat,
+    lng,
+    weather: readText(source.weather),
+    time_slot: readText(source.time_slot),
+  }
+}
+
 function clearHistory() {
   uni.showModal({
     title: '清空对话',
@@ -190,6 +204,10 @@ function clearHistory() {
     },
   })
 }
+
+onLoad((options) => {
+  applyChatContext(options)
+})
 
 onMounted(() => {
   try {
@@ -207,6 +225,15 @@ onMounted(() => {
     const composerH = 50 + 70 + safeB
     msgScrollH.value = Math.max(200, winH - headerH - tabH - composerH)
   } catch (_) {}
+  uni.$on('assistantContext', applyChatContext)
+})
+
+onShow(() => {
+  applyChatContext()
+})
+
+onUnmounted(() => {
+  uni.$off('assistantContext', applyChatContext)
 })
 
 function sendMsg(text) {
@@ -229,10 +256,12 @@ function sendMsg(text) {
   let started = false
   const payload = {
     question: q,
-    city: cityStore.current,
-    lat: cityStore.coords?.lat,
-    lng: cityStore.coords?.lng,
+    city: chatContext.value.city,
+    lat: chatContext.value.lat,
+    lng: chatContext.value.lng,
     intent: 'assistant',
+    weather: chatContext.value.weather,
+    time_slot: chatContext.value.time_slot,
     history,
   }
 
@@ -295,19 +324,6 @@ function sendMsg(text) {
 
 function scrollToBottom() {
   nextTick(() => { scrollTop.value = 99999 })
-}
-
-function chooseEntry(id) {
-  if (id === 'place_index') {
-    uni.switchTab({ url: '/pages/scenes/scenes' })
-  } else if (id === 'nearby_now') {
-    sendMsg('我现在附近去哪最合适？')
-  } else if (id === 'hot_routes') {
-    sendMsg('按我当前位置推荐 2 小时或半日路线')
-  } else {
-    inputText.value = ''
-    uni.showToast({ title: '可以直接输入你的需求', icon: 'none' })
-  }
 }
 
 function openNav(poi) {
@@ -419,73 +435,6 @@ function openRoute(route) {
   display: flex;
   flex-direction: column;
   gap: 20rpx;
-}
-
-.assistant-menu {
-  margin: 24rpx 24rpx 0;
-  background: $z-card;
-  border: 1rpx solid $z-border;
-  border-radius: 18rpx;
-  padding: 24rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
-}
-
-.assistant-menu-head {
-  margin-bottom: 18rpx;
-}
-
-.assistant-menu-title {
-  display: block;
-  font-size: 30rpx;
-  font-weight: 900;
-  color: $z-text;
-  margin-bottom: 4rpx;
-}
-
-.assistant-menu-sub {
-  display: block;
-  font-size: 22rpx;
-  color: $z-muted;
-}
-
-.assistant-menu-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10rpx;
-}
-
-.assistant-menu-item {
-  min-height: 120rpx;
-  border-radius: 14rpx;
-  background: $z-bg;
-  border: 1rpx solid $z-border;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10rpx;
-  padding: 12rpx 8rpx;
-}
-
-.assistant-menu-icon {
-  width: 46rpx;
-  height: 46rpx;
-  border-radius: 12rpx;
-  background: $z-primary;
-  color: $z-card;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26rpx;
-  font-weight: 900;
-}
-
-.assistant-menu-label {
-  font-size: 20rpx;
-  font-weight: 800;
-  color: $z-text;
-  line-height: 1.25;
-  text-align: center;
 }
 
 .msg-row {

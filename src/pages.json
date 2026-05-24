@@ -33,6 +33,13 @@
       }
     },
     {
+      "path": "pages/routes/routes",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "精选路线"
+      }
+    },
+    {
       "path": "pages/profile/profile",
       "style": {
         "navigationStyle": "custom",
@@ -98,7 +105,7 @@
     "list": [
       { "pagePath": "pages/index/index",      "text": "首页" },
       { "pagePath": "pages/scenes/scenes",    "text": "发现" },
-      { "pagePath": "pages/assistant/chat",   "text": "助手" },
+      { "pagePath": "pages/assistant/chat",   "text": "咨询" },
       { "pagePath": "pages/profile/profile",  "text": "我的" }
     ]
   },

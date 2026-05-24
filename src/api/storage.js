@@ -7,6 +7,8 @@ const KEY_VISITED     = 'zhoumi_visited_pois'   // 升级：从 id[] → POI[]
 const KEY_SAVED_PLANS = 'zhoumi_saved_plans_fav'
 const KEY_PENDING_SCENE = 'zhoumi_pending_scene'
 const KEY_COORDS = 'zhoumi_current_coords'
+const KEY_HOME_FEED = 'zhoumi_home_feed'
+const KEY_ASSISTANT_CONTEXT = 'zhoumi_assistant_context'
 
 function get(key) {
   try { return uni.getStorageSync(key) || [] } catch (e) {
@@ -95,4 +97,40 @@ export function consumePendingScene() {
 
 export function getCoords() {
   try { return uni.getStorageSync(KEY_COORDS) || null } catch (_) { return null }
+}
+
+export function setHomeFeedCache(feed) {
+  if (!feed) return
+  try { uni.setStorageSync(KEY_HOME_FEED, { ...feed, cachedAt: Date.now() }) } catch (e) {
+    console.warn('[storage] set home feed failed', e)
+  }
+}
+
+export function getHomeFeedCache(maxAgeMs = 5 * 60 * 1000) {
+  try {
+    const feed = uni.getStorageSync(KEY_HOME_FEED)
+    if (!feed || !feed.cachedAt) return null
+    if (Date.now() - feed.cachedAt > maxAgeMs) return null
+    return feed
+  } catch (_) {
+    return null
+  }
+}
+
+export function setAssistantContext(context) {
+  if (!context) return
+  try { uni.setStorageSync(KEY_ASSISTANT_CONTEXT, { ...context, cachedAt: Date.now() }) } catch (e) {
+    console.warn('[storage] set assistant context failed', e)
+  }
+}
+
+export function getAssistantContext(maxAgeMs = 30 * 60 * 1000) {
+  try {
+    const context = uni.getStorageSync(KEY_ASSISTANT_CONTEXT)
+    if (!context || !context.cachedAt) return null
+    if (Date.now() - context.cachedAt > maxAgeMs) return null
+    return context
+  } catch (_) {
+    return null
+  }
 }
