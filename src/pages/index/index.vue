@@ -357,11 +357,7 @@ function goEntry(id) {
       success: () => uni.$emit('assistantContext', context),
     })
   } else if (id === 'nearby_now') {
-    if (!nearby.value.length) {
-      loadFeed('nearby_now').then(() => scrollToSection('nearby_now'))
-    } else {
-      scrollToSection('nearby_now')
-    }
+    uni.navigateTo({ url: '/pages/nearby/index' })
   } else if (id === 'hot_routes') {
     goRoutes()
   }

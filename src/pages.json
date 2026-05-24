@@ -40,6 +40,13 @@
       }
     },
     {
+      "path": "pages/nearby/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "附近现在适合去"
+      }
+    },
+    {
       "path": "pages/generate/generate",
       "style": {
         "navigationStyle": "custom",
