@@ -21,13 +21,37 @@ $z-warning-bg:#FEF3C7;   // 警示浅底
 $z-neutral-bg:#F3F4F6;   // 中性浅底
 
 // 中性色
-$z-bg:     #F5F1EB;   // 暖米白
+$z-bg:     #F5F1EB;   // 暖米白（旧版底色，保留兼容）
 $z-card:   #FFFFFF;   // 卡片白
 $z-text:   #1A2E2C;   // 主文字
 $z-text2:  #3B4A40;   // 次文字
 $z-muted:  #8B9594;   // 弱化文字
-$z-border: #E8E2D8;   // 边框
-$z-line:   #EFEADF;   // 分割线
+$z-border: #E8E2D8;   // 边框（旧版）
+$z-line:   #EFEADF;   // 分割线（旧版）
+
+// ─── 新 UI 设计令牌（白底为主，柔和阴影）────────────────────
+$u-bg:        #FFFFFF;        // 页面主底色
+$u-bg-soft:   #F6F8F7;        // 弱次底（区块分隔用）
+$u-text:      #1F2937;        // 主文字
+$u-text-sub:  #6B7280;        // 次文字 / 说明
+$u-text-mute: #9CA3AF;        // 弱化文字（时间、距离等）
+$u-border:    rgba(0, 0, 0, 0.06);
+$u-line:      rgba(0, 0, 0, 0.04);
+$u-shadow:    0 4rpx 24rpx rgba(15, 30, 40, 0.05);
+$u-shadow-lg: 0 8rpx 32rpx rgba(15, 30, 40, 0.08);
+
+// 入口/场景卡的浅色 tint（白→淡色背景）
+$u-tint-beige:  #F2EDE2;   // 按场所索引 入口（米色）
+$u-tint-mint:   #E5F4EE;   // 附近现在适合去 入口
+$u-tint-coral:  #FDE6E0;   // 精选路线 入口
+$u-tint-deep:   #D7E8E4;   // 直接咨询 入口（深绿淡）
+$u-tint-pink:   #FCE4EC;   // 情侣
+$u-tint-blue:   #E3EBFB;   // 雨天
+$u-tint-peach:  #FDE7D4;   // 低预算
+$u-tint-lilac:  #E9E4F7;   // 夜游
+$u-tint-rose:   #FDE2EA;   // 拍照
+$u-tint-leaf:   #DFEFD8;   // 钓鱼/Citywalk
+$u-tint-sun:    #FDEBC4;   // 适老
 
 // 场景色
 $scene-family: #FF6B35;
