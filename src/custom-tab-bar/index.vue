@@ -40,7 +40,7 @@ onMounted(() => {
 })
 
 const items = [
-  { id: 'home',      path: 'pages/index/index',      label: '首页', icon: 'IconHome' },
+  { id: 'home',      path: 'pages/index/index',      label: '出游', icon: 'IconHome' },
   { id: 'scenes',    path: 'pages/scenes/scenes',    label: '发现', icon: 'IconScenes' },
   { id: 'assistant', path: 'pages/assistant/chat',   label: '咨询', icon: 'IconChat' },
   { id: 'profile',   path: 'pages/profile/profile',  label: '我的',  icon: 'IconUser' },

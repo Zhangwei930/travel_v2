@@ -301,7 +301,7 @@ async function goResult(route) {
     uni.navigateTo({ url: `/pages/result/result?generated=1&no=${encodeURIComponent(plan.no)}` })
   } catch (_) {
     uni.hideLoading()
-    uni.switchTab({ url: '/pages/generate/generate' })
+    uni.showToast({ title: '生成失败，请稍后再试', icon: 'none' })
   }
 }
 
