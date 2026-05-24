@@ -38,7 +38,5 @@ def get_weather(city: str | None = None) -> WeatherOut:
 
 
 def weather_source_label() -> str:
-    """数据源展示文案。未接入真实天气时避免误称实时数据。"""
-    if settings.weather_api_key:
-        return "实时气象 API"
+    """天气数据源展示文案；当前实现没有真实天气接入，不能误称实时。"""
     return "示例天气 · 未接入实时 API"

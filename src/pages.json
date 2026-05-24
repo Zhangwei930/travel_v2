@@ -54,6 +54,13 @@
       }
     },
     {
+      "path": "pages/admin/admin",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "知识库审核"
+      }
+    },
+    {
       "path": "pages/saved/plans",
       "style": {
         "navigationStyle": "custom",
@@ -68,14 +75,14 @@
       }
     },
     {
-      "path": "pages/profile/footprint",
+      "path": "pages/saved/visited",
       "style": {
         "navigationStyle": "custom",
         "navigationBarTitleText": "我的足迹"
       }
     },
     {
-      "path": "pages/profile/feedback",
+      "path": "pages/saved/feedback",
       "style": {
         "navigationStyle": "custom",
         "navigationBarTitleText": "我的反馈"
@@ -89,10 +96,11 @@
     "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [
-      { "pagePath": "pages/index/index",   "text": "首页" },
-      { "pagePath": "pages/scenes/scenes", "text": "场景" },
-      { "pagePath": "pages/assistant/chat","text": "助手" },
-      { "pagePath": "pages/profile/profile","text": "我的" }
+      { "pagePath": "pages/index/index",      "text": "首页" },
+      { "pagePath": "pages/scenes/scenes",    "text": "场景" },
+      { "pagePath": "pages/generate/generate","text": "生成" },
+      { "pagePath": "pages/assistant/chat",   "text": "助手" },
+      { "pagePath": "pages/profile/profile",  "text": "我的" }
     ]
   },
   "globalStyle": {

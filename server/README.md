@@ -26,6 +26,13 @@ cp .env.example .env
 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+## 测试
+
+```bash
+cd ..
+PYTHONPATH=server python -m unittest discover -s server/tests -p 'test_*.py'
+```
+
 首次启动会自动建表并灌入与前端 `src/api/mock.js` 对齐的种子数据（5 个 POI、4 条路线、7 条 FAQ）。
 
 ## 接口一览

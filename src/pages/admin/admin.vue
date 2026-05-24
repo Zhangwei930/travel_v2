@@ -96,7 +96,7 @@ async function review(id, status) {
     })
     list.value = list.value.filter(i => i.id !== id)
     uni.showToast({ title: status === 'approved' ? '已通过' : '已处理', icon: 'success' })
-  } catch (_) {
+  } catch {
     uni.showToast({ title: '操作失败', icon: 'none' })
   }
 }
@@ -152,7 +152,7 @@ function goBack() {
 }
 .btn-confirm {
   background: $z-accent;
-  color: #fff;
+  color: $z-card;
   text-align: center;
   padding: 24rpx;
   border-radius: $radius-card;
@@ -176,9 +176,9 @@ function goBack() {
   margin-bottom: 16rpx;
 }
 .risk { padding: 4rpx 12rpx; border-radius: 8rpx; font-size: 20rpx; }
-.risk-high { background: #FEE2E2; color: #DC2626; }
-.risk-mid  { background: #FEF3C7; color: #D97706; }
-.risk-low  { background: #D1FAE5; color: #059669; }
+.risk-high { background: $z-danger-bg; color: $z-danger; }
+.risk-mid  { background: $z-warning-bg; color: $z-warning; }
+.risk-low  { background: $z-success-bg; color: $z-success-d; }
 .cat, .time { color: $z-muted; }
 
 .question {
@@ -212,8 +212,8 @@ function goBack() {
 .btn {
   flex: 1; text-align: center; padding: 16rpx 0;
   border-radius: $radius-card; font-size: 26rpx;
-  &.approve { background: $z-accent; color: #fff; }
-  &.reject  { background: #FEE2E2; color: #DC2626; }
-  &.update  { background: #F3F4F6; color: $z-text; }
+  &.approve { background: $z-accent; color: $z-card; }
+  &.reject  { background: $z-danger-bg; color: $z-danger; }
+  &.update  { background: $z-neutral-bg; color: $z-text; }
 }
 </style>

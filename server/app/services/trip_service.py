@@ -29,9 +29,7 @@ def _pick_route(payload: TripGenerateIn, city: str, db: Session) -> TravelRoute 
     q = db.query(TravelRoute).filter(TravelRoute.review_status == "approved")
     city_q = q.filter(TravelRoute.city == city)
     if payload.scene:
-        scene_match = city_q.filter(TravelRoute.scene == payload.scene).first()
-        if scene_match:
-            return scene_match
+        return city_q.filter(TravelRoute.scene == payload.scene).first()
     return city_q.first()
 
 
@@ -49,15 +47,23 @@ def _start_time(payload: TripGenerateIn) -> str:
     return "09:00"
 
 
-def _route_stops(route: TravelRoute | None, transport: str | None, start: str, db: Session) -> list[PlanStop]:
-    """用已审核路线模板组装站点，不触发 AI 生成。"""
-    if not route:
-        return []
-    poi_ids = route.poi_ids or []
+def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
+    city = map_provider.normalize_city(payload.city) or settings.default_city
+    weather = get_weather(city)
+    route = _pick_route(payload, city, db)
+
+    # 知识库检索：取路线模板关联的 POI 及其出游知识
+    stops: list[PlanStop] = []
+    sources: list[PlanSource] = [
+        PlanSource(kind="地图", t=f"{city} POI · 距离/路线"),
+        PlanSource(kind="天气", t=weather_source_label()),
+    ]
+    gear_scene = payload.scene or (route.scene if route else "")
+
+    poi_ids = route.poi_ids if route else []
     pois = db.query(PoiIndex).filter(PoiIndex.id.in_(poi_ids)).all() if poi_ids else []
     poi_map = {p.id: p for p in pois}
-    arrive = start
-    stops: list[PlanStop] = []
+    arrive = _start_time(payload)
 
     for idx, pid in enumerate(poi_ids, start=1):
         poi = poi_map.get(pid)
@@ -65,7 +71,7 @@ def _route_stops(route: TravelRoute | None, transport: str | None, start: str, d
             continue
         kn = db.query(TravelKnowledge).filter(TravelKnowledge.poi_id == pid).first()
         stay = (kn.play_duration if kn else None) or "1-2h"
-        budget = (kn.budget_level if kn else None) or "以现场为准"
+        budget = (kn.budget_level if kn else None) or "免费"
         reason = (kn.recommend_reason if kn else None) or "顺路安排，体验本地玩法"
         tip = (kn.avoid_tips if kn else None) or "营业、票价以官方实时信息为准"
         stops.append(PlanStop(
@@ -77,66 +83,20 @@ def _route_stops(route: TravelRoute | None, transport: str | None, start: str, d
             budget=budget,
             reason=reason,
             tip=tip,
-            transport=map_provider.transport_hint(transport),
+            transport=map_provider.transport_hint(payload.transport),
             lat=poi.lat,
             lng=poi.lng,
         ))
         arrive = _add_minutes(arrive, 150)
-    return stops
-
-
-def route_plan_from_template(route: TravelRoute, city: str | None, db: Session) -> TripPlanOut:
-    city_name = city or route.city or settings.default_city
-    weather = get_weather(city_name)
-    stops = _route_stops(route, None, "09:00", db)
-    sources = [
-        PlanSource(kind="地图", t=f"{city_name} POI · 距离/路线"),
-        PlanSource(kind="天气", t=weather_source_label()),
-        PlanSource(kind="知识库", t=f"路线模板 {route.display_no or route.id} · 已审核"),
-    ]
-    gear_scene = route.scene or ""
-    summary = route.route_text or f"{route.title}，适合快速查看并按地图实时路线出发。"
-
-    return TripPlanOut(
-        no=f"ROUTE-{route.display_no or route.id}",
-        title=route.title,
-        summary=summary,
-        totalBudget=route.budget_level or "以实际消费为准",
-        totalTime=route.duration or "半日",
-        people="通用",
-        weather=f"{weather.icon} {weather.temp}° {weather.cond}",
-        stops=stops,
-        gearList=GEAR_BY_SCENE.get(gear_scene, DEFAULT_GEAR),
-        backup=route.tips or "如目标地点人流较多或天气变化，可就近改为室内场馆或公园活动。",
-        disclaimer="营业时间、票价、路线耗时以实时地图和官方信息为准，本攻略仅供参考。",
-        sources=sources,
-    )
-
-
-def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
-    city = payload.city or settings.default_city
-    weather = get_weather(city)
-    route = _pick_route(payload, city, db)
-
-    # 知识库检索：取路线模板关联的 POI 及其出游知识
-    sources: list[PlanSource] = [
-        PlanSource(kind="地图", t=f"{city} POI · 距离/路线"),
-        PlanSource(kind="天气", t=weather_source_label()),
-    ]
-    gear_scene = payload.scene or (route.scene if route else "")
-    stops = _route_stops(route, payload.transport, _start_time(payload), db)
 
     if route and route.review_status == "approved":
         sources.append(PlanSource(kind="知识库", t=f"路线模板 {route.display_no or route.id} · 已审核"))
 
-    route_city = (route.city if route else None) or city
-    city_mismatch = route and route.city and route.city != city
     title = (route.title if route else f"{city}出游方案")
     summary_fallback = (
         f"根据{payload.time or '出行时段'}与天气（{weather.icon}{weather.temp}°{weather.cond}），"
         f"为{payload.people_type or '出游'}人群安排的{route.duration if route else '半日'}方案，"
         f"路线顺路、强度适中。"
-        + (f"（注：当前数据覆盖城市为{route_city}，{city}数据扩充中）" if city_mismatch else "")
     )
     stop_details = "\n".join(
         f"  {s.idx}. {s.name}（{s.cat}）抵达{s.arrive}，停留{s.stay}，预算{s.budget}，"

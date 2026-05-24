@@ -46,8 +46,8 @@
         </view>
       </view>
 
-      <!-- ── 钓鱼专属：装备清单 ─────────────────────────────────── -->
-      <view v-if="isFish" class="section gear-section">
+      <!-- ── 装备清单（仅当后端返回非空时显示）─────────────────── -->
+      <view v-if="gearList.length" class="section gear-section">
         <view class="gear-card">
           <view class="gear-head">
             <text class="gear-title serif">🎒 装备清单</text>
@@ -164,11 +164,12 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
-import { GEAR_LIST, api } from '../../api/mock.js'
-import { consumePendingScene, getCity, getCoords } from '../../api/storage.js'
+import { api } from '../../api/mock.js'
+import { useCityStore } from '../../store/city.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
+
+const cityStore = useCityStore()
 
 const statusBarHeight = ref(44)
 const tabBarHeight    = ref('80px')
@@ -176,42 +177,56 @@ const tabBarHeight    = ref('80px')
 const scenes = ref([])
 const active = ref('fish')  // 默认钓鱼
 
-const SCENE_FALLBACK = { id: '', no: '--', label: '加载中', icon: '⏳', color: '#8B9594', desc: '' }
-const currentScene = computed(() => scenes.value.find(s => s.id === active.value) || scenes.value[0] || SCENE_FALLBACK)
+const currentScene = computed(() => scenes.value.find(s => s.id === active.value) || scenes.value[0] || null)
 const isFish       = computed(() => active.value === 'fish')
-const gearList     = ref(GEAR_LIST)
+const gearList     = ref([])
 
 const sceneRoutes  = ref([])
 const scenePois    = ref([])
 
 async function loadScene(id) {
+  // 先清空，避免切换场景时残留上一个场景的装备
+  gearList.value = []
+  const city = cityStore.current
+  // 优先用 store 缓存的坐标，缺失时不阻塞（后端用 city 中心兜底）
+  const lat = cityStore.coords?.lat ?? null
+  const lng = cityStore.coords?.lng ?? null
   try {
-    const coords = getCoords()
     const [routes, pois] = await Promise.all([
-      api.getSceneRoutes(id, getCity()),
-      api.getScenePois(id, getCity(), coords?.lat, coords?.lng),
+      api.getSceneRoutes(id, city),
+      api.getScenePois(id, city, lat, lng),
     ])
     sceneRoutes.value = routes
     scenePois.value   = pois
   } catch (e) {
     uni.showToast({ title: '场景数据加载失败', icon: 'none' })
   }
+  try {
+    const gear = await api.getGearList(id)
+    gearList.value = Array.isArray(gear) ? gear : []
+  } catch (_) {
+    gearList.value = []
+  }
+}
+
+// 没有缓存坐标时主动定位一次（用户没经过首页直接进 scenes 的场景）
+async function ensureLocation() {
+  if (cityStore.coords?.lat != null) return
+  try {
+    const r = await new Promise((resolve) => {
+      uni.getLocation({ type: 'gcj02', success: resolve, fail: () => resolve({}) })
+    })
+    if (r.latitude != null && r.longitude != null) {
+      cityStore.setCoords(r.latitude, r.longitude)
+      try {
+        const g = await api.geoCity(r.latitude, r.longitude)
+        if (g?.city) cityStore.setFromLocation(g.city)
+      } catch (_) {}
+    }
+  } catch (_) {}
 }
 
 watch(active, loadScene)
-
-function applyPendingScene() {
-  const sceneId = consumePendingScene()
-  if (sceneId && sceneId !== active.value) {
-    active.value = sceneId
-    return true
-  }
-  return false
-}
-
-onShow(() => {
-  applyPendingScene()
-})
 
 onMounted(async () => {
   try {
@@ -221,35 +236,57 @@ onMounted(async () => {
     tabBarHeight.value = tabH + 'px'
   } catch (_) {}
 
+  // 拿到坐标后再加载场景数据，确保 POI 是当地真实景点
+  await ensureLocation()
   try {
     scenes.value = await api.getScenes()
   } catch (e) {
     uni.showToast({ title: '场景列表加载失败', icon: 'none' })
   }
-  const changed = applyPendingScene()
-  if (!changed) loadScene(active.value)
+  let loadedByPendingScene = false
+  try {
+    const pendingScene = uni.getStorageSync('zhoumi_pending_scene')
+    if (pendingScene) {
+      if (pendingScene !== active.value) {
+        active.value = pendingScene
+        loadedByPendingScene = true
+      }
+      uni.removeStorageSync('zhoumi_pending_scene')
+    }
+  } catch (_) {}
+  if (!loadedByPendingScene) loadScene(active.value)
 
   // 监听从首页传过来的场景切换事件
   uni.$on('switchScene', (sceneId) => {
     active.value = sceneId
   })
+  // 城市切换时重新加载场景数据
+  uni.$on('cityChanged', () => loadScene(active.value))
 })
 
 onUnmounted(() => {
   uni.$off('switchScene')
+  uni.$off('cityChanged')
 })
 
 function setActive(id) {
   active.value = id
 }
 
+const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
+
 async function goResult(route) {
-  uni.showLoading({ title: '加载路线…', mask: true })
+  uni.showLoading({ title: '生成中…', mask: true })
   try {
-    const plan = await api.getRoutePlan(route.id, getCity())
+    const plan = await api.generateTrip({
+      city: cityStore.current, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
+    })
+    if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0) {
+      throw new Error('plan-invalid')
+    }
     uni.setStorageSync('lastPlan', plan)
     uni.hideLoading()
-    uni.navigateTo({ url: '/pages/result/result?generated=1' })
+    uni.navigateTo({ url: `/pages/result/result?generated=1&no=${encodeURIComponent(plan.no)}` })
   } catch (_) {
     uni.hideLoading()
     uni.switchTab({ url: '/pages/generate/generate' })
@@ -380,7 +417,7 @@ function goPoi(id) {
 
 .hero-title {
   display: block;
-  color: #fff;
+  color: $z-card;
   font-size: 38rpx;
   font-weight: 900;
   margin-bottom: 4rpx;
@@ -502,10 +539,7 @@ function goPoi(id) {
 
 .route-cover-mask {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: 0;
   background: linear-gradient(to top, rgba(13, 79, 74, 0.72), transparent 60%);
 }
 
@@ -532,7 +566,7 @@ function goPoi(id) {
 
 .route-cover-title {
   display: block;
-  color: #fff;
+  color: $z-card;
   font-size: 30rpx;
   font-weight: 800;
   margin-bottom: 6rpx;
@@ -586,7 +620,7 @@ function goPoi(id) {
   top: 10rpx;
   left: 10rpx;
   background: rgba(0, 0, 0, 0.6);
-  color: #fff;
+  color: $z-card;
   font-size: 18rpx;
   padding: 3rpx 10rpx;
   border-radius: 8rpx;
@@ -598,7 +632,7 @@ function goPoi(id) {
   top: 10rpx;
   right: 10rpx;
   background: rgba(0, 0, 0, 0.6);
-  color: #fff;
+  color: $z-card;
   font-size: 18rpx;
   padding: 3rpx 10rpx;
   border-radius: 8rpx;

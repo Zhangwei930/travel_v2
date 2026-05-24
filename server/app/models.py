@@ -35,7 +35,6 @@ class PoiIndex(Base):
     lat: Mapped[float | None] = mapped_column(Float)
     lng: Mapped[float | None] = mapped_column(Float)
     category: Mapped[str | None] = mapped_column(String(100))
-    image: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str | None] = mapped_column(String(50))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime)

@@ -16,8 +16,13 @@ AMAP_DEFAULT_TYPES = "110000|140100|140200|140400|140600"
 
 # 各城市中心点（请求未带定位时的兜底原点）
 CITY_CENTER: dict[str, tuple[float, float]] = {
+    "成都": (30.5728, 104.0668),
     "乌鲁木齐": (43.8256, 87.6168),
 }
+
+
+def normalize_city(city: str | None) -> str:
+    return (city or "").strip().removesuffix("市")
 
 
 def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -50,6 +55,36 @@ def resolve_origin(city: str | None, lat: float | None, lng: float | None) -> tu
     if city and city in CITY_CENTER:
         return CITY_CENTER[city]
     return None
+
+
+def nearest_city(lat: float, lng: float) -> str:
+    """无逆地理服务时按内置城市中心做最近城市兜底。"""
+    if not CITY_CENTER:
+        return settings.default_city
+    return min(CITY_CENTER, key=lambda city: haversine_km(lat, lng, CITY_CENTER[city][0], CITY_CENTER[city][1]))
+
+
+def amap_reverse_city(lat: float, lng: float) -> str | None:
+    """高德逆地理编码；未配置高德时返回 None，由调用方兜底。"""
+    if provider_name() != "amap":
+        return None
+    try:
+        resp = httpx.get(
+            f"{AMAP_BASE}/v3/geocode/regeo",
+            params={"key": settings.amap_key, "location": f"{lng},{lat}", "extensions": "base"},
+            timeout=5.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return None
+        comp = data.get("regeocode", {}).get("addressComponent", {})
+        city = comp.get("city") or comp.get("province") or None
+        if isinstance(city, list):
+            city = None
+        return str(city).replace("市", "").strip() if city else None
+    except (httpx.HTTPError, ValueError):
+        return None
 
 
 def transport_hint(transport: str | None) -> str:
@@ -133,30 +168,6 @@ def amap_driving_distances(origin: tuple[float, float],
         return [None] * len(locations)
 
 
-def amap_reverse_city(lat: float, lng: float) -> str | None:
-    """高德逆地理编码：返回城市名（如"乌鲁木齐市"）。未配置 Amap 时返回 None。"""
-    if provider_name() != "amap":
-        return None
-    try:
-        resp = httpx.get(
-            f"{AMAP_BASE}/v3/geocode/regeo",
-            params={"key": settings.amap_key, "location": f"{lng},{lat}", "extensions": "base"},
-            timeout=5.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if str(data.get("status")) != "1":
-            return None
-        comp = data.get("regeocode", {}).get("addressComponent", {})
-        # 优先取 city，直辖市时 city 为 [] 则取 province
-        city = comp.get("city") or comp.get("province") or None
-        if isinstance(city, list):
-            city = None
-        return str(city).replace("市", "").strip() if city else None
-    except (httpx.HTTPError, ValueError):
-        return None
-
-
 def parse_amap_poi(poi: dict) -> dict | None:
     """把高德 POI 标准化为入库字段。坐标缺失则返回 None。"""
     loc = poi.get("location") or ""
@@ -172,8 +183,6 @@ def parse_amap_poi(poi: dict) -> dict | None:
     image = ""
     if isinstance(photos, list) and photos and isinstance(photos[0], dict):
         image = photos[0].get("url") or ""
-    if image.startswith("http://"):
-        image = "https://" + image[7:]
     distance = poi.get("distance")
     try:
         distance_m = float(distance) if distance not in (None, "", []) else None

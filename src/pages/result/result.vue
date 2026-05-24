@@ -67,13 +67,25 @@
               <path d="M 0 80 Q 100 50 200 85 T 360 75" stroke="#fff" stroke-width="13" fill="none"/>
               <path d="M 0 80 Q 100 50 200 85 T 360 75" stroke="#CCD9D5" stroke-width="1.5" fill="none"/>
               <path d="M 40 90 L 160 35 L 300 70" stroke="#FF6B35" stroke-width="2.5" stroke-dasharray="5 4" fill="none"/>
-              <g v-for="(stop, i) in plan.stops.slice(0, 3)" :key="i">
-                <circle :cx="[40,160,300][i]" :cy="[90,35,70][i]" r="11" fill="#fff" stroke="#FF6B35" stroke-width="2.2"/>
-                <text :x="[40,160,300][i]" :y="[90,35,70][i]+4" text-anchor="middle" font-size="11" font-weight="700" fill="#FF6B35">{{ i+1 }}</text>
+              <g v-for="stop in miniMapStops" :key="stop.idx">
+                <circle :cx="stop.x" :cy="stop.y" r="11" fill="#fff" stroke="#FF6B35" stroke-width="2.2"/>
+                <text :x="stop.x" :y="stop.y + 4" text-anchor="middle" font-size="11" font-weight="700" fill="#FF6B35">{{ stop.idx }}</text>
               </g>
             </svg>
           </view>
         </view>
+      </view>
+
+      <!-- 数据源标签 -->
+      <view class="section">
+        <scroll-view scroll-x :show-scrollbar="false">
+          <view class="sources-row">
+            <view class="source-chip" v-for="s in plan.sources" :key="s.kind">
+              <text class="source-kind mono">[{{ s.kind }}]</text>
+              <text class="source-t">{{ s.t }}</text>
+            </view>
+          </view>
+        </scroll-view>
       </view>
 
       <!-- §ITN 路线时间线 -->
@@ -128,24 +140,34 @@
           <text class="disclaimer-text">ℹ️ {{ plan.disclaimer }}</text>
         </view>
       </view>
-
-      <!-- 数据源标签 -->
-      <view class="section">
-        <scroll-view scroll-x :show-scrollbar="false">
-          <view class="sources-row">
-            <view class="source-chip" v-for="s in plan.sources" :key="s.kind">
-              <text class="source-kind mono">[{{ s.kind }}]</text>
-              <text class="source-t">{{ s.t }}</text>
-            </view>
-          </view>
-        </scroll-view>
-      </view>
     </scroll-view>
+
+    <!-- 反馈输入弹层 -->
+    <view v-if="feedbackOpen" class="feedback-mask" @tap="closeFeedback">
+      <view class="feedback-card" @tap.stop>
+        <text class="feedback-title serif">💬 具体哪里不准确？</text>
+        <text class="feedback-sub">告诉我们问题，会进入审核队列改进知识库</text>
+        <textarea
+          class="feedback-textarea"
+          v-model="feedbackText"
+          placeholder="比如：第 2 站停车场已关闭 / 票价不对 / 路线太长…"
+          placeholder-style="color: #8B9594; font-size: 25rpx;"
+          :maxlength="500"
+          auto-height
+        />
+        <view class="feedback-actions">
+          <view class="feedback-btn cancel" @tap="closeFeedback">取消</view>
+          <view class="feedback-btn submit" :class="{ disabled: submitting }" @tap="submitFeedback">
+            {{ submitting ? '提交中…' : '提交' }}
+          </view>
+        </view>
+      </view>
+    </view>
 
     <!-- 底部操作栏 -->
     <view class="bottom-bar" :style="{ paddingBottom: safeBottom }">
       <view class="bottom-btn outline" @tap="onFeedback(true)">👍 有用</view>
-      <view class="bottom-btn outline" @tap="onFeedback(false)">💬 反馈</view>
+      <view class="bottom-btn outline" @tap="openFeedback">💬 反馈</view>
       <view class="bottom-btn primary flex2" @tap="onStart">🧭 开始出发</view>
     </view>
     </template>
@@ -155,7 +177,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../api/mock.js'
-import { addPlanHistory, toggleSavedPlan, isSavedPlan, addFeedback } from '../../api/storage.js'
+import { addPlanHistory, toggleSavedPlan, isSavedPlan } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 
 const statusBarHeight = ref(44)
@@ -164,11 +186,16 @@ const saved           = ref(false)
 
 const plan = ref(null)
 
+// 反馈表单
+const feedbackOpen = ref(false)
+const feedbackText = ref('')
+const submitting   = ref(false)
+
 const pages = getCurrentPages()
 const currentPage = pages[pages.length - 1]
-const isGenerated = computed(() => {
-  try { return !!currentPage.$page?.fullPath?.includes('generated=1') } catch (_) { return false }
-})
+const fullPath = (() => { try { return currentPage.$page?.fullPath || '' } catch (_) { return '' } })()
+const isGenerated = computed(() => fullPath.includes('generated=1'))
+const planNoFromUrl = (() => { const m = fullPath.match(/[?&]no=([^&]+)/); return m ? decodeURIComponent(m[1]) : '' })()
 
 const planMeta = computed(() => plan.value ? [
   { icon: '⏱', val: plan.value.totalTime },
@@ -176,6 +203,13 @@ const planMeta = computed(() => plan.value ? [
   { icon: '👥', val: plan.value.people },
   { icon: '🌤', val: plan.value.weather },
 ] : [])
+const miniMapStops = computed(() => {
+  const points = [{ x: 40, y: 90 }, { x: 160, y: 35 }, { x: 300, y: 70 }]
+  return (plan.value?.stops || []).slice(0, points.length).map((stop, i) => ({
+    idx: stop.idx || i + 1,
+    ...points[i],
+  }))
+})
 
 onMounted(async () => {
   try {
@@ -184,19 +218,34 @@ onMounted(async () => {
     safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
   } catch (_) {}
 
-  // 读取生成页存入的真实攻略结果，无数据则返回上一页
-  try {
-    const cached = uni.getStorageSync('lastPlan')
-    if (cached && cached.stops) {
-      plan.value = cached
-      addPlanHistory(cached)
-      saved.value = isSavedPlan(cached.no)
-    } else {
-      uni.showToast({ title: '暂无攻略，请先生成', icon: 'none' })
-      setTimeout(() => uni.navigateBack(), 1200)
-    }
-  } catch (_) {
-    uni.navigateBack()
+  // 优先：URL 里的 plan_no → 后端拉取（支持刷新/深链/换设备）
+  // 兜底：lastPlan 本地缓存（用户上一次生成的方案，离线可看）
+  const isValid = (p) => p && p.no && p.title && Array.isArray(p.stops) && p.stops.length > 0
+
+  let loaded = null
+  if (planNoFromUrl) {
+    try {
+      const r = await api.getPlan(planNoFromUrl)
+      if (isValid(r)) loaded = r
+    } catch (_) {}
+  }
+  if (!loaded) {
+    try {
+      const cached = uni.getStorageSync('lastPlan')
+      if (isValid(cached) && (!planNoFromUrl || cached.no === planNoFromUrl)) {
+        loaded = cached
+      }
+    } catch (_) {}
+  }
+
+  if (loaded) {
+    plan.value = loaded
+    try { addPlanHistory(loaded) } catch (e) { console.warn('addPlanHistory failed', e) }
+    try { saved.value = isSavedPlan(loaded.no) } catch (e) { console.warn('isSavedPlan failed', e) }
+  } else {
+    console.warn('plan load failed: no URL param matched and no valid cache', { planNoFromUrl })
+    uni.showToast({ title: '攻略不存在或已过期，请重新生成', icon: 'none' })
+    setTimeout(() => uni.navigateBack(), 1500)
   }
 })
 
@@ -216,11 +265,47 @@ function onNav(stop) {
     uni.showToast({ title: '暂无坐标，无法导航', icon: 'none' })
   }
 }
-function onFeedback(useful) {
-  const fb = { target_type: 'plan', target_id: plan.value.no, useful }
-  api.sendFeedback(fb).catch(() => {})
-  addFeedback(fb)
-  uni.showToast({ title: '感谢反馈', icon: 'success' })
+async function onFeedback(useful) {
+  if (!plan.value?.no) return
+  try {
+    const r = await api.sendFeedback({ target_type: 'plan', target_id: plan.value.no, useful })
+    uni.showToast({ title: r?.message || '感谢反馈', icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: '反馈失败，请稍后重试', icon: 'none' })
+  }
+}
+
+function openFeedback() {
+  if (!plan.value?.no) return
+  feedbackText.value = ''
+  feedbackOpen.value = true
+}
+
+function closeFeedback() {
+  if (submitting.value) return
+  feedbackOpen.value = false
+}
+
+async function submitFeedback() {
+  if (submitting.value) return
+  const comment = feedbackText.value.trim()
+  if (!comment) {
+    uni.showToast({ title: '请输入具体问题', icon: 'none' })
+    return
+  }
+  submitting.value = true
+  try {
+    const r = await api.sendFeedback({
+      target_type: 'plan', target_id: plan.value.no,
+      useful: false, comment,
+    })
+    uni.showToast({ title: r?.message || '已提交审核', icon: 'success' })
+    feedbackOpen.value = false
+  } catch (e) {
+    uni.showToast({ title: '提交失败，请稍后重试', icon: 'none' })
+  } finally {
+    submitting.value = false
+  }
 }
 function onStart() {
   const first = plan.value?.stops?.[0]
@@ -242,12 +327,46 @@ function onStart() {
   flex-direction: column;
 }
 
+// 反馈弹层
+.feedback-mask {
+  position: fixed; left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  padding: 32rpx;
+}
+.feedback-card {
+  width: 100%;
+  background: $z-card;
+  border-radius: $radius-card;
+  padding: 36rpx 32rpx;
+  box-shadow: 0 12rpx 48rpx rgba(0, 0, 0, 0.2);
+}
+.feedback-title { display: block; font-size: 34rpx; font-weight: 800; color: $z-text; margin-bottom: 8rpx; }
+.feedback-sub   { display: block; font-size: 23rpx; color: $z-muted; margin-bottom: 20rpx; }
+.feedback-textarea {
+  width: 100%; min-height: 180rpx; max-height: 320rpx;
+  background: $z-bg; border-radius: 16rpx;
+  padding: 20rpx 22rpx; font-size: 26rpx; color: $z-text;
+  box-sizing: border-box;
+}
+.feedback-actions { display: flex; gap: 18rpx; margin-top: 24rpx; }
+.feedback-btn {
+  flex: 1; height: 84rpx; border-radius: $radius-pill;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28rpx; font-weight: 700;
+  &.cancel { background: $z-bg; color: $z-text2; }
+  &.submit { background: $z-primary; color: $z-card;
+    &.disabled { opacity: 0.5; }
+  }
+}
+
 .loading-state {
   padding: 16rpx 32rpx;
   background: $z-primary;
   min-height: 100vh;
 }
-.back-btn-plain { color: #fff; font-size: 36rpx; padding: 8rpx; }
+.back-btn-plain { color: $z-card; font-size: 36rpx; padding: 8rpx; }
 .loading-tip { display: block; color: rgba(255,255,255,0.6); font-family: $mono; font-size: $font-mono; margin-top: 40rpx; text-align: center; }
 
 // Header
@@ -307,13 +426,13 @@ function onStart() {
   padding: 6rpx 18rpx;
   margin-bottom: 10rpx;
   font-size: 22rpx;
-  color: #fff;
+  color: $z-card;
   font-weight: 700;
 }
 
 .plan-title {
   display: block;
-  color: #fff;
+  color: $z-card;
   font-size: 38rpx;
   font-weight: 900;
   margin-bottom: 10rpx;
@@ -343,7 +462,7 @@ function onStart() {
 }
 
 .meta-icon { font-size: 22rpx; }
-.meta-val  { font-size: 22rpx; color: #fff; font-weight: 600; }
+.meta-val  { font-size: 22rpx; color: $z-card; font-weight: 600; }
 
 // 地图
 .section { padding: 28rpx 32rpx 0; }
@@ -399,7 +518,7 @@ function onStart() {
 
 .source-kind {
   font-size: 19rpx;
-  color: #0D4F4A;
+  color: $z-primary;
   font-weight: 700;
 }
 
@@ -435,7 +554,7 @@ function onStart() {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: $z-card;
   font-size: 26rpx;
   font-weight: 800;
   flex-shrink: 0;
@@ -444,7 +563,7 @@ function onStart() {
 .timeline-line {
   flex: 1;
   width: 2rpx;
-  background: linear-gradient(to bottom, $z-accent, rgba(255, 107, 53, 0.27));
+  background: linear-gradient(to bottom, $z-accent, $z-accent + '44');
   margin: 8rpx 0;
   min-height: 40rpx;
 }
@@ -498,7 +617,7 @@ function onStart() {
   display: block;
   font-size: 20rpx;
   font-weight: 700;
-  color: #0D4F4A;
+  color: $z-primary;
   margin-bottom: 4rpx;
 }
 
@@ -520,7 +639,7 @@ function onStart() {
   display: block;
   font-size: 20rpx;
   font-weight: 700;
-  color: #B8860B;
+  color: $z-amber-d;
   margin-bottom: 4rpx;
 }
 
@@ -544,7 +663,7 @@ function onStart() {
 
 .nav-btn {
   font-size: 24rpx;
-  color: #0D4F4A;
+  color: $z-primary;
   font-weight: 700;
   cursor: pointer;
 }
@@ -614,8 +733,8 @@ function onStart() {
   }
 
   &.primary {
-    background: linear-gradient(135deg, #0D4F4A 0%, #1A7A73 100%);
-    color: #fff;
+    background: linear-gradient(135deg, $z-primary 0%, $z-primary-m 100%);
+    color: $z-card;
     box-shadow: 0 6rpx 20rpx rgba(13, 79, 74, 0.33);
   }
 

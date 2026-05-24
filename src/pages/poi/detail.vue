@@ -73,20 +73,19 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
-import { toggleSavedPoi, isSavedPoi, trackVisit, getCoords } from '../../api/storage.js'
+import { toggleSavedPoi, isSavedPoi, trackVisit } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTag from '../../components/ZTag.vue'
 
 const safeBottom = ref('18px')
 const saved      = ref(false)
-const poiId      = ref(null)
 
-onLoad((query = {}) => {
-  const id = Number(query.id)
-  poiId.value = Number.isFinite(id) && id > 0 ? id : null
-})
+// 从路由参数获取 id
+const pages = getCurrentPages()
+const currentPage = pages[pages.length - 1]
+let poiId = 1
+try { poiId = Number(currentPage.$page?.fullPath?.match(/id=(\d+)/)?.[1]) || 1 } catch (_) {}
 
 const poi = ref({
   no: '', name: '', cat: '', dist: '', time: '', budget: '',
@@ -120,16 +119,18 @@ onMounted(async () => {
     safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
   } catch (_) {}
 
-  if (!poiId.value) {
-    uni.showToast({ title: '缺少地点 ID', icon: 'none' })
-    return
-  }
-
   try {
-    const coords = getCoords()
-    poi.value = await api.getPoiDetail(poiId.value, coords?.lat, coords?.lng)
-    trackVisit({ id: poi.value.id, name: poi.value.name, cat: poi.value.cat, img: poi.value.img })
-    saved.value = isSavedPoi(poiId.value)
+    // 拿当前定位（如有）一起传给后端，方便计算距离
+    let coords = {}
+    try {
+      coords = await new Promise((res) => uni.getLocation({ type: 'gcj02', success: res, fail: () => res({}) }))
+    } catch (_) {}
+    poi.value = await api.getPoiDetail(poiId, coords.latitude, coords.longitude)
+    trackVisit({
+      id: poi.value.id ?? poiId, no: poi.value.no, name: poi.value.name,
+      cat: poi.value.cat, img: poi.value.img, dist: poi.value.dist,
+    })
+    saved.value = isSavedPoi(poiId)
   } catch (_) {
     uni.showToast({ title: '地点信息加载失败', icon: 'none' })
   }
@@ -395,8 +396,8 @@ function goNav() {
   }
 
   &.primary {
-    background: linear-gradient(135deg, #0D4F4A 0%, #1A7A73 100%);
-    color: #fff;
+    background: linear-gradient(135deg, $z-primary 0%, $z-primary-m 100%);
+    color: $z-card;
     box-shadow: 0 6rpx 20rpx rgba(13, 79, 74, 0.33);
   }
 

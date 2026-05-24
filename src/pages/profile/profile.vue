@@ -48,12 +48,28 @@
       <view class="section">
         <text class="menu-group-label mono">§ M2 · 设置</text>
         <view class="menu-card">
-          <view class="menu-item" v-for="(item, i) in menuSettings" :key="item.title">
+          <view class="menu-item" v-for="(item, i) in menuSettings" :key="item.title" @tap="onMenuSetting(i)">
             <text class="menu-no mono">{{ String(i + 1).padStart(2, '0') }}</text>
             <text class="menu-icon">{{ item.icon }}</text>
             <view class="menu-text">
               <text class="menu-title">{{ item.title }}</text>
               <text class="menu-sub">{{ item.sub }}</text>
+            </view>
+            <text class="menu-arrow">›</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- §M3 管理 -->
+      <view class="section">
+        <text class="menu-group-label mono">§ M3 · 管理</text>
+        <view class="menu-card">
+          <view class="menu-item" @tap="goAdmin">
+            <text class="menu-no mono">01</text>
+            <text class="menu-icon">🛡️</text>
+            <view class="menu-text">
+              <text class="menu-title">知识库审核</text>
+              <text class="menu-sub">待审核 · 通过 · 拒绝</text>
             </view>
             <text class="menu-arrow">›</text>
           </view>
@@ -72,9 +88,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 import { getProfileStats } from '../../api/storage.js'
+import { api } from '../../api/mock.js'
+import { useCityStore } from '../../store/city.js'
+import { storeToRefs } from 'pinia'
+
+const cityStore = useCityStore()
+const { current: currentCity } = storeToRefs(cityStore)
 
 const statusBarHeight = ref(44)
 const tabBarHeight    = ref('80px')
@@ -87,13 +109,7 @@ const stats = ref([
 const feedbackCount  = ref(0)
 const exploredCount  = ref(0)
 
-onMounted(() => {
-  try {
-    const sys = uni.getSystemInfoSync()
-    statusBarHeight.value = sys.statusBarHeight || 44
-    tabBarHeight.value = (sys.safeAreaInsets?.bottom || 18) + 56 + 'px'
-  } catch (_) {}
-
+async function refreshStats() {
   const s = getProfileStats()
   stats.value = [
     { num: String(s.plans),   label: '已生成方案' },
@@ -101,11 +117,34 @@ onMounted(() => {
     { num: String(s.visited), label: '足迹地点' },
   ]
   exploredCount.value = s.visited
-  feedbackCount.value = s.feedback
   menuContent.value[0].sub = `${s.plans} 份已生成`
   menuContent.value[1].sub = s.saved > 0 ? `${s.saved} 个已收藏` : '地点 · 路线'
   menuContent.value[2].sub = `${s.visited} 个地点`
-  menuContent.value[3].sub = s.feedback > 0 ? `${s.feedback} 条已贡献` : '帮助系统更懂你'
+
+  // 反馈数走真实 API；失败时显示占位但不打断页面
+  try {
+    const res = await api.getFeedbackList()
+    const arr = Array.isArray(res) ? res : (res?.items ?? [])
+    feedbackCount.value = arr.length
+  } catch (_) {
+    feedbackCount.value = 0
+  }
+  menuContent.value[3].sub = `${feedbackCount.value} 条已贡献`
+  menuSettings.value[0].sub = currentCity.value
+}
+
+onMounted(async () => {
+  try {
+    const sys = uni.getSystemInfoSync()
+    statusBarHeight.value = sys.statusBarHeight || 44
+    tabBarHeight.value = (sys.safeAreaInsets?.bottom || 18) + 56 + 'px'
+  } catch (_) {}
+  await refreshStats()
+  uni.$on('cityChanged', refreshStats)
+})
+
+onUnmounted(() => {
+  uni.$off('cityChanged', refreshStats)
 })
 
 const menuContent = ref([
@@ -115,18 +154,79 @@ const menuContent = ref([
   { icon: '💬', title: '我的反馈',  sub: '0 条已贡献' },
 ])
 
-const menuSettings = [
-  { icon: '📍', title: '位置与城市',  sub: '乌鲁木齐' },
+const menuSettings = ref([
+  { icon: '📍', title: '位置与城市',  sub: currentCity.value },
   { icon: '🔔', title: '通知设置',    sub: '' },
   { icon: '🔒', title: '隐私与授权',  sub: '' },
   { icon: 'ℹ️', title: '关于周密出游', sub: 'v1.0.0' },
-]
+])
+
+function goAdmin() { uni.navigateTo({ url: '/pages/admin/admin' }) }
 
 function onMenuContent(i) {
   if (i === 0) uni.navigateTo({ url: '/pages/saved/plans' })
   else if (i === 1) uni.navigateTo({ url: '/pages/saved/pois' })
-  else if (i === 2) uni.navigateTo({ url: '/pages/profile/footprint' })
-  else if (i === 3) uni.navigateTo({ url: '/pages/profile/feedback' })
+  else if (i === 2) uni.navigateTo({ url: '/pages/saved/visited' })
+  else if (i === 3) uni.navigateTo({ url: '/pages/saved/feedback' })
+}
+
+function onMenuSetting(i) {
+  if (i === 0) {
+    // 位置与城市 — 当前定位驱动，不可手动切换；显示提示
+    uni.showToast({ title: `当前定位：${currentCity.value}\n回首页点城市可刷新`, icon: 'none', duration: 2500 })
+  } else if (i === 1) {
+    // 通知设置 — 跳到微信设置页（小程序），H5 兜底提示
+    // #ifdef MP-WEIXIN
+    uni.openSetting({ success: (r) => {
+      const ok = r.authSetting?.['scope.userLocation']
+      uni.showToast({ title: ok ? '已开启定位授权' : '设置已打开', icon: 'none' })
+    }, fail: () => uni.showToast({ title: '请到「微信 → 设置 → 通知」开启', icon: 'none' }) })
+    // #endif
+    // #ifndef MP-WEIXIN
+    uni.showToast({ title: '请到系统设置开启通知权限', icon: 'none' })
+    // #endif
+  } else if (i === 2) {
+    // 隐私与授权 — 显示授权信息（位置/通知）
+    uni.showActionSheet({
+      itemList: ['查看当前授权状态', '清除本地数据', '隐私协议'],
+      success: ({ tapIndex }) => {
+        if (tapIndex === 0) {
+          uni.getSetting({ success: (r) => {
+            const a = r.authSetting || {}
+            const lines = [
+              `定位：${a['scope.userLocation'] ? '已允许' : '未授权'}`,
+            ]
+            uni.showModal({ title: '当前授权', content: lines.join('\n'), showCancel: false })
+          }})
+        } else if (tapIndex === 1) {
+          uni.showModal({
+            title: '清除本地数据',
+            content: '将清除你的收藏、足迹、攻略历史。该操作不可撤销。',
+            success: ({ confirm }) => {
+              if (confirm) {
+                try { uni.clearStorageSync() } catch (e) { console.warn('clearStorage failed', e) }
+                uni.showToast({ title: '已清除', icon: 'success' })
+                setTimeout(() => refreshStats(), 400)
+              }
+            },
+          })
+        } else if (tapIndex === 2) {
+          uni.showModal({
+            title: '隐私协议',
+            content: '本应用收集你的定位用于推荐附近出游地点，不会上传到第三方。完整协议详见运营方公示。',
+            showCancel: false,
+          })
+        }
+      },
+    })
+  } else if (i === 3) {
+    // 关于
+    uni.showModal({
+      title: '关于周密出游',
+      content: '版本 v1.0.0\n智能本地出游规划系统\n地图：高德 API\nAI：Dify Workflow\n反馈邮箱：support@magies.top',
+      showCancel: false,
+    })
+  }
 }
 </script>
 
@@ -156,7 +256,7 @@ function onMenuContent(i) {
   width: 124rpx;
   height: 124rpx;
   border-radius: 62rpx;
-  background: linear-gradient(135deg, #FF6B35 0%, #FF9558 100%);
+  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -174,7 +274,7 @@ function onMenuContent(i) {
 
 .nickname {
   display: block;
-  color: #fff;
+  color: $z-card;
   font-size: 32rpx;
   font-weight: 900;
   margin-bottom: 8rpx;
@@ -249,7 +349,7 @@ function onMenuContent(i) {
 
 .contribute-btn {
   font-size: 24rpx;
-  color: #0D4F4A;
+  color: $z-primary;
   font-weight: 600;
 }
 

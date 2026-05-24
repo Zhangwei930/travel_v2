@@ -15,6 +15,7 @@
     <scroll-view
       scroll-y
       class="msg-scroll"
+      :style="{ height: msgScrollH + 'px' }"
       :scroll-top="scrollTop"
       :show-scrollbar="false"
     >
@@ -52,28 +53,32 @@
       </view>
     </scroll-view>
 
-    <!-- FAQ 快捷条 -->
-    <scroll-view scroll-x class="faq-scroll" :show-scrollbar="false">
-      <view class="faq-row">
-        <view v-for="faq in faqs" :key="faq" class="faq-chip" @tap="sendMsg(faq)">{{ faq }}</view>
-      </view>
-    </scroll-view>
+    <!-- 底部输入区（fixed 在 tab-bar 上方）-->
+    <view class="composer" :style="{ bottom: tabBarHeight + 'px' }">
+      <!-- FAQ 快捷条 -->
+      <scroll-view scroll-x class="faq-scroll" :show-scrollbar="false">
+        <view class="faq-row">
+          <view v-for="faq in faqs" :key="faq" class="faq-chip" @tap="sendMsg(faq)">{{ faq }}</view>
+        </view>
+      </scroll-view>
 
-    <!-- 输入区 -->
-    <view class="input-bar" :style="{ paddingBottom: safeBottom, marginBottom: tabBarHeight }">
-      <view class="input-wrap">
-        <input
-          class="msg-input"
-          v-model="inputText"
-          placeholder="问问附近适合去哪…"
-          placeholder-style="color: #8B9594;"
-          :adjust-position="true"
-          @confirm="sendMsg(inputText)"
-        />
-        <view class="send-btn" :class="{ active: inputText.length > 0 }" @tap="sendMsg(inputText)">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 26 26" fill="none">
-            <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
-          </svg>
+      <!-- 输入区 -->
+      <view class="input-bar">
+        <view class="input-wrap">
+          <input
+            class="msg-input"
+            v-model="inputText"
+            placeholder="问问附近适合去哪…"
+            placeholder-style="color: #8B9594;"
+            :adjust-position="true"
+            confirm-type="send"
+            @confirm="sendMsg(inputText)"
+          />
+          <view class="send-btn" :class="{ active: inputText.length > 0 }" @tap="sendMsg(inputText)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 26 26" fill="none">
+              <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
+            </svg>
+          </view>
         </view>
       </view>
     </view>
@@ -83,58 +88,121 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, watch } from 'vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 import { api } from '../../api/mock.js'
-import { getCity } from '../../api/storage.js'
+import { streamAsk } from '../../api/stream.js'
+import { useCityStore } from '../../store/city.js'
+
+const cityStore = useCityStore()
 
 const statusBarHeight = ref(44)
-const safeBottom      = ref('18px')
-const tabBarHeight    = ref('80px')
+const tabBarHeight    = ref(80)        // ZTabBar 占用高度（含 safeArea）
+const msgScrollH      = ref(400)       // 消息滚动区显式高度，避免被遮挡
 const scrollTop       = ref(0)
 const inputText       = ref('')
 const typing          = ref(false)
+const HISTORY_KEY     = 'zhoumi_assistant_messages'
 
 const faqs = ['钓点限钓吗？', '需要钓鱼证吗？', '停车方便吗？', '下雨改去哪？', '适合带孩子吗？', '傍晚还能玩什么？']
 
-const messages = ref([
+const defaultMessages = [
   { role: 'bot', text: '你好👋 我是周密出游助手，可以帮你规划路线、查询地点、解决出游疑问。' },
   { role: 'bot', chips: ['钓点限钓吗？', '需要钓鱼证吗？', '停车方便吗？', '下雨改去哪？'] },
-])
+]
+
+function loadMessages() {
+  try {
+    const cached = uni.getStorageSync(HISTORY_KEY)
+    if (Array.isArray(cached) && cached.length) return cached
+  } catch (_) {}
+  return defaultMessages.map(item => ({ ...item }))
+}
+
+const messages = ref(loadMessages())
+
+watch(messages, (val) => {
+  try { uni.setStorageSync(HISTORY_KEY, val.slice(-80)) } catch (_) {}
+}, { deep: true })
 
 onMounted(() => {
   try {
     const sys = uni.getSystemInfoSync()
-    statusBarHeight.value = sys.statusBarHeight || 44
-    safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
-    tabBarHeight.value = (sys.safeAreaInsets?.bottom || 18) + 56 + 'px'
+    const statusH = sys.statusBarHeight || 44
+    const safeB   = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
+    const winH    = sys.windowHeight || (sys.screenHeight - statusH) || 600
+    statusBarHeight.value = statusH
+    // ZTabBar = paddingTop 12rpx(~6px) + icon 行 ~50px + paddingBottom safeArea
+    const tabH = safeB + 56
+    tabBarHeight.value = tabH
+    // header 实际高度：paddingTop(statusH) + 头像行 ~52 + paddingBottom 12 ≈ statusH + 64
+    const headerH = statusH + 64
+    // composer 高度：faq 行 ~50 + input 行 ~70 + 安全区
+    const composerH = 50 + 70 + safeB
+    msgScrollH.value = Math.max(200, winH - headerH - tabH - composerH)
   } catch (_) {}
 })
 
 function sendMsg(text) {
-  if (!text?.trim()) return
-  messages.value.push({ role: 'user', text: text.trim() })
+  const q = text?.trim()
+  if (!q) return
+  messages.value.push({ role: 'user', text: q })
   inputText.value = ''
   typing.value = true
-
   scrollToBottom()
 
-  api.ask(text.trim(), getCity())
-    .then((res) => {
+  // 占位 bot 消息（流式期间逐字追加）
+  const botMsg = { role: 'bot', text: '', sources: null, chips: null }
+  let started = false
+
+  streamAsk({ question: q, city: cityStore.current }, {
+    onMeta: (m) => {
       typing.value = false
-      messages.value.push({
-        role: 'bot',
-        text: res.text,
-        sources: res.sources,
-        chips: res.chips,
+      messages.value.push(botMsg)
+      botMsg.sources = m.sources
+      botMsg.chips = m.chips
+      started = true
+      scrollToBottom()
+    },
+    onText: (t) => {
+      // 命中知识库/缓存：一次性显示整段
+      botMsg.text = t
+      scrollToBottom()
+    },
+    onChunk: (t) => {
+      botMsg.text = (botMsg.text || '') + t
+      scrollToBottom()
+    },
+    onDone: () => {
+      typing.value = false
+      if (!started) {
+        // 流没起来（meta 都没收到）→ 降级
+        fallbackNonStream(q)
+      }
+    },
+    onError: () => {
+      typing.value = false
+      if (!started) {
+        fallbackNonStream(q)
+      } else {
+        botMsg.text = (botMsg.text || '') + '\n[连接中断]'
+      }
+    },
+  })
+
+  function fallbackNonStream(q) {
+    api.ask(q, cityStore.current)
+      .then((res) => {
+        messages.value.push({
+          role: 'bot', text: res.text, sources: res.sources, chips: res.chips,
+        })
+        scrollToBottom()
       })
-      scrollToBottom()
-    })
-    .catch(() => {
-      typing.value = false
-      messages.value.push({ role: 'bot', text: '网络异常，请稍后重试。' })
-      scrollToBottom()
-    })
+      .catch(() => {
+        messages.value.push({ role: 'bot', text: '网络异常，请稍后重试。' })
+        scrollToBottom()
+      })
+  }
 }
 
 function scrollToBottom() {
@@ -146,9 +214,7 @@ function scrollToBottom() {
 @import '../../uni.scss';
 
 .page {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
+  min-height: 100vh;
   background: $z-bg;
 }
 
@@ -170,7 +236,7 @@ function scrollToBottom() {
   width: 76rpx;
   height: 76rpx;
   border-radius: 38rpx;
-  background: linear-gradient(135deg, #0D4F4A 0%, #2A8278 100%);
+  background: linear-gradient(135deg, $z-primary 0%, $z-primary-l 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -186,8 +252,8 @@ function scrollToBottom() {
   width: 16rpx;
   height: 16rpx;
   border-radius: 8rpx;
-  background: #22C55E;
-  border: 2rpx solid #fff;
+  background: $z-success;
+  border: 2rpx solid $z-card;
 }
 
 .header-title {
@@ -206,8 +272,7 @@ function scrollToBottom() {
 }
 
 .msg-scroll {
-  flex: 1;
-  overflow: hidden;
+  background: $z-bg;
 }
 
 .msg-list {
@@ -231,7 +296,7 @@ function scrollToBottom() {
   width: 60rpx;
   height: 60rpx;
   border-radius: 30rpx;
-  background: linear-gradient(135deg, #0D4F4A 0%, #2A8278 100%);
+  background: linear-gradient(135deg, $z-primary 0%, $z-primary-l 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -262,8 +327,8 @@ function scrollToBottom() {
   }
 
   &.user {
-    background: #0D4F4A;
-    color: #fff;
+    background: $z-primary;
+    color: $z-card;
     border-bottom-right-radius: 6rpx;
   }
 }
@@ -306,7 +371,7 @@ function scrollToBottom() {
   border: 1rpx solid rgba(13, 79, 74, 0.2);
   border-radius: $radius-pill;
   font-size: 23rpx;
-  color: #0D4F4A;
+  color: $z-primary;
   cursor: pointer;
 }
 
@@ -327,7 +392,7 @@ function scrollToBottom() {
 
 .source-k {
   font-size: 18rpx;
-  color: #0D4F4A;
+  color: $z-primary;
   font-weight: 700;
   letter-spacing: 0.5rpx;
 }
@@ -337,11 +402,21 @@ function scrollToBottom() {
   color: $z-muted;
 }
 
+// Composer（FAQ + 输入栏一起 fixed 在 TabBar 上方）
+.composer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: $z-card;
+  border-top: 1rpx solid $z-border;
+  box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.05);
+}
+
 // FAQ
 .faq-scroll {
-  flex-shrink: 0;
   background: $z-card;
-  border-top: 1rpx solid $z-line;
+  border-bottom: 1rpx solid $z-line;
   padding: 12rpx 0;
 }
 
@@ -366,9 +441,7 @@ function scrollToBottom() {
 // 输入区
 .input-bar {
   background: $z-card;
-  border-top: 1rpx solid $z-border;
-  padding: 16rpx 24rpx;
-  flex-shrink: 0;
+  padding: 16rpx 24rpx 24rpx;
 }
 
 .input-wrap {
@@ -400,7 +473,7 @@ function scrollToBottom() {
   transition: background 0.2s;
 
   &.active {
-    background: #0D4F4A;
+    background: $z-primary;
   }
 }
 </style>

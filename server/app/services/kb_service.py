@@ -7,9 +7,15 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import FaqKnowledge
 from app.schemas import AskIn, AskOut, AskSource
-from app.services import ai_provider, websearch
+from app.services import ai_provider, map_provider, websearch
 
 SUGGESTED_CHIPS = ["停车方便吗？", "下雨改去哪？", "适合带孩子吗？", "傍晚还能玩什么？"]
+
+
+def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
+    if not row_city:
+        return True
+    return map_provider.normalize_city(row_city) == map_provider.normalize_city(requested_city)
 
 
 def _score(question: str, faq: FaqKnowledge) -> float:
@@ -29,7 +35,8 @@ def ask(payload: AskIn, db: Session) -> AskOut:
     question = payload.question.strip()
     city = payload.city or settings.default_city
 
-    faqs = db.query(FaqKnowledge).filter(FaqKnowledge.review_status == "approved").all()
+    rows = db.query(FaqKnowledge).filter(FaqKnowledge.review_status == "approved").all()
+    faqs = [faq for faq in rows if _city_matches(faq.city, city)]
     best: FaqKnowledge | None = None
     best_score = 0.0
     for faq in faqs:

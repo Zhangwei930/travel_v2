@@ -2,24 +2,9 @@
   <view class="page">
     <!-- Header -->
     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
-      <view class="header-top-row">
-        <view class="back-btn" @tap="goBack">
-          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
-            <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#FF6B35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          </svg>
-          <text class="back-text">返回</text>
-        </view>
-        <text class="header-mono mono">§ GENERATE</text>
-      </view>
+      <text class="header-mono mono">§ GENERATE</text>
       <text class="header-title serif">一键生成方案</text>
-      <view class="city-row" @tap="onCityTap">
-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none">
-          <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" stroke="#8B9594" stroke-width="2"/>
-          <circle cx="12" cy="9" r="3" stroke="#8B9594" stroke-width="2"/>
-        </svg>
-        <text class="city-name">{{ city }}</text>
-        <text class="city-change mono">切换 ›</text>
-      </view>
+      <text class="header-sub">告诉我你的偏好 · AI 帮你规划可执行路线</text>
     </view>
 
     <!-- 加载中态 -->
@@ -107,7 +92,7 @@
         <view class="summary-bar">
           <text class="summary-mono mono">※ 我将基于以下条件规划</text>
           <text class="summary-content">
-            📍 {{ city }} · {{ form.time }} · {{ form.people }} · {{ form.budget }} · {{ form.transport }}
+            {{ form.time }} · {{ form.people }} · {{ form.budget }} · {{ form.transport }}
             <text v-if="form.prefs.length" class="summary-prefs"> · {{ form.prefs.join(' / ') }}</text>
           </text>
         </view>
@@ -124,29 +109,38 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { api } from '../../api/mock.js'
-import { getCity, setCity, getCoords } from '../../api/storage.js'
+import { useCityStore } from '../../store/city.js'
+
+const cityStore = useCityStore()
+
+// 确保有坐标（用户没经过首页直接来 generate 的场景）
+async function ensureCoords() {
+  if (cityStore.coords?.lat != null) return
+  try {
+    const r = await new Promise((resolve) => {
+      uni.getLocation({ type: 'gcj02', success: resolve, fail: () => resolve({}) })
+    })
+    if (r.latitude != null && r.longitude != null) {
+      cityStore.setCoords(r.latitude, r.longitude)
+      try {
+        const g = await api.geoCity(r.latitude, r.longitude)
+        if (g?.city) cityStore.setFromLocation(g.city)
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
 
 const statusBarHeight = ref(44)
-const city = ref(getCity())
+const capability = ref(null)  // 后端能力开关：决定显示哪些生成步骤
 
-const CITY_LIST = ['乌鲁木齐', '喀什', '伊宁', '库尔勒', '阿克苏', '北京', '上海', '成都', '西安', '深圳']
-
-onMounted(() => {
-  try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {}
-  city.value = getCity()
+onMounted(async () => {
+  try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {
+    console.warn('getSystemInfoSync failed')
+  }
+  try { capability.value = await api.getCapability() } catch (e) {
+    console.warn('getCapability failed', e)
+  }
 })
-
-function goBack() { uni.navigateBack() }
-
-function onCityTap() {
-  uni.showActionSheet({
-    itemList: CITY_LIST,
-    success: (res) => {
-      city.value = CITY_LIST[res.tapIndex]
-      setCity(city.value)
-    },
-  })
-}
 const loading     = ref(false)
 const progress    = ref(0)
 const currentStep = ref(0)
@@ -169,14 +163,17 @@ const questions = [
   { no: 5, label: '其他偏好',   hint: '可多选',               key: 'prefs',     multi: true,  options: ['室内', '户外', '钓鱼', '自然', '拍照', '不太累', '美食', '带娃友好', '安静'] },
 ]
 
-const steps = [
-  { k: '01', t: '解析你的需求' },
-  { k: '02', t: '地图 API · 查询附近 POI' },
-  { k: '03', t: '知识库检索 · 路线模板匹配' },
-  { k: '04', t: 'WebSearch · 补充最新信息' },
-  { k: '05', t: '本地 AI · 生成攻略草稿' },
-  { k: '06', t: '质量校验 · 风险检查' },
-]
+// 步骤根据后端 capability 动态生成，避免误导用户"已启用 AI"但其实是 stub
+const steps = computed(() => {
+  const c = capability.value || {}
+  const list = [{ k: '01', t: '解析你的需求' }]
+  if (c.map_amap !== false) list.push({ k: String(list.length + 1).padStart(2, '0'), t: '高德地图 · 查询附近 POI' })
+  list.push({ k: String(list.length + 1).padStart(2, '0'), t: '知识库检索 · 路线模板匹配' })
+  if (c.websearch) list.push({ k: String(list.length + 1).padStart(2, '0'), t: 'WebSearch · 补充最新信息' })
+  if (c.ai) list.push({ k: String(list.length + 1).padStart(2, '0'), t: 'AI · 生成攻略文案' })
+  list.push({ k: String(list.length + 1).padStart(2, '0'), t: '质量校验 · 风险检查' })
+  return list
+})
 
 const etaSec = computed(() => Math.max(0, Math.ceil((100 - progress.value) / 22)))
 
@@ -200,7 +197,8 @@ const SCENE_MAP = {
   钓鱼: 'fish', 拍照: 'photo', 室内: 'rainy', 带娃友好: 'family', 美食: 'couple', 安静: 'walk',
 }
 
-function startGenerate() {
+async function startGenerate() {
+  await ensureCoords()
   loading.value   = true
   progress.value  = 0
   currentStep.value = 0
@@ -213,7 +211,6 @@ function startGenerate() {
     ? [...form.value.prefs, customText.value.trim()]
     : form.value.prefs
   progressTimer = setInterval(() => {
-    // 渐进减速：永远不会自己到 90%，等 API 返回才跳到 100
     const remaining = 90 - progress.value
     progress.value = Math.min(90, progress.value + remaining * 0.08 + Math.random() * 3)
   }, 320)
@@ -222,12 +219,10 @@ function startGenerate() {
     if (currentStep.value < steps.length - 1) currentStep.value++
   }, 720)
 
-  let generateOk = false
-  const coords = getCoords()
   api.generateTrip({
-    city: city.value,
-    lat: coords?.lat ?? null,
-    lng: coords?.lng ?? null,
+    city: cityStore.current,
+    lat: cityStore.coords?.lat ?? null,   // 真实坐标，后端用于附近知名景点筛选
+    lng: cityStore.coords?.lng ?? null,
     time: form.value.time,
     people_type: form.value.people,
     budget: form.value.budget,
@@ -235,28 +230,34 @@ function startGenerate() {
     preferences,
     scene,
   }).then((plan) => {
+    // 响应结构校验：必须有 stops 数组且非空，必须有 no/title
+    if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0 || !plan.no || !plan.title) {
+      throw new Error('plan-invalid')
+    }
     uni.setStorageSync('lastPlan', plan)
-    generateOk = true
-  }).catch(() => {
-    uni.showToast({ title: '生成失败，请检查网络后重试', icon: 'none', duration: 2000 })
-  }).finally(() => {
+    cleanupTimers()
+    progress.value    = 100
+    currentStep.value = steps.length - 1
+    setTimeout(() => {
+      // URL 携带 plan.no — 支持刷新、深链、换设备打开
+      uni.navigateTo({ url: `/pages/result/result?generated=1&no=${encodeURIComponent(plan.no)}` })
+      loading.value = false
+    }, 500)
+  }).catch((err) => {
+    cleanupTimers()
+    loading.value  = false
+    progress.value = 0
+    currentStep.value = 0
+    const msg = err?.message === 'plan-invalid' ? '生成结果不完整，请重试' : '生成失败，请检查网络后重试'
+    uni.showToast({ title: msg, icon: 'none', duration: 2000 })
+  })
+
+  function cleanupTimers() {
     clearInterval(progressTimer)
     clearInterval(stepTimer)
     clearTimeout(slowTipTimer)
     slowTip.value = false
-    if (generateOk) {
-      progress.value    = 100
-      currentStep.value = steps.length - 1
-      setTimeout(() => {
-        uni.navigateTo({ url: '/pages/result/result?generated=1' })
-        loading.value = false
-      }, 500)
-    } else {
-      progress.value    = 0
-      currentStep.value = 0
-      loading.value     = false
-    }
-  })
+  }
 }
 
 // 离开时清理
@@ -280,43 +281,13 @@ onUnmounted(() => {
   padding: 0 32rpx 32rpx;
 }
 
-.header-top-row {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding-top: 16rpx;
-  margin-bottom: 12rpx;
-}
-
-.city-row {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  margin-top: 10rpx;
-  cursor: pointer;
-}
-.city-name  { font-size: 25rpx; color: $z-muted; }
-.city-change { font-size: $font-mono; color: $z-accent; font-family: $mono; }
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  padding: 8rpx 0;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.back-text {
-  font-size: 28rpx;
-  color: $z-accent;
-}
-
 .header-mono {
   display: block;
   font-size: 20rpx;
   color: $z-muted;
   letter-spacing: 3rpx;
+  margin-bottom: 8rpx;
+  padding-top: 16rpx;
 }
 
 .header-title {
@@ -345,7 +316,7 @@ onUnmounted(() => {
   width: 168rpx;
   height: 168rpx;
   border-radius: 84rpx;
-  background: linear-gradient(135deg, #0D4F4A 0%, #2A8278 100%);
+  background: linear-gradient(135deg, $z-primary 0%, $z-primary-l 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -414,7 +385,7 @@ onUnmounted(() => {
   background: $z-border;
 
   &.done {
-    background: #0D4F4A;
+    background: $z-primary;
   }
 
   &.doing {
@@ -426,7 +397,7 @@ onUnmounted(() => {
   width: 16rpx;
   height: 16rpx;
   border-radius: 8rpx;
-  background: #FF6B35;
+  background: $z-accent;
   animation: pulse 0.9s ease-in-out infinite;
 }
 
@@ -457,7 +428,7 @@ onUnmounted(() => {
 .progress-bar-fill {
   height: 10rpx;
   border-radius: $radius-pill;
-  background: linear-gradient(90deg, #0D4F4A 0%, #4FD1C5 100%);
+  background: linear-gradient(90deg, $z-primary 0%, $z-mint 100%);
   transition: width 0.4s ease;
 }
 
@@ -497,7 +468,7 @@ onUnmounted(() => {
 
 .q-no {
   font-size: 20rpx;
-  color: #FF6B35;
+  color: $z-accent;
   font-weight: 700;
   letter-spacing: 1rpx;
 }
@@ -522,7 +493,7 @@ onUnmounted(() => {
 .form-chip {
   padding: 12rpx 24rpx;
   border-radius: $radius-pill;
-  background: #fff;
+  background: $z-card;
   color: $z-text;
   font-size: 24rpx;
   font-weight: 600;
@@ -531,9 +502,9 @@ onUnmounted(() => {
   transition: all 0.2s;
 
   &.on {
-    background: #0D4F4A;
-    color: #fff;
-    border-color: #0D4F4A;
+    background: $z-primary;
+    color: $z-card;
+    border-color: $z-primary;
   }
 }
 
@@ -554,7 +525,7 @@ onUnmounted(() => {
 
 .summary-bar {
   background: rgba(13, 79, 74, 0.055);
-  border-left: 6rpx solid #0D4F4A;
+  border-left: 6rpx solid $z-primary;
   border-radius: 8rpx 22rpx 22rpx 8rpx;
   padding: 20rpx 24rpx;
 }
@@ -574,12 +545,12 @@ onUnmounted(() => {
 }
 
 .summary-prefs {
-  color: #0D4F4A;
+  color: $z-primary;
   font-weight: 700;
 }
 
 .cta-btn {
-  background: linear-gradient(135deg, #FF6B35 0%, #FF9558 100%);
+  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
   box-shadow: 0 12rpx 36rpx rgba(255, 107, 53, 0.44);
   border-radius: 22rpx;
   height: 100rpx;
@@ -590,7 +561,7 @@ onUnmounted(() => {
 }
 
 .cta-text {
-  color: #fff;
+  color: $z-card;
   font-size: 30rpx;
   font-weight: 800;
 }

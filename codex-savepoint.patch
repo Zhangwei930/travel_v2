@@ -1,0 +1,3432 @@
+diff --git a/server/README.md b/server/README.md
+index 0b4108b..fd8b952 100644
+--- a/server/README.md
++++ b/server/README.md
+@@ -26,6 +26,13 @@ cp .env.example .env
+ .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+ ```
+ 
++## 测试
++
++```bash
++cd ..
++PYTHONPATH=server python -m unittest discover -s server/tests -p 'test_*.py'
++```
++
+ 首次启动会自动建表并灌入与前端 `src/api/mock.js` 对齐的种子数据（5 个 POI、4 条路线、7 条 FAQ）。
+ 
+ ## 接口一览
+diff --git a/server/app/models.py b/server/app/models.py
+index fa935c5..e71e79a 100644
+--- a/server/app/models.py
++++ b/server/app/models.py
+@@ -35,7 +35,6 @@ class PoiIndex(Base):
+     lat: Mapped[float | None] = mapped_column(Float)
+     lng: Mapped[float | None] = mapped_column(Float)
+     category: Mapped[str | None] = mapped_column(String(100))
+-    image: Mapped[str | None] = mapped_column(Text)
+     source: Mapped[str | None] = mapped_column(String(50))
+     fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
+     expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+diff --git a/server/app/routers/catalog.py b/server/app/routers/catalog.py
+index 954b61b..98aa90b 100644
+--- a/server/app/routers/catalog.py
++++ b/server/app/routers/catalog.py
+@@ -7,59 +7,39 @@ from sqlalchemy.orm import Session
+ from app.config import settings
+ from app.database import get_db
+ from app.models import PoiIndex, TravelKnowledge, TravelRoute
+-from app.schemas import FitItem, PoiDetailOut, PoiOut, RouteOut, SceneOut, TripPlanOut, WeatherOut
+-from app.services import map_provider, trip_service
++from app.schemas import FitItem, PoiDetailOut, PoiOut, RouteOut, SceneOut, WeatherOut
++from app.services import ai_provider, map_provider
++from app.services.trip_service import GEAR_BY_SCENE
+ from app.services.weather_provider import get_weather
+ from app.taxonomy import SCENES
+ 
+ router = APIRouter(prefix="/api", tags=["catalog"])
+ 
+-SCENE_AMAP_TYPES = {
+-    "family": "140100|140600|110000|080000",
+-    "couple": "110000|050000|080000|060000",
+-    "rainy": "140100|140200|140400|140600|060100",
+-    "budget": "110000|140100|060000",
+-    "fish": "110000|071400",
+-    "photo": "110000|140400|080000",
+-    "night": "110000|050000|080000",
+-    "walk": "110000|140100|060000",
+-    "old": "110000|140100|080000",
+-}
+ 
+-
+-def _norm_city(city: str | None) -> str:
+-    return (city or "").replace("市", "").strip()
+-
+-
+-def _city_matches(row_city: str | None, city: str | None) -> bool:
+-    if not city:
++def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
++    if not requested_city:
+         return True
+-    return _norm_city(row_city) == _norm_city(city)
++    return map_provider.normalize_city(row_city) == map_provider.normalize_city(requested_city)
+ 
+ 
+ def _poi_out(poi: PoiIndex, kn: TravelKnowledge | None, origin, dist_text: str | None = None) -> PoiOut:
+-    is_amap = poi.provider == "amap" and kn is None
+-    tags = (kn.scene_tags if kn else None) or ([poi.category] if is_amap and poi.category else [])
+-    reason = (kn.recommend_reason if kn else None) or (poi.address if is_amap and poi.address else "")
+     return PoiOut(
+         id=poi.id,
+         no=(kn.display_no if kn else None) or f"NO.{poi.id:03d}",
+         name=poi.name,
+         cat=poi.category or "地点",
+         dist=dist_text if dist_text is not None else map_provider.distance_text(origin, poi.lat, poi.lng),
+-        time=(kn.play_duration if kn else None) or ("以现场为准" if is_amap else "1-2h"),
+-        budget=(kn.budget_level if kn else None) or ("以现场为准" if is_amap else "免费"),
+-        tags=tags,
+-        img=(kn.cover_image if kn else None) or poi.image or "",
+-        reason=reason or "参考地图实时地点信息，出发前请确认营业状态",
++        time=(kn.play_duration if kn else None) or "1-2h",
++        budget=(kn.budget_level if kn else None) or "免费",
++        tags=(kn.scene_tags if kn else None) or [],
++        img=(kn.cover_image if kn else None) or "",
++        reason=(kn.recommend_reason if kn else None) or "",
+     )
+ 
+ 
+-def _amap_nearby(lat: float, lng: float, db: Session,
+-                 city: str | None = None, scene: str | None = None) -> list[PoiOut] | None:
++def _amap_nearby(lat: float, lng: float, city: str | None, db: Session) -> list[PoiOut] | None:
+     """高德实时附近搜索：查 POI → 写入 poi_index 短期缓存 → 组装返回（方案 4.3）。"""
+-    types = SCENE_AMAP_TYPES.get(scene or "", map_provider.AMAP_DEFAULT_TYPES)
+-    raw = map_provider.amap_search_around(lat, lng, types=types)
++    raw = map_provider.amap_search_around(lat, lng)
+     parsed = [p for p in (map_provider.parse_amap_poi(x) for x in raw) if p and p["name"]]
+     if not parsed:
+         return None
+@@ -73,6 +53,7 @@ def _amap_nearby(lat: float, lng: float, db: Session,
+ 
+     now = datetime.utcnow()
+     expires = now + timedelta(days=1)
++    cache_city = map_provider.normalize_city(city) or map_provider.nearest_city(lat, lng)
+     out: list[PoiOut] = []
+     for p in parsed:
+         row = (
+@@ -83,15 +64,13 @@ def _amap_nearby(lat: float, lng: float, db: Session,
+         if row:
+             row.name, row.lat, row.lng = p["name"], p["lat"], p["lng"]
+             row.category, row.address = p["category"], p["address"]
+-            row.city = city or row.city or settings.default_city
+-            row.image = p["image"] or row.image
++            row.city = cache_city
+             row.fetched_at, row.expires_at = now, expires
+         else:
+             row = PoiIndex(
+                 provider="amap", provider_poi_id=p["provider_poi_id"], name=p["name"],
+-                city=city or settings.default_city, address=p["address"], lat=p["lat"], lng=p["lng"],
+-                category=p["category"], image=p["image"] or None,
+-                source="amap", fetched_at=now, expires_at=expires,
++                city=cache_city, address=p["address"], lat=p["lat"], lng=p["lng"],
++                category=p["category"], source="amap", fetched_at=now, expires_at=expires,
+             )
+             db.add(row)
+             db.flush()
+@@ -113,23 +92,44 @@ def _amap_nearby(lat: float, lng: float, db: Session,
+     return out
+ 
+ 
+-@router.get("/geo/city")
+-def geo_city(lat: float = Query(...), lng: float = Query(...)):
+-    """逆地理编码：根据坐标返回城市名，供前端自动更新城市显示。"""
+-    city = map_provider.amap_reverse_city(lat, lng) or settings.default_city
+-    return {"city": city}
+-
+-
+ @router.get("/weather", response_model=WeatherOut)
+ def weather(city: str | None = None):
+     return get_weather(city or settings.default_city)
+ 
+ 
++@router.get("/capability")
++def capability():
++    return {
++        "map_amap": map_provider.provider_name() == "amap",
++        "websearch": bool(settings.searxng_base),
++        "ai": ai_provider.is_live(),
++    }
++
++
++@router.get("/city/list")
++def city_list(db: Session = Depends(get_db)):
++    cities = {settings.default_city, *map_provider.CITY_CENTER.keys()}
++    rows = db.query(PoiIndex.city).filter(PoiIndex.city.isnot(None)).distinct().all()
++    cities.update(row[0] for row in rows if row[0])
++    return sorted(cities)
++
++
++@router.get("/geo/city")
++def geo_city(lat: float = Query(...), lng: float = Query(...)):
++    city = map_provider.amap_reverse_city(lat, lng) or map_provider.nearest_city(lat, lng)
++    return {"city": city}
++
++
+ @router.get("/scene/list", response_model=list[SceneOut])
+ def scene_list():
+     return SCENES
+ 
+ 
++@router.get("/gear/list", response_model=list[str])
++def gear_list(scene: str | None = Query(default=None)):
++    return GEAR_BY_SCENE.get(scene or "", [])
++
++
+ @router.get("/poi/list", response_model=list[PoiOut])
+ def poi_list(
+     scene: str | None = Query(default=None),
+@@ -139,9 +139,9 @@ def poi_list(
+     keyword: str | None = Query(default=None),
+     db: Session = Depends(get_db),
+ ):
+-    # 带定位时优先走高德实时附近搜索；场景通过 POI 类型码收窄范围。
+-    if lat is not None and lng is not None and not keyword:
+-        nearby = _amap_nearby(lat, lng, db, city=city, scene=scene)
++    # 带定位、无场景/关键词筛选时，走高德实时附近搜索
++    if lat is not None and lng is not None and not scene and not keyword:
++        nearby = _amap_nearby(lat, lng, city, db)
+         if nearby is not None:
+             return nearby
+ 
+@@ -185,24 +185,23 @@ def poi_detail(
+     kn = db.query(TravelKnowledge).filter(TravelKnowledge.poi_id == id).first()
+     origin = map_provider.resolve_origin(poi.city or settings.default_city, lat, lng)
+     base = _poi_out(poi, kn, origin)
+-    is_amap = poi.provider == "amap" and kn is None
+ 
+     people = (kn.suitable_people if kn else None) or []
+     weather = (kn.suitable_weather if kn else None) or []
+     fit_items = [
+         FitItem(icon="👨‍👩‍👧", label="人群", val="·".join(people) or "通用"),
+-        FitItem(icon="🌤", label="天气", val="·".join(weather) or ("以现场为准" if is_amap else "晴天最佳")),
+-        FitItem(icon="⏰", label="时段", val=(kn.best_time if kn else None) or ("以现场为准" if is_amap else "全天")),
++        FitItem(icon="🌤", label="天气", val="·".join(weather) or "晴天最佳"),
++        FitItem(icon="⏰", label="时段", val=(kn.best_time if kn else None) or "全天"),
+         FitItem(icon="💪", label="强度", val="轻量"),
+     ]
+-    tips_raw = (kn.avoid_tips if kn else None) or ("出发前请在地图中确认营业状态、客流和路线耗时" if is_amap else "")
++    tips_raw = (kn.avoid_tips if kn else None) or ""
+     avoid_tips = [t.strip() for t in tips_raw.replace("；", "\n").splitlines() if t.strip()]
+ 
+     return PoiDetailOut(
+         **base.model_dump(),
+         suitable_people=people,
+         suitable_weather=weather,
+-        best_time=(kn.best_time if kn else None) or ("以现场为准" if is_amap else None),
++        best_time=(kn.best_time if kn else None),
+         fit_items=fit_items,
+         avoid_tips=avoid_tips,
+         lat=poi.lat,
+@@ -237,19 +236,6 @@ def route_recommend(
+         rows = [r for r in rows if _city_matches(r.city, city)]
+     if scene:
+         matched = [r for r in rows if r.scene == scene]
+-        rows = matched
++        # 该场景无专属路线时回退到全部路线（与前端 mock 行为一致）
++        rows = matched or rows
+     return [_route_out(r) for r in rows]
+-
+-
+-@router.get("/route/plan", response_model=TripPlanOut)
+-def route_plan(
+-    id: int = Query(...),
+-    city: str | None = Query(default=None),
+-    db: Session = Depends(get_db),
+-):
+-    route = db.get(TravelRoute, id)
+-    if not route or route.review_status != "approved":
+-        raise HTTPException(status_code=404, detail="路线不存在")
+-    if city and route.city and not _city_matches(route.city, city):
+-        raise HTTPException(status_code=404, detail="路线不属于当前城市")
+-    return trip_service.route_plan_from_template(route, city, db)
+diff --git a/server/app/routers/feedback.py b/server/app/routers/feedback.py
+index 46307c0..34150aa 100644
+--- a/server/app/routers/feedback.py
++++ b/server/app/routers/feedback.py
+@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
+ from sqlalchemy.orm import Session
+ 
+ from app.database import get_db
+-from app.models import UserFeedback
++from app.models import KbPending, UserFeedback
+ from app.schemas import FeedbackIn, OkOut
+ 
+ router = APIRouter(prefix="/api", tags=["feedback"])
+@@ -22,6 +22,44 @@ def submit_feedback(payload: FeedbackIn, db: Session = Depends(get_db)):
+         comment=payload.comment,
+     )
+     db.add(fb)
++    if payload.comment:
++        db.add(KbPending(
++            question=f"用户反馈：{payload.target_type or 'unknown'} {payload.target_id or ''}".strip(),
++            generated_answer=payload.comment,
++            source_urls=[],
++            category="用户反馈",
++            risk_level="低",
++            status="pending",
++        ))
+     db.commit()
+     db.refresh(fb)
+     return OkOut(message="感谢反馈，已回流至知识库审核队列", id=fb.id)
++
++
++@router.get("/feedback/list")
++def list_feedback(db: Session = Depends(get_db)):
++    rows = db.query(UserFeedback).order_by(UserFeedback.created_at.desc()).limit(50).all()
++    return [
++        {
++            "id": row.id,
++            "target_type": row.target_type,
++            "target_id": row.target_id,
++            "target_label": _target_label(row.target_type, row.target_id),
++            "useful": row.useful,
++            "rating": row.rating,
++            "content": row.comment or "",
++            "status": "accepted" if row.handled else "pending",
++            "created_at": row.created_at.isoformat(),
++        }
++        for row in rows
++    ]
++
++
++def _target_label(target_type: str | None, target_id: str | None) -> str:
++    if target_type == "plan" and target_id:
++        return f"攻略方案 · {target_id}"
++    if target_type == "answer":
++        return "出游助手"
++    if target_type == "poi" and target_id:
++        return f"地点 · {target_id}"
++    return "出游反馈"
+diff --git a/server/app/routers/kb.py b/server/app/routers/kb.py
+index 78b9869..28b0522 100644
+--- a/server/app/routers/kb.py
++++ b/server/app/routers/kb.py
+@@ -1,5 +1,8 @@
+ """出游助手问答接口 — POST /api/kb/ask。"""
++import json
++
+ from fastapi import APIRouter, Depends
++from fastapi.responses import StreamingResponse
+ from sqlalchemy.orm import Session
+ 
+ from app.database import get_db
+@@ -12,3 +15,23 @@ router = APIRouter(prefix="/api", tags=["kb"])
+ @router.post("/kb/ask", response_model=AskOut)
+ def ask(payload: AskIn, db: Session = Depends(get_db)):
+     return kb_service.ask(payload, db)
++
++
++@router.post("/kb/ask_stream")
++def ask_stream(payload: AskIn, db: Session = Depends(get_db)):
++    result = kb_service.ask(payload, db)
++
++    def line(event: dict) -> str:
++        return json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
++
++    def events():
++        yield line({
++            "event": "meta",
++            "sources": [s.model_dump() for s in result.sources],
++            "chips": result.chips,
++            "from_kb": result.from_kb,
++        })
++        yield line({"event": "text", "text": result.text})
++        yield line({"event": "done"})
++
++    return StreamingResponse(events(), media_type="application/x-ndjson")
+diff --git a/server/app/routers/trip.py b/server/app/routers/trip.py
+index d60e69b..9ccf308 100644
+--- a/server/app/routers/trip.py
++++ b/server/app/routers/trip.py
+@@ -1,8 +1,9 @@
+ """攻略生成接口 — POST /api/trip/generate。"""
+-from fastapi import APIRouter, Depends
++from fastapi import APIRouter, Depends, HTTPException, Query
+ from sqlalchemy.orm import Session
+ 
+ from app.database import get_db
++from app.models import UserRequest
+ from app.schemas import TripGenerateIn, TripPlanOut
+ from app.services import trip_service
+ 
+@@ -12,3 +13,13 @@ router = APIRouter(prefix="/api", tags=["trip"])
+ @router.post("/trip/generate", response_model=TripPlanOut)
+ def generate_trip(payload: TripGenerateIn, db: Session = Depends(get_db)):
+     return trip_service.generate_plan(payload, db)
++
++
++@router.get("/trip/plan", response_model=TripPlanOut)
++def get_trip_plan(no: str = Query(...), db: Session = Depends(get_db)):
++    rows = db.query(UserRequest).order_by(UserRequest.created_at.desc()).limit(100).all()
++    for row in rows:
++        result = row.result or {}
++        if result.get("no") == no:
++            return TripPlanOut(**result)
++    raise HTTPException(status_code=404, detail="攻略不存在")
+diff --git a/server/app/services/kb_service.py b/server/app/services/kb_service.py
+index 4f59fae..30d8616 100644
+--- a/server/app/services/kb_service.py
++++ b/server/app/services/kb_service.py
+@@ -7,11 +7,17 @@ from sqlalchemy.orm import Session
+ from app.config import settings
+ from app.models import FaqKnowledge
+ from app.schemas import AskIn, AskOut, AskSource
+-from app.services import ai_provider, websearch
++from app.services import ai_provider, map_provider, websearch
+ 
+ SUGGESTED_CHIPS = ["停车方便吗？", "下雨改去哪？", "适合带孩子吗？", "傍晚还能玩什么？"]
+ 
+ 
++def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
++    if not row_city:
++        return True
++    return map_provider.normalize_city(row_city) == map_provider.normalize_city(requested_city)
++
++
+ def _score(question: str, faq: FaqKnowledge) -> float:
+     """简易相似度：字面重合 + 关键词命中比例。生产环境替换为向量检索。"""
+     # FAQ 原问题（去尾部标点）整体出现在用户问题中，视为强命中
+@@ -29,7 +35,8 @@ def ask(payload: AskIn, db: Session) -> AskOut:
+     question = payload.question.strip()
+     city = payload.city or settings.default_city
+ 
+-    faqs = db.query(FaqKnowledge).filter(FaqKnowledge.review_status == "approved").all()
++    rows = db.query(FaqKnowledge).filter(FaqKnowledge.review_status == "approved").all()
++    faqs = [faq for faq in rows if _city_matches(faq.city, city)]
+     best: FaqKnowledge | None = None
+     best_score = 0.0
+     for faq in faqs:
+diff --git a/server/app/services/map_provider.py b/server/app/services/map_provider.py
+index b1606ca..58569c5 100644
+--- a/server/app/services/map_provider.py
++++ b/server/app/services/map_provider.py
+@@ -16,10 +16,15 @@ AMAP_DEFAULT_TYPES = "110000|140100|140200|140400|140600"
+ 
+ # 各城市中心点（请求未带定位时的兜底原点）
+ CITY_CENTER: dict[str, tuple[float, float]] = {
++    "成都": (30.5728, 104.0668),
+     "乌鲁木齐": (43.8256, 87.6168),
+ }
+ 
+ 
++def normalize_city(city: str | None) -> str:
++    return (city or "").strip().removesuffix("市")
++
++
+ def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+     """两点间球面距离，单位 km。"""
+     r = 6371.0
+@@ -52,6 +57,36 @@ def resolve_origin(city: str | None, lat: float | None, lng: float | None) -> tu
+     return None
+ 
+ 
++def nearest_city(lat: float, lng: float) -> str:
++    """无逆地理服务时按内置城市中心做最近城市兜底。"""
++    if not CITY_CENTER:
++        return settings.default_city
++    return min(CITY_CENTER, key=lambda city: haversine_km(lat, lng, CITY_CENTER[city][0], CITY_CENTER[city][1]))
++
++
++def amap_reverse_city(lat: float, lng: float) -> str | None:
++    """高德逆地理编码；未配置高德时返回 None，由调用方兜底。"""
++    if provider_name() != "amap":
++        return None
++    try:
++        resp = httpx.get(
++            f"{AMAP_BASE}/v3/geocode/regeo",
++            params={"key": settings.amap_key, "location": f"{lng},{lat}", "extensions": "base"},
++            timeout=5.0,
++        )
++        resp.raise_for_status()
++        data = resp.json()
++        if str(data.get("status")) != "1":
++            return None
++        comp = data.get("regeocode", {}).get("addressComponent", {})
++        city = comp.get("city") or comp.get("province") or None
++        if isinstance(city, list):
++            city = None
++        return str(city).replace("市", "").strip() if city else None
++    except (httpx.HTTPError, ValueError):
++        return None
++
++
+ def transport_hint(transport: str | None) -> str:
+     """根据出行方式给出路段交通建议文案。"""
+     return {
+@@ -133,30 +168,6 @@ def amap_driving_distances(origin: tuple[float, float],
+         return [None] * len(locations)
+ 
+ 
+-def amap_reverse_city(lat: float, lng: float) -> str | None:
+-    """高德逆地理编码：返回城市名（如"乌鲁木齐市"）。未配置 Amap 时返回 None。"""
+-    if provider_name() != "amap":
+-        return None
+-    try:
+-        resp = httpx.get(
+-            f"{AMAP_BASE}/v3/geocode/regeo",
+-            params={"key": settings.amap_key, "location": f"{lng},{lat}", "extensions": "base"},
+-            timeout=5.0,
+-        )
+-        resp.raise_for_status()
+-        data = resp.json()
+-        if str(data.get("status")) != "1":
+-            return None
+-        comp = data.get("regeocode", {}).get("addressComponent", {})
+-        # 优先取 city，直辖市时 city 为 [] 则取 province
+-        city = comp.get("city") or comp.get("province") or None
+-        if isinstance(city, list):
+-            city = None
+-        return str(city).replace("市", "").strip() if city else None
+-    except (httpx.HTTPError, ValueError):
+-        return None
+-
+-
+ def parse_amap_poi(poi: dict) -> dict | None:
+     """把高德 POI 标准化为入库字段。坐标缺失则返回 None。"""
+     loc = poi.get("location") or ""
+@@ -172,8 +183,6 @@ def parse_amap_poi(poi: dict) -> dict | None:
+     image = ""
+     if isinstance(photos, list) and photos and isinstance(photos[0], dict):
+         image = photos[0].get("url") or ""
+-    if image.startswith("http://"):
+-        image = "https://" + image[7:]
+     distance = poi.get("distance")
+     try:
+         distance_m = float(distance) if distance not in (None, "", []) else None
+diff --git a/server/app/services/trip_service.py b/server/app/services/trip_service.py
+index 507ebe5..eda6ef9 100644
+--- a/server/app/services/trip_service.py
++++ b/server/app/services/trip_service.py
+@@ -29,9 +29,7 @@ def _pick_route(payload: TripGenerateIn, city: str, db: Session) -> TravelRoute
+     q = db.query(TravelRoute).filter(TravelRoute.review_status == "approved")
+     city_q = q.filter(TravelRoute.city == city)
+     if payload.scene:
+-        scene_match = city_q.filter(TravelRoute.scene == payload.scene).first()
+-        if scene_match:
+-            return scene_match
++        return city_q.filter(TravelRoute.scene == payload.scene).first()
+     return city_q.first()
+ 
+ 
+@@ -49,15 +47,23 @@ def _start_time(payload: TripGenerateIn) -> str:
+     return "09:00"
+ 
+ 
+-def _route_stops(route: TravelRoute | None, transport: str | None, start: str, db: Session) -> list[PlanStop]:
+-    """用已审核路线模板组装站点，不触发 AI 生成。"""
+-    if not route:
+-        return []
+-    poi_ids = route.poi_ids or []
++def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
++    city = map_provider.normalize_city(payload.city) or settings.default_city
++    weather = get_weather(city)
++    route = _pick_route(payload, city, db)
++
++    # 知识库检索：取路线模板关联的 POI 及其出游知识
++    stops: list[PlanStop] = []
++    sources: list[PlanSource] = [
++        PlanSource(kind="地图", t=f"{city} POI · 距离/路线"),
++        PlanSource(kind="天气", t=weather_source_label()),
++    ]
++    gear_scene = payload.scene or (route.scene if route else "")
++
++    poi_ids = route.poi_ids if route else []
+     pois = db.query(PoiIndex).filter(PoiIndex.id.in_(poi_ids)).all() if poi_ids else []
+     poi_map = {p.id: p for p in pois}
+-    arrive = start
+-    stops: list[PlanStop] = []
++    arrive = _start_time(payload)
+ 
+     for idx, pid in enumerate(poi_ids, start=1):
+         poi = poi_map.get(pid)
+@@ -65,7 +71,7 @@ def _route_stops(route: TravelRoute | None, transport: str | None, start: str, d
+             continue
+         kn = db.query(TravelKnowledge).filter(TravelKnowledge.poi_id == pid).first()
+         stay = (kn.play_duration if kn else None) or "1-2h"
+-        budget = (kn.budget_level if kn else None) or "以现场为准"
++        budget = (kn.budget_level if kn else None) or "免费"
+         reason = (kn.recommend_reason if kn else None) or "顺路安排，体验本地玩法"
+         tip = (kn.avoid_tips if kn else None) or "营业、票价以官方实时信息为准"
+         stops.append(PlanStop(
+@@ -77,66 +83,20 @@ def _route_stops(route: TravelRoute | None, transport: str | None, start: str, d
+             budget=budget,
+             reason=reason,
+             tip=tip,
+-            transport=map_provider.transport_hint(transport),
++            transport=map_provider.transport_hint(payload.transport),
+             lat=poi.lat,
+             lng=poi.lng,
+         ))
+         arrive = _add_minutes(arrive, 150)
+-    return stops
+-
+-
+-def route_plan_from_template(route: TravelRoute, city: str | None, db: Session) -> TripPlanOut:
+-    city_name = city or route.city or settings.default_city
+-    weather = get_weather(city_name)
+-    stops = _route_stops(route, None, "09:00", db)
+-    sources = [
+-        PlanSource(kind="地图", t=f"{city_name} POI · 距离/路线"),
+-        PlanSource(kind="天气", t=weather_source_label()),
+-        PlanSource(kind="知识库", t=f"路线模板 {route.display_no or route.id} · 已审核"),
+-    ]
+-    gear_scene = route.scene or ""
+-    summary = route.route_text or f"{route.title}，适合快速查看并按地图实时路线出发。"
+-
+-    return TripPlanOut(
+-        no=f"ROUTE-{route.display_no or route.id}",
+-        title=route.title,
+-        summary=summary,
+-        totalBudget=route.budget_level or "以实际消费为准",
+-        totalTime=route.duration or "半日",
+-        people="通用",
+-        weather=f"{weather.icon} {weather.temp}° {weather.cond}",
+-        stops=stops,
+-        gearList=GEAR_BY_SCENE.get(gear_scene, DEFAULT_GEAR),
+-        backup=route.tips or "如目标地点人流较多或天气变化，可就近改为室内场馆或公园活动。",
+-        disclaimer="营业时间、票价、路线耗时以实时地图和官方信息为准，本攻略仅供参考。",
+-        sources=sources,
+-    )
+-
+-
+-def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
+-    city = payload.city or settings.default_city
+-    weather = get_weather(city)
+-    route = _pick_route(payload, city, db)
+-
+-    # 知识库检索：取路线模板关联的 POI 及其出游知识
+-    sources: list[PlanSource] = [
+-        PlanSource(kind="地图", t=f"{city} POI · 距离/路线"),
+-        PlanSource(kind="天气", t=weather_source_label()),
+-    ]
+-    gear_scene = payload.scene or (route.scene if route else "")
+-    stops = _route_stops(route, payload.transport, _start_time(payload), db)
+ 
+     if route and route.review_status == "approved":
+         sources.append(PlanSource(kind="知识库", t=f"路线模板 {route.display_no or route.id} · 已审核"))
+ 
+-    route_city = (route.city if route else None) or city
+-    city_mismatch = route and route.city and route.city != city
+     title = (route.title if route else f"{city}出游方案")
+     summary_fallback = (
+         f"根据{payload.time or '出行时段'}与天气（{weather.icon}{weather.temp}°{weather.cond}），"
+         f"为{payload.people_type or '出游'}人群安排的{route.duration if route else '半日'}方案，"
+         f"路线顺路、强度适中。"
+-        + (f"（注：当前数据覆盖城市为{route_city}，{city}数据扩充中）" if city_mismatch else "")
+     )
+     stop_details = "\n".join(
+         f"  {s.idx}. {s.name}（{s.cat}）抵达{s.arrive}，停留{s.stay}，预算{s.budget}，"
+diff --git a/server/app/services/weather_provider.py b/server/app/services/weather_provider.py
+index d877d4d..3302643 100644
+--- a/server/app/services/weather_provider.py
++++ b/server/app/services/weather_provider.py
+@@ -38,7 +38,5 @@ def get_weather(city: str | None = None) -> WeatherOut:
+ 
+ 
+ def weather_source_label() -> str:
+-    """数据源展示文案。未接入真实天气时避免误称实时数据。"""
+-    if settings.weather_api_key:
+-        return "实时气象 API"
++    """天气数据源展示文案；当前实现没有真实天气接入，不能误称实时。"""
+     return "示例天气 · 未接入实时 API"
+diff --git a/src/App.vue b/src/App.vue
+index cc6be2d..2794314 100644
+--- a/src/App.vue
++++ b/src/App.vue
+@@ -41,9 +41,9 @@ view, text, input, button, image, scroll-view {
+ }
+ 
+ .btn-accent {
+-  background: linear-gradient(135deg, $z-accent 0%, #FF9558 100%);
++  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
+   box-shadow: 0 12rpx 36rpx rgba(255, 107, 53, 0.44);
+-  color: #fff;
++  color: $z-card;
+   border-radius: $radius-btn;
+   display: flex;
+   align-items: center;
+@@ -51,9 +51,9 @@ view, text, input, button, image, scroll-view {
+ }
+ 
+ .btn-primary {
+-  background: linear-gradient(135deg, $z-primary 0%, #1A7A73 100%);
++  background: linear-gradient(135deg, $z-primary 0%, $z-primary-m 100%);
+   box-shadow: 0 6rpx 20rpx rgba(13, 79, 74, 0.33);
+-  color: #fff;
++  color: $z-card;
+   border-radius: $radius-btn;
+   display: flex;
+   align-items: center;
+diff --git a/src/api/mock.js b/src/api/mock.js
+index 697f495..cbf701c 100644
+--- a/src/api/mock.js
++++ b/src/api/mock.js
+@@ -1,195 +1,60 @@
+-// 数据层 — api.* 调用真实后端接口；下方常量作为离线兜底（请求失败时回退）
++// 后端 API 客户端 — 全部走 https://tr.magies.top/zhoumi-api 真实接口
++//
++// 文件名沿用 mock.js 是历史原因（早期是 mock 数据），目前已**不再做离线兜底**。
++// 调用失败由各页面自行处理（toast / 空状态）。
+ import { request } from './request.js'
+ 
+-export const CITY = '乌鲁木齐'
+-
+-export const WEATHER = {
+-  temp: 22,
+-  cond: '晴',
+-  icon: '☀️',
+-  advice: '适合出游',
+-  wind: '东北风 2 级',
+-}
+-
+-export const SCENES = [
+-  { id: 'family', no: '01', label: '亲子游',  icon: '👨‍👩‍👧', color: '#FF6B35', desc: '轻松不太累' },
+-  { id: 'couple', no: '02', label: '情侣约会', icon: '💑',    color: '#EC4B85', desc: '拍照·夜游' },
+-  { id: 'rainy',  no: '03', label: '雨天室内', icon: '☔️',    color: '#5B7CFA', desc: '博物馆·商场' },
+-  { id: 'budget', no: '04', label: '低预算',   icon: '🪙',    color: '#4FD1C5', desc: '免费·Citywalk' },
+-  { id: 'fish',   no: '05', label: '钓鱼',     icon: '🎣',    color: '#3E5C3A', desc: '水库·黄金时段' },
+-  { id: 'photo',  no: '06', label: '拍照打卡', icon: '📸',    color: '#A855F7', desc: '地标·出片' },
+-  { id: 'night',  no: '07', label: '夜游',     icon: '🌃',    color: '#1F2937', desc: '夜市·灯光' },
+-  { id: 'walk',   no: '08', label: 'Citywalk', icon: '🚶',    color: '#84CC16', desc: '慢走·人文' },
+-  { id: 'old',    no: '09', label: '适老',     icon: '👵',    color: '#F4B942', desc: '轻量·无障碍' },
+-]
+-
+-export const NEARBY = [
+-  {
+-    id: 1, no: 'NO.001', name: '新疆博物馆', cat: '博物馆·室内',
+-    dist: '1.2km', time: '2-3h', budget: '免费',
+-    tags: ['亲子', '雨天', '文化'],
+-    img: 'https://picsum.photos/seed/zn1/400/300',
+-    reason: '室内不受天气影响，了解新疆历史文化',
+-  },
+-  {
+-    id: 2, no: 'NO.002', name: '红山公园', cat: '公园·登高',
+-    dist: '2.4km', time: '1-2h', budget: '免费',
+-    tags: ['Citywalk', '晨练'],
+-    img: 'https://picsum.photos/seed/zn2/400/300',
+-    reason: '乌鲁木齐市标，登高俯瞰城市全景',
+-  },
+-  {
+-    id: 3, no: 'NO.003', name: '柴窝堡水库', cat: '水库·钓点',
+-    dist: '48km', time: '半日', budget: '低预算',
+-    tags: ['钓鱼', '自然', '自驾'],
+-    img: 'https://picsum.photos/seed/zn3/400/300',
+-    reason: '周边知名钓点，鱼种丰富，自驾可达',
+-  },
+-  {
+-    id: 4, no: 'NO.004', name: '水磨沟公园', cat: '公园·清晨',
+-    dist: '3.8km', time: '2-3h', budget: '免费',
+-    tags: ['自然', '亲子', '晨练'],
+-    img: 'https://picsum.photos/seed/zn4/400/300',
+-    reason: '清晨适合散步，水景宜人，人少',
+-  },
+-  {
+-    id: 5, no: 'NO.005', name: '国际大巴扎', cat: '购物·文化',
+-    dist: '4.1km', time: '2h', budget: '中等',
+-    tags: ['美食', '拍照', '购物'],
+-    img: 'https://picsum.photos/seed/zn5/400/300',
+-    reason: '西域文化与美食荟萃，拍照出片率高',
+-  },
+-]
+-
+-export const ROUTES = [
+-  {
+-    id: 1, no: 'R-01', title: '亲子半日游', tag: '亲子', color: '#FF6B35',
+-    duration: '半日', budget: '低', poi: 3,
+-    img: 'https://picsum.photos/seed/zr1/500/300',
+-    summary: '博物馆+本地餐饮+公园，全程室内/近距，孩子不累',
+-  },
+-  {
+-    id: 2, no: 'R-02', title: '柴窝堡钓鱼一日', tag: '钓鱼', color: '#3E5C3A',
+-    duration: '一日', budget: '中', poi: 3,
+-    img: 'https://picsum.photos/seed/zr2/500/300',
+-    summary: '清晨出发→水库下竿→中午岸边野餐→傍晚返程',
+-  },
+-  {
+-    id: 3, no: 'R-03', title: '情侣夜游线', tag: '情侣', color: '#EC4B85',
+-    duration: '夜晚', budget: '中', poi: 4,
+-    img: 'https://picsum.photos/seed/zr3/500/300',
+-    summary: '红山夜景→大巴扎晚餐→咖啡店',
+-  },
+-  {
+-    id: 4, no: 'R-04', title: '低预算 Citywalk', tag: 'Citywalk', color: '#4FD1C5',
+-    duration: '一日', budget: '免费', poi: 5,
+-    img: 'https://picsum.photos/seed/zr4/500/300',
+-    summary: '公园+老街+二道桥，全程公交可达',
+-  },
+-]
+-
+-export const GEAR_LIST = [
+-  '钓竿×2', '鱼饵(蚯蚓/玉米)', '折叠椅', '遮阳帽', '防虫液', '保温水壶', '垃圾袋',
+-]
+-
+-// 场景对应的路线与 POI（按场景 id 过滤）
+-export const SCENE_ROUTES = {
+-  fish:   [ROUTES[1]],
+-  family: [ROUTES[0]],
+-  couple: [ROUTES[2]],
+-  walk:   [ROUTES[3]],
+-  budget: [ROUTES[3]],
+-  rainy:  [ROUTES[0]],
+-  photo:  [ROUTES[2]],
+-  night:  [ROUTES[2]],
+-  old:    [ROUTES[0]],
+-}
+-
+-export const SCENE_POIS = {
+-  fish:   [NEARBY[2]],
+-  family: [NEARBY[0], NEARBY[3]],
+-  couple: [NEARBY[1], NEARBY[4]],
+-  walk:   [NEARBY[1], NEARBY[3]],
+-  budget: [NEARBY[0], NEARBY[1], NEARBY[3]],
+-  rainy:  [NEARBY[0], NEARBY[4]],
+-  photo:  [NEARBY[1], NEARBY[4]],
+-  night:  [NEARBY[4], NEARBY[1]],
+-  old:    [NEARBY[0], NEARBY[3]],
++// 拼 query string，自动跳过 null/undefined/'' 并做 URL 编码
++function q(params) {
++  const parts = []
++  for (const k in params) {
++    const v = params[k]
++    if (v == null || v === '') continue
++    parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
++  }
++  return parts.length ? '?' + parts.join('&') : ''
+ }
+ 
+-export const PLAN_RESULT = {
+-  no: 'PLAN-2026-0521',
+-  title: '柴窝堡钓鱼一日方案',
+-  summary: '根据天气与水况，今日为本周最佳钓鱼日。清晨出发、黄金时段下竿、傍晚返程。',
+-  totalBudget: '人均 80-180 元',
+-  totalTime: '约 9 小时',
+-  people: '2 人',
+-  weather: '☀️ 22° 晴',
+-  stops: [
+-    {
+-      idx: 1, name: '柴窝堡水库（南岸）', cat: '水域·钓点', arrive: '07:00',
+-      stay: '4小时', budget: '入场 0 元',
+-      reason: '南岸早间日影适宜，水温较低，鲫鱼活跃',
+-      tip: '风向决定坐向，建议背风。蚊虫多需防虫液',
+-      transport: '自驾·约90分钟',
+-    },
+-    {
+-      idx: 2, name: '岸边野餐区', cat: '休整', arrive: '11:30',
+-      stay: '1小时', budget: '30-50 元',
+-      reason: '风向背阴处搭折叠桌椅，避开正午阳光',
+-      tip: '垃圾必须带走，严禁明火炊事',
+-      transport: '步行 200 m',
+-    },
+-    {
+-      idx: 3, name: '达坂城风电场观景', cat: '风景·返程', arrive: '15:00',
+-      stay: '1小时', budget: '免费',
+-      reason: '回程顺路，巨型风车阵列拍照震撼',
+-      tip: '路边停车注意车流；强风时段注意防风',
+-      transport: '自驾·40分钟',
+-    },
+-  ],
+-  gearList: ['钓竿×2', '鱼饵(蚯蚓/玉米)', '折叠椅', '遮阳帽', '防虫液', '保温水壶', '垃圾袋'],
+-  backup: '若清晨刮 4 级以上大风，改为水磨沟公园+室内活动。如水位变化无鱼讯，转点至下游小水库。',
+-  disclaimer: '营业、水位、限钓信息以官方/管理处实时通告为准，本攻略仅供参考。',
+-  sources: [
+-    { kind: '地图',     t: '柴窝堡 POI · 路线' },
+-    { kind: '知识库',   t: '钓鱼模板 R-02 · 已审核' },
+-    { kind: '天气',     t: '实时气象 API' },
+-    { kind: 'WebSearch', t: '今日限钓公告' },
+-  ],
+-}
+-
+-function query(params = {}) {
+-  const parts = Object.entries(params)
+-    .filter(([, val]) => val !== undefined && val !== null && val !== '')
+-    .map(([key, val]) => `${encodeURIComponent(key)}=${encodeURIComponent(val)}`)
+-  return parts.length ? `?${parts.join('&')}` : ''
+-}
+-
+-// API 函数 — 纯真实后端调用，不做 mock 回退
+ export const api = {
++  // ─── 目录（天气 / 场景 / POI / 路线）─────────────
+   getWeather: (city) =>
+-    request(`/api/weather${query({ city })}`),
+-  getLocationCity: (lat, lng) =>
+-    request(`/api/geo/city${query({ lat, lng })}`),
+-  getNearby: (city, lat, lng) =>
+-    request(`/api/poi/list${query({ city, lat, lng })}`),
+-  getRoutes: (city) =>
+-    request(`/api/route/recommend${query({ city })}`),
++    request('/api/weather' + q({ city })),
+   getScenes: () =>
+     request('/api/scene/list'),
+-  getSceneRoutes: (sceneId, city) =>
+-    request(`/api/route/recommend${query({ scene: sceneId, city })}`),
++  getNearby: (lat, lng, city) =>
++    request('/api/poi/list' + q({ lat, lng, city })),
+   getScenePois: (sceneId, city, lat, lng) =>
+-    request(`/api/poi/list${query({ scene: sceneId, city, lat, lng })}`),
++    request('/api/poi/list' + q({ scene: sceneId, city, lat, lng })),
+   getPoiDetail: (id, lat, lng) =>
+-    request(`/api/poi/detail${query({ id, lat, lng })}`),
+-  getRoutePlan: (id, city) =>
+-    request(`/api/route/plan${query({ id, city })}`),
++    request('/api/poi/detail' + q({ id, lat, lng })),
++  getRoutes: (city, scene) =>
++    request('/api/route/recommend' + q({ city, scene })),
++  getSceneRoutes: (sceneId, city) =>
++    request('/api/route/recommend' + q({ scene: sceneId, city })),
++  getGearList: (sceneId) =>
++    request('/api/gear/list' + q({ scene: sceneId })),
++  getCities: () =>
++    request('/api/city/list'),
++  geoCity: (lat, lng) =>
++    request('/api/geo/city' + q({ lat, lng })),
++
++  // ─── 攻略生成 / 复读 ───────────────────────────
+   generateTrip: (payload) =>
+     request('/api/trip/generate', { method: 'POST', data: payload }),
++  getPlan: (no) =>
++    request('/api/trip/plan' + q({ no })),
++
++  // ─── 出游助手 ──────────────────────────────────
+   ask: (question, city) =>
+     request('/api/kb/ask', { method: 'POST', data: { question, city } }),
++
++  // ─── 反馈 ──────────────────────────────────────
+   sendFeedback: (payload) =>
+     request('/api/feedback', { method: 'POST', data: payload }),
++  getFeedbackList: () =>
++    request('/api/feedback/list'),
++
++  // ─── 系统能力开关 ──────────────────────────────
++  getCapability: () =>
++    request('/api/capability'),
+ }
+diff --git a/src/api/request.js b/src/api/request.js
+index 292e12f..d30cf0c 100644
+--- a/src/api/request.js
++++ b/src/api/request.js
+@@ -1,11 +1,47 @@
+-// 后端接口请求封装
++// 后端接口请求封装 —— BASE_URL 按平台 + 环境读取
++//
++// 优先级（高到低）：
++//   1. import.meta.env.VITE_API_BASE         (Vite，H5 + 小程序 Vite 模式)
++//   2. process.env.VUE_APP_API_BASE          (兼容 vue-cli 模式)
++//   3. 空字符串 ''                            (H5 dev 走 vite.config.js 代理)
++//
++// fail-fast：在小程序运行时 BASE_URL 为空（小程序不支持相对 URL）→ 抛错。
+ 
+-export const BASE_URL = 'https://tr.magies.top/zhoumi-api'
++function readEnvBase() {
++  try {
++    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE != null) {
++      return String(import.meta.env.VITE_API_BASE).replace(/\/+$/, '')
++    }
++  } catch (_) {}
++  try {
++    if (typeof process !== 'undefined' && process.env && process.env.VUE_APP_API_BASE != null) {
++      return String(process.env.VUE_APP_API_BASE).replace(/\/+$/, '')
++    }
++  } catch (_) {}
++  return ''
++}
++
++export const BASE_URL = readEnvBase()
++
++// 小程序场景下 BASE_URL 空 = 配置缺失（小程序没有"相对路径走代理"能力）
++// #ifdef MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ
++if (!BASE_URL) {
++  console.error('[zhoumi] 小程序构建必须配置 VITE_API_BASE，否则所有 API 都会失败')
++}
++// #endif
+ 
+ export function request(path, { method = 'GET', data, header } = {}) {
+   return new Promise((resolve, reject) => {
++    const isAbs = /^https?:\/\//i.test(path)
++    if (!isAbs && !BASE_URL) {
++      // #ifdef MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ
++      reject(new Error('API_BASE_NOT_CONFIGURED'))
++      return
++      // #endif
++      // H5 dev：空 BASE_URL 表示走 vite.config.js 的 proxy，相对路径直接发即可
++    }
+     uni.request({
+-      url: BASE_URL + path,
++      url: isAbs ? path : (BASE_URL + path),
+       method,
+       data,
+       timeout: 20000,
+diff --git a/src/api/storage.js b/src/api/storage.js
+index 620ced6..db550d6 100644
+--- a/src/api/storage.js
++++ b/src/api/storage.js
+@@ -1,55 +1,59 @@
+ // 本地持久化工具 — 无需用户系统，数据存设备
++// 四类数据：生成方案历史 / 收藏 POI / 足迹地点 / 收藏方案
+ 
+-const KEY_PLANS      = 'zhoumi_plan_history'
+-const KEY_POIS       = 'zhoumi_saved_pois'
+-const KEY_VISITED    = 'zhoumi_visited_pois'   // 存完整 POI 摘要对象
+-const KEY_FEEDBACKS  = 'zhoumi_feedbacks'
+-const KEY_CITY       = 'zhoumi_city'
+-const KEY_PENDING_SCENE = 'zhoumi_pending_scene'
++const KEY_PLANS       = 'zhoumi_plan_history'
++const KEY_POIS        = 'zhoumi_saved_pois'
++const KEY_VISITED     = 'zhoumi_visited_pois'   // 升级：从 id[] → POI[]
++const KEY_SAVED_PLANS = 'zhoumi_saved_plans_fav'
+ 
+ function get(key) {
+-  try { return uni.getStorageSync(key) || [] } catch (_) { return [] }
++  try { return uni.getStorageSync(key) || [] } catch (e) {
++    console.warn(`[storage] get ${key} failed`, e)
++    return []
++  }
+ }
+ function set(key, val) {
+-  try { uni.setStorageSync(key, val) } catch (_) {}
++  try { uni.setStorageSync(key, val) } catch (e) {
++    console.warn(`[storage] set ${key} failed`, e)
++  }
+ }
+ 
+-// ── 方案历史（存完整方案对象，供结果页直接加载；最多保留 20 份）──────────
++// 方案历史（自动追加，不重复）
+ export function addPlanHistory(plan) {
+   const list = get(KEY_PLANS)
+   if (list.some(p => p.no === plan.no)) return
+-  list.unshift({ ...plan, createdAt: Date.now() })
+-  set(KEY_PLANS, list.slice(0, 20))
++  list.unshift({ no: plan.no, title: plan.title, summary: plan.summary,
++    totalTime: plan.totalTime, totalBudget: plan.totalBudget, createdAt: Date.now() })
++  set(KEY_PLANS, list.slice(0, 50))
+ }
+ export function getPlanHistory() { return get(KEY_PLANS) }
+-export function removePlanHistory(no) {
+-  const list = get(KEY_PLANS).filter(p => p.no !== no)
+-  set(KEY_PLANS, list)
+-}
+ 
+-// ── 收藏 POI ──────────────────────────────────────────────────────────────
++// 收藏 POI
+ export function toggleSavedPoi(poi) {
+   const list = get(KEY_POIS)
+   const idx  = list.findIndex(p => p.id === poi.id)
+   if (idx >= 0) { list.splice(idx, 1) } else { list.unshift(poi) }
+   set(KEY_POIS, list)
+-  return idx < 0
++  return idx < 0  // true = 已收藏
+ }
+ export function isSavedPoi(id) { return get(KEY_POIS).some(p => p.id === id) }
+ export function getSavedPois() { return get(KEY_POIS) }
+ 
+-// ── 足迹（存 POI 摘要 + 访问时间）────────────────────────────────────────
++// 足迹（存完整 POI 对象，便于足迹页渲染；按 id 去重）
+ export function trackVisit(poi) {
++  if (!poi || poi.id == null) return
+   const list = get(KEY_VISITED)
+   if (list.some(p => p.id === poi.id)) return
+-  list.unshift({ id: poi.id, name: poi.name, cat: poi.cat, img: poi.img || '', visitedAt: Date.now() })
+-  set(KEY_VISITED, list.slice(0, 100))
++  list.unshift({
++    id: poi.id, no: poi.no, name: poi.name, cat: poi.cat,
++    img: poi.img, dist: poi.dist, visitedAt: Date.now(),
++  })
++  set(KEY_VISITED, list.slice(0, 200))
+ }
+-export function getVisited()      { return get(KEY_VISITED) }
++export function getVisitedList()  { return get(KEY_VISITED) }
+ export function getVisitedCount() { return get(KEY_VISITED).length }
+ 
+-// ── 收藏方案（心形按钮手动操作）──────────────────────────────────────────
+-const KEY_SAVED_PLANS = 'zhoumi_saved_plans_fav'
++// 收藏方案（心形按钮手动操作，区别于自动追加的历史）
+ export function toggleSavedPlan(plan) {
+   const list = get(KEY_SAVED_PLANS)
+   const idx  = list.findIndex(p => p.no === plan.no)
+@@ -58,53 +62,13 @@ export function toggleSavedPlan(plan) {
+   return idx < 0
+ }
+ export function isSavedPlan(no) { return get(KEY_SAVED_PLANS).some(p => p.no === no) }
+-export function getSavedPlans()  { return get(KEY_SAVED_PLANS) }
+-
+-// ── 反馈历史 ──────────────────────────────────────────────────────────────
+-export function addFeedback(fb) {
+-  const list = get(KEY_FEEDBACKS)
+-  list.unshift({ ...fb, createdAt: Date.now() })
+-  set(KEY_FEEDBACKS, list.slice(0, 50))
+-}
+-export function getFeedbacks() { return get(KEY_FEEDBACKS) }
+-
+-// ── 城市 ──────────────────────────────────────────────────────────────────
+-export function getCity() {
+-  try { return uni.getStorageSync(KEY_CITY) || '乌鲁木齐' } catch (_) { return '乌鲁木齐' }
+-}
+-export function setCity(city) {
+-  try { uni.setStorageSync(KEY_CITY, city) } catch (_) {}
+-}
+-
+-// ── Tab 场景切换（switchTab 不支持参数，落地一次性 pending 值）────────────
+-export function setPendingScene(sceneId) {
+-  try { uni.setStorageSync(KEY_PENDING_SCENE, sceneId) } catch (_) {}
+-}
+-export function consumePendingScene() {
+-  try {
+-    const sceneId = uni.getStorageSync(KEY_PENDING_SCENE)
+-    if (sceneId) uni.removeStorageSync(KEY_PENDING_SCENE)
+-    return sceneId || ''
+-  } catch (_) {
+-    return ''
+-  }
+-}
+-
+-// ── 用户坐标（供 generate/chat 页使用真实位置）────────────────────────────
+-const KEY_COORDS = 'zhoumi_coords'
+-export function setCoords(lat, lng) {
+-  try { uni.setStorageSync(KEY_COORDS, { lat, lng }) } catch (_) {}
+-}
+-export function getCoords() {
+-  try { return uni.getStorageSync(KEY_COORDS) || null } catch (_) { return null }
+-}
++export function getSavedPlans() { return get(KEY_SAVED_PLANS) }
+ 
+-// ── Profile 汇总 ──────────────────────────────────────────────────────────
++// Profile 汇总
+ export function getProfileStats() {
+   return {
+-    plans:    get(KEY_PLANS).length,
+-    saved:    get(KEY_POIS).length,
+-    visited:  get(KEY_VISITED).length,
+-    feedback: get(KEY_FEEDBACKS).length,
++    plans:   get(KEY_PLANS).length,
++    saved:   get(KEY_POIS).length,
++    visited: get(KEY_VISITED).length,
+   }
+ }
+diff --git a/src/components/ZSectionHeader.vue b/src/components/ZSectionHeader.vue
+index ccbd46a..ad224d5 100644
+--- a/src/components/ZSectionHeader.vue
++++ b/src/components/ZSectionHeader.vue
+@@ -62,7 +62,7 @@ defineEmits(['action'])
+ 
+ .sec-action {
+   font-size: 23rpx;
+-  color: #0D4F4A;
++  color: $z-primary;
+   font-weight: 600;
+ }
+ </style>
+diff --git a/src/components/ZTabBar.vue b/src/components/ZTabBar.vue
+index d854772..5bb3fe4 100644
+--- a/src/components/ZTabBar.vue
++++ b/src/components/ZTabBar.vue
+@@ -137,7 +137,7 @@ function onTap(item) {
+   width: 104rpx;
+   height: 104rpx;
+   border-radius: 52rpx;
+-  background: linear-gradient(135deg, #FF6B35 0%, #FF9558 100%);
++  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
+   box-shadow: 0 12rpx 36rpx rgba(255, 107, 53, 0.55);
+   margin-top: -28rpx;
+   display: flex;
+diff --git a/src/custom-tab-bar/index.vue b/src/custom-tab-bar/index.vue
+index aa7b901..98d7b79 100644
+--- a/src/custom-tab-bar/index.vue
++++ b/src/custom-tab-bar/index.vue
+@@ -92,7 +92,7 @@ function onTap(item) {
+   width: 104rpx;
+   height: 104rpx;
+   border-radius: 52rpx;
+-  background: linear-gradient(135deg, #FF6B35 0%, #FF9558 100%);
++  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
+   box-shadow: 0 12rpx 36rpx rgba(255, 107, 53, 0.55);
+   margin-top: -28rpx;
+   display: flex;
+@@ -112,16 +112,16 @@ function onTap(item) {
+ .tab-label {
+   font-size: 20rpx;
+   font-weight: 500;
+-  color: #8B9594;
++  color: $z-muted;
+   line-height: 1;
+ 
+   &.active {
+-    color: #0D4F4A;
++    color: $z-primary;
+     font-weight: 700;
+   }
+ 
+   &.center-label {
+-    color: #8B9594;
++    color: $z-muted;
+   }
+ }
+ </style>
+diff --git a/src/manifest.json b/src/manifest.json
+index bdc367d..0113ddb 100644
+--- a/src/manifest.json
++++ b/src/manifest.json
+@@ -6,9 +6,9 @@
+   "versionCode": "100",
+   "transformPx": false,
+   "mp-weixin": {
+-    "appid": "",
++    "appid": "wx6c5ee0ef66d258ad",
+     "setting": {
+-      "urlCheck": false,
++      "urlCheck": true,
+       "es6": true,
+       "enhance": true,
+       "postcss": true,
+@@ -17,12 +17,13 @@
+     "usingComponents": true,
+     "permission": {
+       "scope.userLocation": {
+-        "desc": "您的位置信息将用于推荐附近出游地点"
++        "desc": "用于推荐你当前位置附近的出游地点和路线；拒绝授权后可手动浏览推荐内容，但无法获得真正的附近推荐"
+       }
+     },
+     "requiredPrivateInfos": [
+       "getLocation"
+-    ]
++    ],
++    "__usePrivacyCheck__": true
+   },
+   "h5": {
+     "title": "周密出游",
+diff --git a/src/pages.json b/src/pages.json
+index 131dd75..ef0984f 100644
+--- a/src/pages.json
++++ b/src/pages.json
+@@ -53,6 +53,13 @@
+         "navigationBarTitleText": "地点详情"
+       }
+     },
++    {
++      "path": "pages/admin/admin",
++      "style": {
++        "navigationStyle": "custom",
++        "navigationBarTitleText": "知识库审核"
++      }
++    },
+     {
+       "path": "pages/saved/plans",
+       "style": {
+@@ -68,14 +75,14 @@
+       }
+     },
+     {
+-      "path": "pages/profile/footprint",
++      "path": "pages/saved/visited",
+       "style": {
+         "navigationStyle": "custom",
+         "navigationBarTitleText": "我的足迹"
+       }
+     },
+     {
+-      "path": "pages/profile/feedback",
++      "path": "pages/saved/feedback",
+       "style": {
+         "navigationStyle": "custom",
+         "navigationBarTitleText": "我的反馈"
+@@ -89,10 +96,11 @@
+     "backgroundColor": "#ffffff",
+     "borderStyle": "white",
+     "list": [
+-      { "pagePath": "pages/index/index",   "text": "首页" },
+-      { "pagePath": "pages/scenes/scenes", "text": "场景" },
+-      { "pagePath": "pages/assistant/chat","text": "助手" },
+-      { "pagePath": "pages/profile/profile","text": "我的" }
++      { "pagePath": "pages/index/index",      "text": "首页" },
++      { "pagePath": "pages/scenes/scenes",    "text": "场景" },
++      { "pagePath": "pages/generate/generate","text": "生成" },
++      { "pagePath": "pages/assistant/chat",   "text": "助手" },
++      { "pagePath": "pages/profile/profile",  "text": "我的" }
+     ]
+   },
+   "globalStyle": {
+diff --git a/src/pages/admin/admin.vue b/src/pages/admin/admin.vue
+index 080226c..a981878 100644
+--- a/src/pages/admin/admin.vue
++++ b/src/pages/admin/admin.vue
+@@ -96,7 +96,7 @@ async function review(id, status) {
+     })
+     list.value = list.value.filter(i => i.id !== id)
+     uni.showToast({ title: status === 'approved' ? '已通过' : '已处理', icon: 'success' })
+-  } catch (_) {
++  } catch {
+     uni.showToast({ title: '操作失败', icon: 'none' })
+   }
+ }
+@@ -152,7 +152,7 @@ function goBack() {
+ }
+ .btn-confirm {
+   background: $z-accent;
+-  color: #fff;
++  color: $z-card;
+   text-align: center;
+   padding: 24rpx;
+   border-radius: $radius-card;
+@@ -176,9 +176,9 @@ function goBack() {
+   margin-bottom: 16rpx;
+ }
+ .risk { padding: 4rpx 12rpx; border-radius: 8rpx; font-size: 20rpx; }
+-.risk-high { background: #FEE2E2; color: #DC2626; }
+-.risk-mid  { background: #FEF3C7; color: #D97706; }
+-.risk-low  { background: #D1FAE5; color: #059669; }
++.risk-high { background: $z-danger-bg; color: $z-danger; }
++.risk-mid  { background: $z-warning-bg; color: $z-warning; }
++.risk-low  { background: $z-success-bg; color: $z-success-d; }
+ .cat, .time { color: $z-muted; }
+ 
+ .question {
+@@ -212,8 +212,8 @@ function goBack() {
+ .btn {
+   flex: 1; text-align: center; padding: 16rpx 0;
+   border-radius: $radius-card; font-size: 26rpx;
+-  &.approve { background: $z-accent; color: #fff; }
+-  &.reject  { background: #FEE2E2; color: #DC2626; }
+-  &.update  { background: #F3F4F6; color: $z-text; }
++  &.approve { background: $z-accent; color: $z-card; }
++  &.reject  { background: $z-danger-bg; color: $z-danger; }
++  &.update  { background: $z-neutral-bg; color: $z-text; }
+ }
+ </style>
+diff --git a/src/pages/assistant/chat.vue b/src/pages/assistant/chat.vue
+index e77da15..d5a5f28 100644
+--- a/src/pages/assistant/chat.vue
++++ b/src/pages/assistant/chat.vue
+@@ -15,6 +15,7 @@
+     <scroll-view
+       scroll-y
+       class="msg-scroll"
++      :style="{ height: msgScrollH + 'px' }"
+       :scroll-top="scrollTop"
+       :show-scrollbar="false"
+     >
+@@ -52,28 +53,32 @@
+       </view>
+     </scroll-view>
+ 
+-    <!-- FAQ 快捷条 -->
+-    <scroll-view scroll-x class="faq-scroll" :show-scrollbar="false">
+-      <view class="faq-row">
+-        <view v-for="faq in faqs" :key="faq" class="faq-chip" @tap="sendMsg(faq)">{{ faq }}</view>
+-      </view>
+-    </scroll-view>
+-
+-    <!-- 输入区 -->
+-    <view class="input-bar" :style="{ paddingBottom: safeBottom, marginBottom: tabBarHeight }">
+-      <view class="input-wrap">
+-        <input
+-          class="msg-input"
+-          v-model="inputText"
+-          placeholder="问问附近适合去哪…"
+-          placeholder-style="color: #8B9594;"
+-          :adjust-position="true"
+-          @confirm="sendMsg(inputText)"
+-        />
+-        <view class="send-btn" :class="{ active: inputText.length > 0 }" @tap="sendMsg(inputText)">
+-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 26 26" fill="none">
+-            <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
+-          </svg>
++    <!-- 底部输入区（fixed 在 tab-bar 上方）-->
++    <view class="composer" :style="{ bottom: tabBarHeight + 'px' }">
++      <!-- FAQ 快捷条 -->
++      <scroll-view scroll-x class="faq-scroll" :show-scrollbar="false">
++        <view class="faq-row">
++          <view v-for="faq in faqs" :key="faq" class="faq-chip" @tap="sendMsg(faq)">{{ faq }}</view>
++        </view>
++      </scroll-view>
++
++      <!-- 输入区 -->
++      <view class="input-bar">
++        <view class="input-wrap">
++          <input
++            class="msg-input"
++            v-model="inputText"
++            placeholder="问问附近适合去哪…"
++            placeholder-style="color: #8B9594;"
++            :adjust-position="true"
++            confirm-type="send"
++            @confirm="sendMsg(inputText)"
++          />
++          <view class="send-btn" :class="{ active: inputText.length > 0 }" @tap="sendMsg(inputText)">
++            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 26 26" fill="none">
++              <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
++            </svg>
++          </view>
+         </view>
+       </view>
+     </view>
+@@ -83,58 +88,121 @@
+ </template>
+ 
+ <script setup>
+-import { ref, nextTick, onMounted } from 'vue'
++import { ref, nextTick, onMounted, watch } from 'vue'
+ import ZTabBar from '../../components/ZTabBar.vue'
+ import { api } from '../../api/mock.js'
+-import { getCity } from '../../api/storage.js'
++import { streamAsk } from '../../api/stream.js'
++import { useCityStore } from '../../store/city.js'
++
++const cityStore = useCityStore()
+ 
+ const statusBarHeight = ref(44)
+-const safeBottom      = ref('18px')
+-const tabBarHeight    = ref('80px')
++const tabBarHeight    = ref(80)        // ZTabBar 占用高度（含 safeArea）
++const msgScrollH      = ref(400)       // 消息滚动区显式高度，避免被遮挡
+ const scrollTop       = ref(0)
+ const inputText       = ref('')
+ const typing          = ref(false)
++const HISTORY_KEY     = 'zhoumi_assistant_messages'
+ 
+ const faqs = ['钓点限钓吗？', '需要钓鱼证吗？', '停车方便吗？', '下雨改去哪？', '适合带孩子吗？', '傍晚还能玩什么？']
+ 
+-const messages = ref([
++const defaultMessages = [
+   { role: 'bot', text: '你好👋 我是周密出游助手，可以帮你规划路线、查询地点、解决出游疑问。' },
+   { role: 'bot', chips: ['钓点限钓吗？', '需要钓鱼证吗？', '停车方便吗？', '下雨改去哪？'] },
+-])
++]
++
++function loadMessages() {
++  try {
++    const cached = uni.getStorageSync(HISTORY_KEY)
++    if (Array.isArray(cached) && cached.length) return cached
++  } catch (_) {}
++  return defaultMessages.map(item => ({ ...item }))
++}
++
++const messages = ref(loadMessages())
++
++watch(messages, (val) => {
++  try { uni.setStorageSync(HISTORY_KEY, val.slice(-80)) } catch (_) {}
++}, { deep: true })
+ 
+ onMounted(() => {
+   try {
+     const sys = uni.getSystemInfoSync()
+-    statusBarHeight.value = sys.statusBarHeight || 44
+-    safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
+-    tabBarHeight.value = (sys.safeAreaInsets?.bottom || 18) + 56 + 'px'
++    const statusH = sys.statusBarHeight || 44
++    const safeB   = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
++    const winH    = sys.windowHeight || (sys.screenHeight - statusH) || 600
++    statusBarHeight.value = statusH
++    // ZTabBar = paddingTop 12rpx(~6px) + icon 行 ~50px + paddingBottom safeArea
++    const tabH = safeB + 56
++    tabBarHeight.value = tabH
++    // header 实际高度：paddingTop(statusH) + 头像行 ~52 + paddingBottom 12 ≈ statusH + 64
++    const headerH = statusH + 64
++    // composer 高度：faq 行 ~50 + input 行 ~70 + 安全区
++    const composerH = 50 + 70 + safeB
++    msgScrollH.value = Math.max(200, winH - headerH - tabH - composerH)
+   } catch (_) {}
+ })
+ 
+ function sendMsg(text) {
+-  if (!text?.trim()) return
+-  messages.value.push({ role: 'user', text: text.trim() })
++  const q = text?.trim()
++  if (!q) return
++  messages.value.push({ role: 'user', text: q })
+   inputText.value = ''
+   typing.value = true
+-
+   scrollToBottom()
+ 
+-  api.ask(text.trim(), getCity())
+-    .then((res) => {
++  // 占位 bot 消息（流式期间逐字追加）
++  const botMsg = { role: 'bot', text: '', sources: null, chips: null }
++  let started = false
++
++  streamAsk({ question: q, city: cityStore.current }, {
++    onMeta: (m) => {
+       typing.value = false
+-      messages.value.push({
+-        role: 'bot',
+-        text: res.text,
+-        sources: res.sources,
+-        chips: res.chips,
+-      })
++      messages.value.push(botMsg)
++      botMsg.sources = m.sources
++      botMsg.chips = m.chips
++      started = true
+       scrollToBottom()
+-    })
+-    .catch(() => {
+-      typing.value = false
+-      messages.value.push({ role: 'bot', text: '网络异常，请稍后重试。' })
++    },
++    onText: (t) => {
++      // 命中知识库/缓存：一次性显示整段
++      botMsg.text = t
++      scrollToBottom()
++    },
++    onChunk: (t) => {
++      botMsg.text = (botMsg.text || '') + t
+       scrollToBottom()
+-    })
++    },
++    onDone: () => {
++      typing.value = false
++      if (!started) {
++        // 流没起来（meta 都没收到）→ 降级
++        fallbackNonStream(q)
++      }
++    },
++    onError: () => {
++      typing.value = false
++      if (!started) {
++        fallbackNonStream(q)
++      } else {
++        botMsg.text = (botMsg.text || '') + '\n[连接中断]'
++      }
++    },
++  })
++
++  function fallbackNonStream(q) {
++    api.ask(q, cityStore.current)
++      .then((res) => {
++        messages.value.push({
++          role: 'bot', text: res.text, sources: res.sources, chips: res.chips,
++        })
++        scrollToBottom()
++      })
++      .catch(() => {
++        messages.value.push({ role: 'bot', text: '网络异常，请稍后重试。' })
++        scrollToBottom()
++      })
++  }
+ }
+ 
+ function scrollToBottom() {
+@@ -146,9 +214,7 @@ function scrollToBottom() {
+ @import '../../uni.scss';
+ 
+ .page {
+-  height: 100vh;
+-  display: flex;
+-  flex-direction: column;
++  min-height: 100vh;
+   background: $z-bg;
+ }
+ 
+@@ -170,7 +236,7 @@ function scrollToBottom() {
+   width: 76rpx;
+   height: 76rpx;
+   border-radius: 38rpx;
+-  background: linear-gradient(135deg, #0D4F4A 0%, #2A8278 100%);
++  background: linear-gradient(135deg, $z-primary 0%, $z-primary-l 100%);
+   display: flex;
+   align-items: center;
+   justify-content: center;
+@@ -186,8 +252,8 @@ function scrollToBottom() {
+   width: 16rpx;
+   height: 16rpx;
+   border-radius: 8rpx;
+-  background: #22C55E;
+-  border: 2rpx solid #fff;
++  background: $z-success;
++  border: 2rpx solid $z-card;
+ }
+ 
+ .header-title {
+@@ -206,8 +272,7 @@ function scrollToBottom() {
+ }
+ 
+ .msg-scroll {
+-  flex: 1;
+-  overflow: hidden;
++  background: $z-bg;
+ }
+ 
+ .msg-list {
+@@ -231,7 +296,7 @@ function scrollToBottom() {
+   width: 60rpx;
+   height: 60rpx;
+   border-radius: 30rpx;
+-  background: linear-gradient(135deg, #0D4F4A 0%, #2A8278 100%);
++  background: linear-gradient(135deg, $z-primary 0%, $z-primary-l 100%);
+   display: flex;
+   align-items: center;
+   justify-content: center;
+@@ -262,8 +327,8 @@ function scrollToBottom() {
+   }
+ 
+   &.user {
+-    background: #0D4F4A;
+-    color: #fff;
++    background: $z-primary;
++    color: $z-card;
+     border-bottom-right-radius: 6rpx;
+   }
+ }
+@@ -306,7 +371,7 @@ function scrollToBottom() {
+   border: 1rpx solid rgba(13, 79, 74, 0.2);
+   border-radius: $radius-pill;
+   font-size: 23rpx;
+-  color: #0D4F4A;
++  color: $z-primary;
+   cursor: pointer;
+ }
+ 
+@@ -327,7 +392,7 @@ function scrollToBottom() {
+ 
+ .source-k {
+   font-size: 18rpx;
+-  color: #0D4F4A;
++  color: $z-primary;
+   font-weight: 700;
+   letter-spacing: 0.5rpx;
+ }
+@@ -337,11 +402,21 @@ function scrollToBottom() {
+   color: $z-muted;
+ }
+ 
++// Composer（FAQ + 输入栏一起 fixed 在 TabBar 上方）
++.composer {
++  position: fixed;
++  left: 0;
++  right: 0;
++  z-index: 1000;
++  background: $z-card;
++  border-top: 1rpx solid $z-border;
++  box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.05);
++}
++
+ // FAQ
+ .faq-scroll {
+-  flex-shrink: 0;
+   background: $z-card;
+-  border-top: 1rpx solid $z-line;
++  border-bottom: 1rpx solid $z-line;
+   padding: 12rpx 0;
+ }
+ 
+@@ -366,9 +441,7 @@ function scrollToBottom() {
+ // 输入区
+ .input-bar {
+   background: $z-card;
+-  border-top: 1rpx solid $z-border;
+-  padding: 16rpx 24rpx;
+-  flex-shrink: 0;
++  padding: 16rpx 24rpx 24rpx;
+ }
+ 
+ .input-wrap {
+@@ -400,7 +473,7 @@ function scrollToBottom() {
+   transition: background 0.2s;
+ 
+   &.active {
+-    background: #0D4F4A;
++    background: $z-primary;
+   }
+ }
+ </style>
+diff --git a/src/pages/generate/generate.vue b/src/pages/generate/generate.vue
+index 5f3b3fc..ef926b3 100644
+--- a/src/pages/generate/generate.vue
++++ b/src/pages/generate/generate.vue
+@@ -2,24 +2,9 @@
+   <view class="page">
+     <!-- Header -->
+     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
+-      <view class="header-top-row">
+-        <view class="back-btn" @tap="goBack">
+-          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
+-            <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#FF6B35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+-          </svg>
+-          <text class="back-text">返回</text>
+-        </view>
+-        <text class="header-mono mono">§ GENERATE</text>
+-      </view>
++      <text class="header-mono mono">§ GENERATE</text>
+       <text class="header-title serif">一键生成方案</text>
+-      <view class="city-row" @tap="onCityTap">
+-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none">
+-          <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" stroke="#8B9594" stroke-width="2"/>
+-          <circle cx="12" cy="9" r="3" stroke="#8B9594" stroke-width="2"/>
+-        </svg>
+-        <text class="city-name">{{ city }}</text>
+-        <text class="city-change mono">切换 ›</text>
+-      </view>
++      <text class="header-sub">告诉我你的偏好 · AI 帮你规划可执行路线</text>
+     </view>
+ 
+     <!-- 加载中态 -->
+@@ -107,7 +92,7 @@
+         <view class="summary-bar">
+           <text class="summary-mono mono">※ 我将基于以下条件规划</text>
+           <text class="summary-content">
+-            📍 {{ city }} · {{ form.time }} · {{ form.people }} · {{ form.budget }} · {{ form.transport }}
++            {{ form.time }} · {{ form.people }} · {{ form.budget }} · {{ form.transport }}
+             <text v-if="form.prefs.length" class="summary-prefs"> · {{ form.prefs.join(' / ') }}</text>
+           </text>
+         </view>
+@@ -124,29 +109,38 @@
+ <script setup>
+ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+ import { api } from '../../api/mock.js'
+-import { getCity, setCity, getCoords } from '../../api/storage.js'
++import { useCityStore } from '../../store/city.js'
++
++const cityStore = useCityStore()
++
++// 确保有坐标（用户没经过首页直接来 generate 的场景）
++async function ensureCoords() {
++  if (cityStore.coords?.lat != null) return
++  try {
++    const r = await new Promise((resolve) => {
++      uni.getLocation({ type: 'gcj02', success: resolve, fail: () => resolve({}) })
++    })
++    if (r.latitude != null && r.longitude != null) {
++      cityStore.setCoords(r.latitude, r.longitude)
++      try {
++        const g = await api.geoCity(r.latitude, r.longitude)
++        if (g?.city) cityStore.setFromLocation(g.city)
++      } catch (_) {}
++    }
++  } catch (_) {}
++}
+ 
+ const statusBarHeight = ref(44)
+-const city = ref(getCity())
++const capability = ref(null)  // 后端能力开关：决定显示哪些生成步骤
+ 
+-const CITY_LIST = ['乌鲁木齐', '喀什', '伊宁', '库尔勒', '阿克苏', '北京', '上海', '成都', '西安', '深圳']
+-
+-onMounted(() => {
+-  try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {}
+-  city.value = getCity()
++onMounted(async () => {
++  try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {
++    console.warn('getSystemInfoSync failed')
++  }
++  try { capability.value = await api.getCapability() } catch (e) {
++    console.warn('getCapability failed', e)
++  }
+ })
+-
+-function goBack() { uni.navigateBack() }
+-
+-function onCityTap() {
+-  uni.showActionSheet({
+-    itemList: CITY_LIST,
+-    success: (res) => {
+-      city.value = CITY_LIST[res.tapIndex]
+-      setCity(city.value)
+-    },
+-  })
+-}
+ const loading     = ref(false)
+ const progress    = ref(0)
+ const currentStep = ref(0)
+@@ -169,14 +163,17 @@ const questions = [
+   { no: 5, label: '其他偏好',   hint: '可多选',               key: 'prefs',     multi: true,  options: ['室内', '户外', '钓鱼', '自然', '拍照', '不太累', '美食', '带娃友好', '安静'] },
+ ]
+ 
+-const steps = [
+-  { k: '01', t: '解析你的需求' },
+-  { k: '02', t: '地图 API · 查询附近 POI' },
+-  { k: '03', t: '知识库检索 · 路线模板匹配' },
+-  { k: '04', t: 'WebSearch · 补充最新信息' },
+-  { k: '05', t: '本地 AI · 生成攻略草稿' },
+-  { k: '06', t: '质量校验 · 风险检查' },
+-]
++// 步骤根据后端 capability 动态生成，避免误导用户"已启用 AI"但其实是 stub
++const steps = computed(() => {
++  const c = capability.value || {}
++  const list = [{ k: '01', t: '解析你的需求' }]
++  if (c.map_amap !== false) list.push({ k: String(list.length + 1).padStart(2, '0'), t: '高德地图 · 查询附近 POI' })
++  list.push({ k: String(list.length + 1).padStart(2, '0'), t: '知识库检索 · 路线模板匹配' })
++  if (c.websearch) list.push({ k: String(list.length + 1).padStart(2, '0'), t: 'WebSearch · 补充最新信息' })
++  if (c.ai) list.push({ k: String(list.length + 1).padStart(2, '0'), t: 'AI · 生成攻略文案' })
++  list.push({ k: String(list.length + 1).padStart(2, '0'), t: '质量校验 · 风险检查' })
++  return list
++})
+ 
+ const etaSec = computed(() => Math.max(0, Math.ceil((100 - progress.value) / 22)))
+ 
+@@ -200,7 +197,8 @@ const SCENE_MAP = {
+   钓鱼: 'fish', 拍照: 'photo', 室内: 'rainy', 带娃友好: 'family', 美食: 'couple', 安静: 'walk',
+ }
+ 
+-function startGenerate() {
++async function startGenerate() {
++  await ensureCoords()
+   loading.value   = true
+   progress.value  = 0
+   currentStep.value = 0
+@@ -213,7 +211,6 @@ function startGenerate() {
+     ? [...form.value.prefs, customText.value.trim()]
+     : form.value.prefs
+   progressTimer = setInterval(() => {
+-    // 渐进减速：永远不会自己到 90%，等 API 返回才跳到 100
+     const remaining = 90 - progress.value
+     progress.value = Math.min(90, progress.value + remaining * 0.08 + Math.random() * 3)
+   }, 320)
+@@ -222,12 +219,10 @@ function startGenerate() {
+     if (currentStep.value < steps.length - 1) currentStep.value++
+   }, 720)
+ 
+-  let generateOk = false
+-  const coords = getCoords()
+   api.generateTrip({
+-    city: city.value,
+-    lat: coords?.lat ?? null,
+-    lng: coords?.lng ?? null,
++    city: cityStore.current,
++    lat: cityStore.coords?.lat ?? null,   // 真实坐标，后端用于附近知名景点筛选
++    lng: cityStore.coords?.lng ?? null,
+     time: form.value.time,
+     people_type: form.value.people,
+     budget: form.value.budget,
+@@ -235,28 +230,34 @@ function startGenerate() {
+     preferences,
+     scene,
+   }).then((plan) => {
++    // 响应结构校验：必须有 stops 数组且非空，必须有 no/title
++    if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0 || !plan.no || !plan.title) {
++      throw new Error('plan-invalid')
++    }
+     uni.setStorageSync('lastPlan', plan)
+-    generateOk = true
+-  }).catch(() => {
+-    uni.showToast({ title: '生成失败，请检查网络后重试', icon: 'none', duration: 2000 })
+-  }).finally(() => {
++    cleanupTimers()
++    progress.value    = 100
++    currentStep.value = steps.length - 1
++    setTimeout(() => {
++      // URL 携带 plan.no — 支持刷新、深链、换设备打开
++      uni.navigateTo({ url: `/pages/result/result?generated=1&no=${encodeURIComponent(plan.no)}` })
++      loading.value = false
++    }, 500)
++  }).catch((err) => {
++    cleanupTimers()
++    loading.value  = false
++    progress.value = 0
++    currentStep.value = 0
++    const msg = err?.message === 'plan-invalid' ? '生成结果不完整，请重试' : '生成失败，请检查网络后重试'
++    uni.showToast({ title: msg, icon: 'none', duration: 2000 })
++  })
++
++  function cleanupTimers() {
+     clearInterval(progressTimer)
+     clearInterval(stepTimer)
+     clearTimeout(slowTipTimer)
+     slowTip.value = false
+-    if (generateOk) {
+-      progress.value    = 100
+-      currentStep.value = steps.length - 1
+-      setTimeout(() => {
+-        uni.navigateTo({ url: '/pages/result/result?generated=1' })
+-        loading.value = false
+-      }, 500)
+-    } else {
+-      progress.value    = 0
+-      currentStep.value = 0
+-      loading.value     = false
+-    }
+-  })
++  }
+ }
+ 
+ // 离开时清理
+@@ -280,43 +281,13 @@ onUnmounted(() => {
+   padding: 0 32rpx 32rpx;
+ }
+ 
+-.header-top-row {
+-  display: flex;
+-  align-items: center;
+-  gap: 16rpx;
+-  padding-top: 16rpx;
+-  margin-bottom: 12rpx;
+-}
+-
+-.city-row {
+-  display: flex;
+-  align-items: center;
+-  gap: 8rpx;
+-  margin-top: 10rpx;
+-  cursor: pointer;
+-}
+-.city-name  { font-size: 25rpx; color: $z-muted; }
+-.city-change { font-size: $font-mono; color: $z-accent; font-family: $mono; }
+-
+-.back-btn {
+-  display: flex;
+-  align-items: center;
+-  gap: 8rpx;
+-  padding: 8rpx 0;
+-  flex-shrink: 0;
+-  cursor: pointer;
+-}
+-
+-.back-text {
+-  font-size: 28rpx;
+-  color: $z-accent;
+-}
+-
+ .header-mono {
+   display: block;
+   font-size: 20rpx;
+   color: $z-muted;
+   letter-spacing: 3rpx;
++  margin-bottom: 8rpx;
++  padding-top: 16rpx;
+ }
+ 
+ .header-title {
+@@ -345,7 +316,7 @@ onUnmounted(() => {
+   width: 168rpx;
+   height: 168rpx;
+   border-radius: 84rpx;
+-  background: linear-gradient(135deg, #0D4F4A 0%, #2A8278 100%);
++  background: linear-gradient(135deg, $z-primary 0%, $z-primary-l 100%);
+   display: flex;
+   align-items: center;
+   justify-content: center;
+@@ -414,7 +385,7 @@ onUnmounted(() => {
+   background: $z-border;
+ 
+   &.done {
+-    background: #0D4F4A;
++    background: $z-primary;
+   }
+ 
+   &.doing {
+@@ -426,7 +397,7 @@ onUnmounted(() => {
+   width: 16rpx;
+   height: 16rpx;
+   border-radius: 8rpx;
+-  background: #FF6B35;
++  background: $z-accent;
+   animation: pulse 0.9s ease-in-out infinite;
+ }
+ 
+@@ -457,7 +428,7 @@ onUnmounted(() => {
+ .progress-bar-fill {
+   height: 10rpx;
+   border-radius: $radius-pill;
+-  background: linear-gradient(90deg, #0D4F4A 0%, #4FD1C5 100%);
++  background: linear-gradient(90deg, $z-primary 0%, $z-mint 100%);
+   transition: width 0.4s ease;
+ }
+ 
+@@ -497,7 +468,7 @@ onUnmounted(() => {
+ 
+ .q-no {
+   font-size: 20rpx;
+-  color: #FF6B35;
++  color: $z-accent;
+   font-weight: 700;
+   letter-spacing: 1rpx;
+ }
+@@ -522,7 +493,7 @@ onUnmounted(() => {
+ .form-chip {
+   padding: 12rpx 24rpx;
+   border-radius: $radius-pill;
+-  background: #fff;
++  background: $z-card;
+   color: $z-text;
+   font-size: 24rpx;
+   font-weight: 600;
+@@ -531,9 +502,9 @@ onUnmounted(() => {
+   transition: all 0.2s;
+ 
+   &.on {
+-    background: #0D4F4A;
+-    color: #fff;
+-    border-color: #0D4F4A;
++    background: $z-primary;
++    color: $z-card;
++    border-color: $z-primary;
+   }
+ }
+ 
+@@ -554,7 +525,7 @@ onUnmounted(() => {
+ 
+ .summary-bar {
+   background: rgba(13, 79, 74, 0.055);
+-  border-left: 6rpx solid #0D4F4A;
++  border-left: 6rpx solid $z-primary;
+   border-radius: 8rpx 22rpx 22rpx 8rpx;
+   padding: 20rpx 24rpx;
+ }
+@@ -574,12 +545,12 @@ onUnmounted(() => {
+ }
+ 
+ .summary-prefs {
+-  color: #0D4F4A;
++  color: $z-primary;
+   font-weight: 700;
+ }
+ 
+ .cta-btn {
+-  background: linear-gradient(135deg, #FF6B35 0%, #FF9558 100%);
++  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
+   box-shadow: 0 12rpx 36rpx rgba(255, 107, 53, 0.44);
+   border-radius: 22rpx;
+   height: 100rpx;
+@@ -590,7 +561,7 @@ onUnmounted(() => {
+ }
+ 
+ .cta-text {
+-  color: #fff;
++  color: $z-card;
+   font-size: 30rpx;
+   font-weight: 800;
+ }
+diff --git a/src/pages/index/index.vue b/src/pages/index/index.vue
+index f51d057..b6d0466 100644
+--- a/src/pages/index/index.vue
++++ b/src/pages/index/index.vue
+@@ -9,9 +9,10 @@
+             <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" stroke="#fff" stroke-width="2"/>
+             <circle cx="12" cy="9" r="3" stroke="#fff" stroke-width="2"/>
+           </svg>
+-          <text class="city-name">{{ city }}</text>
+-          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 9 9">
+-            <path d="M1 2.5l3.5 4 3.5-4" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round"/>
++          <text class="city-name">{{ cityStore.locating ? '定位中…' : city }}</text>
++          <!-- 刷新箭头：暗示"重新定位"而非"切换城市" -->
++          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none">
++            <path d="M3 12a9 9 0 0115.5-6.4M21 12a9 9 0 01-15.5 6.4M21 3v6h-6M3 21v-6h6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+           </svg>
+         </view>
+         <view v-if="weather" class="weather-pill">
+@@ -28,24 +29,6 @@
+       <text class="main-sub">{{ weather?.advice ?? '加载中…' }} · 已为你准备 {{ routes.length }} 条本地路线</text>
+     </view>
+ 
+-    <!-- ══ AI 输入卡（悬浮在 header 下方，scroll-view 外）══════ -->
+-    <view class="ai-card-wrap">
+-      <view class="ai-card" @tap="goGenerate">
+-        <view class="ai-icon">
+-          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 26 26" fill="none">
+-            <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
+-          </svg>
+-        </view>
+-        <view class="ai-content">
+-          <text class="ai-title serif">告诉我你的想法 · AI 帮你规划</text>
+-          <text class="ai-hint">例如：周末想去钓鱼，自驾 2 小时内</text>
+-        </view>
+-        <view class="ai-btn">
+-          <text class="ai-btn-text">开始</text>
+-        </view>
+-      </view>
+-    </view>
+-
+     <!-- 滚动区域（Tab Bar 高度留白） -->
+     <scroll-view
+       scroll-y
+@@ -53,6 +36,24 @@
+       :style="{ paddingBottom: tabBarHeight }"
+       :show-scrollbar="false"
+     >
++      <!-- ══ AI 输入卡（悬浮 -18px）════════════════════════════ -->
++      <view class="ai-card-wrap">
++        <view class="ai-card" @tap="goGenerate">
++          <view class="ai-icon">
++            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 26 26" fill="none">
++              <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
++            </svg>
++          </view>
++          <view class="ai-content">
++            <text class="ai-title serif">告诉我你的想法 · AI 帮你规划</text>
++            <text class="ai-hint">例如：周末想去钓鱼，自驾 2 小时内</text>
++          </view>
++          <view class="ai-btn">
++            <text class="ai-btn-text">开始</text>
++          </view>
++        </view>
++      </view>
++
+       <!-- ══ §01 按场景索引（9 宫格）═══════════════════════════ -->
+       <view class="section">
+         <z-section-header
+@@ -105,7 +106,7 @@
+           >
+             <!-- 缩略图 -->
+             <view class="poi-img-wrap">
+-              <image :src="poi.img || poiFallbackImg(poi)" class="poi-img" mode="aspectFill" lazy-load @error="onImgError($event, poi)" />
++              <image :src="poi.img" class="poi-img" mode="aspectFill" lazy-load />
+               <view class="poi-dist-badge">
+                 <text>📍 {{ poi.dist }}</text>
+               </view>
+@@ -154,7 +155,7 @@
+             >
+               <!-- 封面 -->
+               <view class="route-cover">
+-                <image :src="route.img || `https://picsum.photos/seed/zr${route.id}/500/300`" class="route-img" mode="aspectFill" lazy-load @error="route.img = `https://picsum.photos/seed/zr${route.id}/500/300`" />
++                <image :src="route.img" class="route-img" mode="aspectFill" lazy-load />
+                 <!-- R-01 编号 -->
+                 <view class="route-no-badge" :style="{ color: route.color }">
+                   <text class="mono">{{ route.no }}</text>
+@@ -193,17 +194,19 @@
+ </template>
+ 
+ <script setup>
+-import { ref, computed, onMounted } from 'vue'
++import { ref, computed, onMounted, onUnmounted } from 'vue'
+ import { api } from '../../api/mock.js'
+-import { getCity, setCity, setCoords, setPendingScene } from '../../api/storage.js'
+ import ZSectionHeader from '../../components/ZSectionHeader.vue'
+ import ZTag from '../../components/ZTag.vue'
+ import ZTabBar from '../../components/ZTabBar.vue'
++import { useCityStore } from '../../store/city.js'
++import { storeToRefs } from 'pinia'
++
++const cityStore = useCityStore()
++const { current: city } = storeToRefs(cityStore)
+ 
+ const statusBarHeight = ref(44)
+ const tabBarHeight = ref('80px')
+-
+-const city    = ref(getCity())
+ const weather = ref(null)
+ const scenes  = ref([])
+ const nearby  = ref([])
+@@ -219,19 +222,48 @@ const nearbyVisible = computed(() => {
+   ).slice(0, 3)
+ })
+ 
+-let cachedCoords = {}
++async function loadFeed() {
++  // 纯定位驱动：高德定位 → 反查城市 → 所有 API 走当前坐标 + 城市
++  cityStore.locating = true
++  let coords = {}
++  try {
++    coords = await new Promise((resolve) => {
++      uni.getLocation({ type: 'gcj02', success: resolve, fail: () => resolve({}) })
++    })
++  } catch (_) {}
++
++  const gotLocation = coords.latitude != null && coords.longitude != null
++  if (gotLocation) {
++    cityStore.locationDenied = false
++    cityStore.setCoords(coords.latitude, coords.longitude)
++    try {
++      const r = await api.geoCity(coords.latitude, coords.longitude)
++      if (r?.city) cityStore.setFromLocation(r.city)
++    } catch (_) {}
++  } else if (!cityStore.locationDenied) {
++    // 首次定位失败时温和提示一次（后端会用 city 中心兜底，所以不阻断功能）
++    cityStore.locationDenied = true
++    uni.showToast({
++      title: `未授权定位，将显示「${cityStore.current}」默认推荐；点击顶部城市可重试`,
++      icon: 'none',
++      duration: 3000,
++    })
++  }
++
++  const city = cityStore.current
++  cityStore.locating = false
+ 
+-async function loadData() {
+   try {
+-    const [w, n, r] = await Promise.all([
+-      api.getWeather(city.value),
+-      api.getNearby(city.value, cachedCoords.latitude, cachedCoords.longitude),
+-      api.getRoutes(city.value),
++    const [w, s, n, r] = await Promise.all([
++      api.getWeather(city),
++      api.getScenes(),
++      api.getNearby(coords.latitude, coords.longitude, city),
++      api.getRoutes(city),
+     ])
+     weather.value = w
++    scenes.value  = s
+     nearby.value  = n
+     routes.value  = r
+-    nearbyPage.value = 0
+   } catch (e) {
+     uni.showToast({ title: '数据加载失败，请检查网络', icon: 'none' })
+   }
+@@ -244,62 +276,25 @@ onMounted(async () => {
+     const tabH = (sys.safeAreaInsets?.bottom || 18) + 56
+     tabBarHeight.value = tabH + 'px'
+   } catch (_) {}
+-
+-  try {
+-    scenes.value = await api.getScenes()
+-  } catch (_) {}
+-
+-  try {
+-    cachedCoords = await new Promise((resolve) => {
+-      uni.getLocation({ type: 'gcj02', success: resolve, fail: () => resolve({}) })
+-    })
+-  } catch (_) {}
+-
+-  if (cachedCoords.latitude && cachedCoords.longitude) {
+-    setCoords(cachedCoords.latitude, cachedCoords.longitude)
+-    // 逆地理编码自动识别城市
+-    try {
+-      const res = await api.getLocationCity(cachedCoords.latitude, cachedCoords.longitude)
+-      if (res.city && res.city !== city.value) {
+-        city.value = res.city
+-        setCity(res.city)
+-      }
+-    } catch (_) {}
+-  }
+-
+-  loadData()
++  await loadFeed()
++  uni.$on('cityChanged', loadFeed)
+ })
+ 
+-// 按场景 seed 生成稳定的占位图（picsum.photos 按 id 固定图）
+-function poiFallbackImg(poi) {
+-  return `https://picsum.photos/seed/poi${poi.id}/400/300`
+-}
+-
+-function onImgError(e, poi) {
+-  // 图片加载失败时换占位图，避免空白
+-  poi.img = `https://picsum.photos/seed/poi${poi.id}/400/300`
+-}
++onUnmounted(() => {
++  uni.$off('cityChanged', loadFeed)
++})
+ 
+ function refreshNearby() {
+   if (!nearby.value.length) return
+   nearbyPage.value = (nearbyPage.value + 1) % Math.ceil(nearby.value.length / 3)
+ }
+ 
+-const CITY_LIST = ['乌鲁木齐', '喀什', '伊宁', '库尔勒', '阿克苏', '北京', '上海', '成都', '西安', '深圳']
+-
+ function onCityTap() {
+-  uni.showActionSheet({
+-    itemList: CITY_LIST,
+-    success: (res) => {
+-      const selected = CITY_LIST[res.tapIndex]
+-      if (selected === city.value) return
+-      city.value = selected
+-      setCity(selected)
+-      weather.value = null
+-      nearby.value  = []
+-      routes.value  = []
+-      loadData()
+-    },
++  // 城市完全由定位决定 — 点击 = 重新定位
++  uni.showLoading({ title: '重新定位中…' })
++  loadFeed().finally(() => {
++    uni.hideLoading()
++    uni.showToast({ title: `当前定位：${cityStore.current}`, icon: 'none' })
+   })
+ }
+ 
+@@ -308,21 +303,30 @@ function goGenerate() {
+ }
+ 
+ function goScene(sceneId) {
+-  setPendingScene(sceneId)
++  try { uni.setStorageSync('zhoumi_pending_scene', sceneId) } catch (_) {}
+   uni.switchTab({ url: '/pages/scenes/scenes' })
++  // 通过全局事件传递选中 scene（switchTab 不支持参数）
++  uni.$emit('switchScene', sceneId)
+ }
+ 
+ function goPoi(id) {
+   uni.navigateTo({ url: `/pages/poi/detail?id=${id}` })
+ }
+ 
++const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
++
+ async function goResult(route) {
+-  uni.showLoading({ title: '加载路线…', mask: true })
++  uni.showLoading({ title: '生成中…', mask: true })
+   try {
+-    const plan = await api.getRoutePlan(route.id, city.value)
++    const plan = await api.generateTrip({
++      city: cityStore.current, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
++    })
++    if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0) {
++      throw new Error('plan-invalid')
++    }
+     uni.setStorageSync('lastPlan', plan)
+     uni.hideLoading()
+-    uni.navigateTo({ url: '/pages/result/result?generated=1' })
++    uni.navigateTo({ url: `/pages/result/result?generated=1&no=${encodeURIComponent(plan.no)}` })
+   } catch (_) {
+     uni.hideLoading()
+     uni.switchTab({ url: '/pages/generate/generate' })
+@@ -336,8 +340,6 @@ async function goResult(route) {
+ .page {
+   min-height: 100vh;
+   background: $z-bg;
+-  display: flex;
+-  flex-direction: column;
+ }
+ 
+ .list-empty {
+@@ -370,7 +372,7 @@ async function goResult(route) {
+ }
+ 
+ .city-name {
+-  color: #fff;
++  color: $z-card;
+   font-size: 28rpx;
+   font-weight: 700;
+ }
+@@ -387,7 +389,7 @@ async function goResult(route) {
+ .weather-icon { font-size: 26rpx; }
+ 
+ .weather-text {
+-  color: #fff;
++  color: $z-card;
+   font-size: 24rpx;
+   font-weight: 600;
+ }
+@@ -402,7 +404,7 @@ async function goResult(route) {
+ 
+ .main-title {
+   display: block;
+-  color: #fff;
++  color: $z-card;
+   font-size: 48rpx;
+   font-weight: 900;
+   letter-spacing: 2rpx;
+@@ -415,17 +417,16 @@ async function goResult(route) {
+   font-size: 24rpx;
+ }
+ 
+-// ── AI 卡（header 外，flex 流中）────────────────────────────
+-.ai-card-wrap {
+-  margin: -36rpx 28rpx 8rpx;
++// ── 滚动区 ──────────────────────────────────────────────────
++.scroll-body {
+   position: relative;
+-  z-index: 3;
+-  flex-shrink: 0;
+ }
+ 
+-// ── 滚动区 ──────────────────────────────────────────────────
+-.scroll-body {
+-  flex: 1;
++// ── AI 输入卡 ───────────────────────────────────────────────
++.ai-card-wrap {
++  margin: -36rpx 28rpx 0;
++  position: relative;
++  z-index: 2;
+ }
+ 
+ .ai-card {
+@@ -443,7 +444,7 @@ async function goResult(route) {
+   width: 68rpx;
+   height: 68rpx;
+   border-radius: 34rpx;
+-  background: linear-gradient(135deg, #FF6B35 0%, #FF9558 100%);
++  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
+   display: flex;
+   align-items: center;
+   justify-content: center;
+@@ -477,7 +478,7 @@ async function goResult(route) {
+ }
+ 
+ .ai-btn-text {
+-  color: #fff;
++  color: $z-card;
+   font-size: 23rpx;
+   font-weight: 700;
+ }
+@@ -585,7 +586,7 @@ async function goResult(route) {
+   bottom: 8rpx;
+   left: 8rpx;
+   background: rgba(0, 0, 0, 0.55);
+-  color: #fff;
++  color: $z-card;
+   font-size: 18rpx;
+   padding: 3rpx 10rpx;
+   border-radius: $radius-pill;
+@@ -702,7 +703,7 @@ async function goResult(route) {
+   position: absolute;
+   bottom: 16rpx;
+   left: 22rpx;
+-  color: #fff;
++  color: $z-card;
+   font-size: 28rpx;
+   font-weight: 800;
+   text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.5);
+diff --git a/src/pages/poi/detail.vue b/src/pages/poi/detail.vue
+index 3b52d5d..b4f2c31 100644
+--- a/src/pages/poi/detail.vue
++++ b/src/pages/poi/detail.vue
+@@ -73,20 +73,19 @@
+ 
+ <script setup>
+ import { ref, computed, onMounted } from 'vue'
+-import { onLoad } from '@dcloudio/uni-app'
+ import { api } from '../../api/mock.js'
+-import { toggleSavedPoi, isSavedPoi, trackVisit, getCoords } from '../../api/storage.js'
++import { toggleSavedPoi, isSavedPoi, trackVisit } from '../../api/storage.js'
+ import ZSectionHeader from '../../components/ZSectionHeader.vue'
+ import ZTag from '../../components/ZTag.vue'
+ 
+ const safeBottom = ref('18px')
+ const saved      = ref(false)
+-const poiId      = ref(null)
+ 
+-onLoad((query = {}) => {
+-  const id = Number(query.id)
+-  poiId.value = Number.isFinite(id) && id > 0 ? id : null
+-})
++// 从路由参数获取 id
++const pages = getCurrentPages()
++const currentPage = pages[pages.length - 1]
++let poiId = 1
++try { poiId = Number(currentPage.$page?.fullPath?.match(/id=(\d+)/)?.[1]) || 1 } catch (_) {}
+ 
+ const poi = ref({
+   no: '', name: '', cat: '', dist: '', time: '', budget: '',
+@@ -120,16 +119,18 @@ onMounted(async () => {
+     safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
+   } catch (_) {}
+ 
+-  if (!poiId.value) {
+-    uni.showToast({ title: '缺少地点 ID', icon: 'none' })
+-    return
+-  }
+-
+   try {
+-    const coords = getCoords()
+-    poi.value = await api.getPoiDetail(poiId.value, coords?.lat, coords?.lng)
+-    trackVisit({ id: poi.value.id, name: poi.value.name, cat: poi.value.cat, img: poi.value.img })
+-    saved.value = isSavedPoi(poiId.value)
++    // 拿当前定位（如有）一起传给后端，方便计算距离
++    let coords = {}
++    try {
++      coords = await new Promise((res) => uni.getLocation({ type: 'gcj02', success: res, fail: () => res({}) }))
++    } catch (_) {}
++    poi.value = await api.getPoiDetail(poiId, coords.latitude, coords.longitude)
++    trackVisit({
++      id: poi.value.id ?? poiId, no: poi.value.no, name: poi.value.name,
++      cat: poi.value.cat, img: poi.value.img, dist: poi.value.dist,
++    })
++    saved.value = isSavedPoi(poiId)
+   } catch (_) {
+     uni.showToast({ title: '地点信息加载失败', icon: 'none' })
+   }
+@@ -395,8 +396,8 @@ function goNav() {
+   }
+ 
+   &.primary {
+-    background: linear-gradient(135deg, #0D4F4A 0%, #1A7A73 100%);
+-    color: #fff;
++    background: linear-gradient(135deg, $z-primary 0%, $z-primary-m 100%);
++    color: $z-card;
+     box-shadow: 0 6rpx 20rpx rgba(13, 79, 74, 0.33);
+   }
+ 
+diff --git a/src/pages/profile/profile.vue b/src/pages/profile/profile.vue
+index ce0a738..cd695a1 100644
+--- a/src/pages/profile/profile.vue
++++ b/src/pages/profile/profile.vue
+@@ -48,7 +48,7 @@
+       <view class="section">
+         <text class="menu-group-label mono">§ M2 · 设置</text>
+         <view class="menu-card">
+-          <view class="menu-item" v-for="(item, i) in menuSettings" :key="item.title">
++          <view class="menu-item" v-for="(item, i) in menuSettings" :key="item.title" @tap="onMenuSetting(i)">
+             <text class="menu-no mono">{{ String(i + 1).padStart(2, '0') }}</text>
+             <text class="menu-icon">{{ item.icon }}</text>
+             <view class="menu-text">
+@@ -60,6 +60,22 @@
+         </view>
+       </view>
+ 
++      <!-- §M3 管理 -->
++      <view class="section">
++        <text class="menu-group-label mono">§ M3 · 管理</text>
++        <view class="menu-card">
++          <view class="menu-item" @tap="goAdmin">
++            <text class="menu-no mono">01</text>
++            <text class="menu-icon">🛡️</text>
++            <view class="menu-text">
++              <text class="menu-title">知识库审核</text>
++              <text class="menu-sub">待审核 · 通过 · 拒绝</text>
++            </view>
++            <text class="menu-arrow">›</text>
++          </view>
++        </view>
++      </view>
++
+       <!-- 底部署名 -->
+       <view class="footer">
+         <text class="footer-mono mono">地图 API · Dify · 本地 AI · WebSearch</text>
+@@ -72,9 +88,15 @@
+ </template>
+ 
+ <script setup>
+-import { ref, onMounted } from 'vue'
++import { ref, onMounted, onUnmounted } from 'vue'
+ import ZTabBar from '../../components/ZTabBar.vue'
+ import { getProfileStats } from '../../api/storage.js'
++import { api } from '../../api/mock.js'
++import { useCityStore } from '../../store/city.js'
++import { storeToRefs } from 'pinia'
++
++const cityStore = useCityStore()
++const { current: currentCity } = storeToRefs(cityStore)
+ 
+ const statusBarHeight = ref(44)
+ const tabBarHeight    = ref('80px')
+@@ -87,13 +109,7 @@ const stats = ref([
+ const feedbackCount  = ref(0)
+ const exploredCount  = ref(0)
+ 
+-onMounted(() => {
+-  try {
+-    const sys = uni.getSystemInfoSync()
+-    statusBarHeight.value = sys.statusBarHeight || 44
+-    tabBarHeight.value = (sys.safeAreaInsets?.bottom || 18) + 56 + 'px'
+-  } catch (_) {}
+-
++async function refreshStats() {
+   const s = getProfileStats()
+   stats.value = [
+     { num: String(s.plans),   label: '已生成方案' },
+@@ -101,11 +117,34 @@ onMounted(() => {
+     { num: String(s.visited), label: '足迹地点' },
+   ]
+   exploredCount.value = s.visited
+-  feedbackCount.value = s.feedback
+   menuContent.value[0].sub = `${s.plans} 份已生成`
+   menuContent.value[1].sub = s.saved > 0 ? `${s.saved} 个已收藏` : '地点 · 路线'
+   menuContent.value[2].sub = `${s.visited} 个地点`
+-  menuContent.value[3].sub = s.feedback > 0 ? `${s.feedback} 条已贡献` : '帮助系统更懂你'
++
++  // 反馈数走真实 API；失败时显示占位但不打断页面
++  try {
++    const res = await api.getFeedbackList()
++    const arr = Array.isArray(res) ? res : (res?.items ?? [])
++    feedbackCount.value = arr.length
++  } catch (_) {
++    feedbackCount.value = 0
++  }
++  menuContent.value[3].sub = `${feedbackCount.value} 条已贡献`
++  menuSettings.value[0].sub = currentCity.value
++}
++
++onMounted(async () => {
++  try {
++    const sys = uni.getSystemInfoSync()
++    statusBarHeight.value = sys.statusBarHeight || 44
++    tabBarHeight.value = (sys.safeAreaInsets?.bottom || 18) + 56 + 'px'
++  } catch (_) {}
++  await refreshStats()
++  uni.$on('cityChanged', refreshStats)
++})
++
++onUnmounted(() => {
++  uni.$off('cityChanged', refreshStats)
+ })
+ 
+ const menuContent = ref([
+@@ -115,18 +154,79 @@ const menuContent = ref([
+   { icon: '💬', title: '我的反馈',  sub: '0 条已贡献' },
+ ])
+ 
+-const menuSettings = [
+-  { icon: '📍', title: '位置与城市',  sub: '乌鲁木齐' },
++const menuSettings = ref([
++  { icon: '📍', title: '位置与城市',  sub: currentCity.value },
+   { icon: '🔔', title: '通知设置',    sub: '' },
+   { icon: '🔒', title: '隐私与授权',  sub: '' },
+   { icon: 'ℹ️', title: '关于周密出游', sub: 'v1.0.0' },
+-]
++])
++
++function goAdmin() { uni.navigateTo({ url: '/pages/admin/admin' }) }
+ 
+ function onMenuContent(i) {
+   if (i === 0) uni.navigateTo({ url: '/pages/saved/plans' })
+   else if (i === 1) uni.navigateTo({ url: '/pages/saved/pois' })
+-  else if (i === 2) uni.navigateTo({ url: '/pages/profile/footprint' })
+-  else if (i === 3) uni.navigateTo({ url: '/pages/profile/feedback' })
++  else if (i === 2) uni.navigateTo({ url: '/pages/saved/visited' })
++  else if (i === 3) uni.navigateTo({ url: '/pages/saved/feedback' })
++}
++
++function onMenuSetting(i) {
++  if (i === 0) {
++    // 位置与城市 — 当前定位驱动，不可手动切换；显示提示
++    uni.showToast({ title: `当前定位：${currentCity.value}\n回首页点城市可刷新`, icon: 'none', duration: 2500 })
++  } else if (i === 1) {
++    // 通知设置 — 跳到微信设置页（小程序），H5 兜底提示
++    // #ifdef MP-WEIXIN
++    uni.openSetting({ success: (r) => {
++      const ok = r.authSetting?.['scope.userLocation']
++      uni.showToast({ title: ok ? '已开启定位授权' : '设置已打开', icon: 'none' })
++    }, fail: () => uni.showToast({ title: '请到「微信 → 设置 → 通知」开启', icon: 'none' }) })
++    // #endif
++    // #ifndef MP-WEIXIN
++    uni.showToast({ title: '请到系统设置开启通知权限', icon: 'none' })
++    // #endif
++  } else if (i === 2) {
++    // 隐私与授权 — 显示授权信息（位置/通知）
++    uni.showActionSheet({
++      itemList: ['查看当前授权状态', '清除本地数据', '隐私协议'],
++      success: ({ tapIndex }) => {
++        if (tapIndex === 0) {
++          uni.getSetting({ success: (r) => {
++            const a = r.authSetting || {}
++            const lines = [
++              `定位：${a['scope.userLocation'] ? '已允许' : '未授权'}`,
++            ]
++            uni.showModal({ title: '当前授权', content: lines.join('\n'), showCancel: false })
++          }})
++        } else if (tapIndex === 1) {
++          uni.showModal({
++            title: '清除本地数据',
++            content: '将清除你的收藏、足迹、攻略历史。该操作不可撤销。',
++            success: ({ confirm }) => {
++              if (confirm) {
++                try { uni.clearStorageSync() } catch (e) { console.warn('clearStorage failed', e) }
++                uni.showToast({ title: '已清除', icon: 'success' })
++                setTimeout(() => refreshStats(), 400)
++              }
++            },
++          })
++        } else if (tapIndex === 2) {
++          uni.showModal({
++            title: '隐私协议',
++            content: '本应用收集你的定位用于推荐附近出游地点，不会上传到第三方。完整协议详见运营方公示。',
++            showCancel: false,
++          })
++        }
++      },
++    })
++  } else if (i === 3) {
++    // 关于
++    uni.showModal({
++      title: '关于周密出游',
++      content: '版本 v1.0.0\n智能本地出游规划系统\n地图：高德 API\nAI：Dify Workflow\n反馈邮箱：support@magies.top',
++      showCancel: false,
++    })
++  }
+ }
+ </script>
+ 
+@@ -156,7 +256,7 @@ function onMenuContent(i) {
+   width: 124rpx;
+   height: 124rpx;
+   border-radius: 62rpx;
+-  background: linear-gradient(135deg, #FF6B35 0%, #FF9558 100%);
++  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
+   display: flex;
+   align-items: center;
+   justify-content: center;
+@@ -174,7 +274,7 @@ function onMenuContent(i) {
+ 
+ .nickname {
+   display: block;
+-  color: #fff;
++  color: $z-card;
+   font-size: 32rpx;
+   font-weight: 900;
+   margin-bottom: 8rpx;
+@@ -249,7 +349,7 @@ function onMenuContent(i) {
+ 
+ .contribute-btn {
+   font-size: 24rpx;
+-  color: #0D4F4A;
++  color: $z-primary;
+   font-weight: 600;
+ }
+ 
+diff --git a/src/pages/result/result.vue b/src/pages/result/result.vue
+index dabb85f..08edc3c 100644
+--- a/src/pages/result/result.vue
++++ b/src/pages/result/result.vue
+@@ -67,15 +67,27 @@
+               <path d="M 0 80 Q 100 50 200 85 T 360 75" stroke="#fff" stroke-width="13" fill="none"/>
+               <path d="M 0 80 Q 100 50 200 85 T 360 75" stroke="#CCD9D5" stroke-width="1.5" fill="none"/>
+               <path d="M 40 90 L 160 35 L 300 70" stroke="#FF6B35" stroke-width="2.5" stroke-dasharray="5 4" fill="none"/>
+-              <g v-for="(stop, i) in plan.stops.slice(0, 3)" :key="i">
+-                <circle :cx="[40,160,300][i]" :cy="[90,35,70][i]" r="11" fill="#fff" stroke="#FF6B35" stroke-width="2.2"/>
+-                <text :x="[40,160,300][i]" :y="[90,35,70][i]+4" text-anchor="middle" font-size="11" font-weight="700" fill="#FF6B35">{{ i+1 }}</text>
++              <g v-for="stop in miniMapStops" :key="stop.idx">
++                <circle :cx="stop.x" :cy="stop.y" r="11" fill="#fff" stroke="#FF6B35" stroke-width="2.2"/>
++                <text :x="stop.x" :y="stop.y + 4" text-anchor="middle" font-size="11" font-weight="700" fill="#FF6B35">{{ stop.idx }}</text>
+               </g>
+             </svg>
+           </view>
+         </view>
+       </view>
+ 
++      <!-- 数据源标签 -->
++      <view class="section">
++        <scroll-view scroll-x :show-scrollbar="false">
++          <view class="sources-row">
++            <view class="source-chip" v-for="s in plan.sources" :key="s.kind">
++              <text class="source-kind mono">[{{ s.kind }}]</text>
++              <text class="source-t">{{ s.t }}</text>
++            </view>
++          </view>
++        </scroll-view>
++      </view>
++
+       <!-- §ITN 路线时间线 -->
+       <view class="section">
+         <z-section-header no="ITN" title="详细路线" sub="行程时间线" />
+@@ -128,24 +140,34 @@
+           <text class="disclaimer-text">ℹ️ {{ plan.disclaimer }}</text>
+         </view>
+       </view>
++    </scroll-view>
+ 
+-      <!-- 数据源标签 -->
+-      <view class="section">
+-        <scroll-view scroll-x :show-scrollbar="false">
+-          <view class="sources-row">
+-            <view class="source-chip" v-for="s in plan.sources" :key="s.kind">
+-              <text class="source-kind mono">[{{ s.kind }}]</text>
+-              <text class="source-t">{{ s.t }}</text>
+-            </view>
++    <!-- 反馈输入弹层 -->
++    <view v-if="feedbackOpen" class="feedback-mask" @tap="closeFeedback">
++      <view class="feedback-card" @tap.stop>
++        <text class="feedback-title serif">💬 具体哪里不准确？</text>
++        <text class="feedback-sub">告诉我们问题，会进入审核队列改进知识库</text>
++        <textarea
++          class="feedback-textarea"
++          v-model="feedbackText"
++          placeholder="比如：第 2 站停车场已关闭 / 票价不对 / 路线太长…"
++          placeholder-style="color: #8B9594; font-size: 25rpx;"
++          :maxlength="500"
++          auto-height
++        />
++        <view class="feedback-actions">
++          <view class="feedback-btn cancel" @tap="closeFeedback">取消</view>
++          <view class="feedback-btn submit" :class="{ disabled: submitting }" @tap="submitFeedback">
++            {{ submitting ? '提交中…' : '提交' }}
+           </view>
+-        </scroll-view>
++        </view>
+       </view>
+-    </scroll-view>
++    </view>
+ 
+     <!-- 底部操作栏 -->
+     <view class="bottom-bar" :style="{ paddingBottom: safeBottom }">
+       <view class="bottom-btn outline" @tap="onFeedback(true)">👍 有用</view>
+-      <view class="bottom-btn outline" @tap="onFeedback(false)">💬 反馈</view>
++      <view class="bottom-btn outline" @tap="openFeedback">💬 反馈</view>
+       <view class="bottom-btn primary flex2" @tap="onStart">🧭 开始出发</view>
+     </view>
+     </template>
+@@ -155,7 +177,7 @@
+ <script setup>
+ import { ref, computed, onMounted } from 'vue'
+ import { api } from '../../api/mock.js'
+-import { addPlanHistory, toggleSavedPlan, isSavedPlan, addFeedback } from '../../api/storage.js'
++import { addPlanHistory, toggleSavedPlan, isSavedPlan } from '../../api/storage.js'
+ import ZSectionHeader from '../../components/ZSectionHeader.vue'
+ 
+ const statusBarHeight = ref(44)
+@@ -164,11 +186,16 @@ const saved           = ref(false)
+ 
+ const plan = ref(null)
+ 
++// 反馈表单
++const feedbackOpen = ref(false)
++const feedbackText = ref('')
++const submitting   = ref(false)
++
+ const pages = getCurrentPages()
+ const currentPage = pages[pages.length - 1]
+-const isGenerated = computed(() => {
+-  try { return !!currentPage.$page?.fullPath?.includes('generated=1') } catch (_) { return false }
+-})
++const fullPath = (() => { try { return currentPage.$page?.fullPath || '' } catch (_) { return '' } })()
++const isGenerated = computed(() => fullPath.includes('generated=1'))
++const planNoFromUrl = (() => { const m = fullPath.match(/[?&]no=([^&]+)/); return m ? decodeURIComponent(m[1]) : '' })()
+ 
+ const planMeta = computed(() => plan.value ? [
+   { icon: '⏱', val: plan.value.totalTime },
+@@ -176,6 +203,13 @@ const planMeta = computed(() => plan.value ? [
+   { icon: '👥', val: plan.value.people },
+   { icon: '🌤', val: plan.value.weather },
+ ] : [])
++const miniMapStops = computed(() => {
++  const points = [{ x: 40, y: 90 }, { x: 160, y: 35 }, { x: 300, y: 70 }]
++  return (plan.value?.stops || []).slice(0, points.length).map((stop, i) => ({
++    idx: stop.idx || i + 1,
++    ...points[i],
++  }))
++})
+ 
+ onMounted(async () => {
+   try {
+@@ -184,19 +218,34 @@ onMounted(async () => {
+     safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
+   } catch (_) {}
+ 
+-  // 读取生成页存入的真实攻略结果，无数据则返回上一页
+-  try {
+-    const cached = uni.getStorageSync('lastPlan')
+-    if (cached && cached.stops) {
+-      plan.value = cached
+-      addPlanHistory(cached)
+-      saved.value = isSavedPlan(cached.no)
+-    } else {
+-      uni.showToast({ title: '暂无攻略，请先生成', icon: 'none' })
+-      setTimeout(() => uni.navigateBack(), 1200)
+-    }
+-  } catch (_) {
+-    uni.navigateBack()
++  // 优先：URL 里的 plan_no → 后端拉取（支持刷新/深链/换设备）
++  // 兜底：lastPlan 本地缓存（用户上一次生成的方案，离线可看）
++  const isValid = (p) => p && p.no && p.title && Array.isArray(p.stops) && p.stops.length > 0
++
++  let loaded = null
++  if (planNoFromUrl) {
++    try {
++      const r = await api.getPlan(planNoFromUrl)
++      if (isValid(r)) loaded = r
++    } catch (_) {}
++  }
++  if (!loaded) {
++    try {
++      const cached = uni.getStorageSync('lastPlan')
++      if (isValid(cached) && (!planNoFromUrl || cached.no === planNoFromUrl)) {
++        loaded = cached
++      }
++    } catch (_) {}
++  }
++
++  if (loaded) {
++    plan.value = loaded
++    try { addPlanHistory(loaded) } catch (e) { console.warn('addPlanHistory failed', e) }
++    try { saved.value = isSavedPlan(loaded.no) } catch (e) { console.warn('isSavedPlan failed', e) }
++  } else {
++    console.warn('plan load failed: no URL param matched and no valid cache', { planNoFromUrl })
++    uni.showToast({ title: '攻略不存在或已过期，请重新生成', icon: 'none' })
++    setTimeout(() => uni.navigateBack(), 1500)
+   }
+ })
+ 
+@@ -216,11 +265,47 @@ function onNav(stop) {
+     uni.showToast({ title: '暂无坐标，无法导航', icon: 'none' })
+   }
+ }
+-function onFeedback(useful) {
+-  const fb = { target_type: 'plan', target_id: plan.value.no, useful }
+-  api.sendFeedback(fb).catch(() => {})
+-  addFeedback(fb)
+-  uni.showToast({ title: '感谢反馈', icon: 'success' })
++async function onFeedback(useful) {
++  if (!plan.value?.no) return
++  try {
++    const r = await api.sendFeedback({ target_type: 'plan', target_id: plan.value.no, useful })
++    uni.showToast({ title: r?.message || '感谢反馈', icon: 'success' })
++  } catch (e) {
++    uni.showToast({ title: '反馈失败，请稍后重试', icon: 'none' })
++  }
++}
++
++function openFeedback() {
++  if (!plan.value?.no) return
++  feedbackText.value = ''
++  feedbackOpen.value = true
++}
++
++function closeFeedback() {
++  if (submitting.value) return
++  feedbackOpen.value = false
++}
++
++async function submitFeedback() {
++  if (submitting.value) return
++  const comment = feedbackText.value.trim()
++  if (!comment) {
++    uni.showToast({ title: '请输入具体问题', icon: 'none' })
++    return
++  }
++  submitting.value = true
++  try {
++    const r = await api.sendFeedback({
++      target_type: 'plan', target_id: plan.value.no,
++      useful: false, comment,
++    })
++    uni.showToast({ title: r?.message || '已提交审核', icon: 'success' })
++    feedbackOpen.value = false
++  } catch (e) {
++    uni.showToast({ title: '提交失败，请稍后重试', icon: 'none' })
++  } finally {
++    submitting.value = false
++  }
+ }
+ function onStart() {
+   const first = plan.value?.stops?.[0]
+@@ -242,12 +327,46 @@ function onStart() {
+   flex-direction: column;
+ }
+ 
++// 反馈弹层
++.feedback-mask {
++  position: fixed; left: 0; right: 0; top: 0; bottom: 0;
++  background: rgba(0, 0, 0, 0.5);
++  z-index: 9999;
++  display: flex; align-items: center; justify-content: center;
++  padding: 32rpx;
++}
++.feedback-card {
++  width: 100%;
++  background: $z-card;
++  border-radius: $radius-card;
++  padding: 36rpx 32rpx;
++  box-shadow: 0 12rpx 48rpx rgba(0, 0, 0, 0.2);
++}
++.feedback-title { display: block; font-size: 34rpx; font-weight: 800; color: $z-text; margin-bottom: 8rpx; }
++.feedback-sub   { display: block; font-size: 23rpx; color: $z-muted; margin-bottom: 20rpx; }
++.feedback-textarea {
++  width: 100%; min-height: 180rpx; max-height: 320rpx;
++  background: $z-bg; border-radius: 16rpx;
++  padding: 20rpx 22rpx; font-size: 26rpx; color: $z-text;
++  box-sizing: border-box;
++}
++.feedback-actions { display: flex; gap: 18rpx; margin-top: 24rpx; }
++.feedback-btn {
++  flex: 1; height: 84rpx; border-radius: $radius-pill;
++  display: flex; align-items: center; justify-content: center;
++  font-size: 28rpx; font-weight: 700;
++  &.cancel { background: $z-bg; color: $z-text2; }
++  &.submit { background: $z-primary; color: $z-card;
++    &.disabled { opacity: 0.5; }
++  }
++}
++
+ .loading-state {
+   padding: 16rpx 32rpx;
+   background: $z-primary;
+   min-height: 100vh;
+ }
+-.back-btn-plain { color: #fff; font-size: 36rpx; padding: 8rpx; }
++.back-btn-plain { color: $z-card; font-size: 36rpx; padding: 8rpx; }
+ .loading-tip { display: block; color: rgba(255,255,255,0.6); font-family: $mono; font-size: $font-mono; margin-top: 40rpx; text-align: center; }
+ 
+ // Header
+@@ -307,13 +426,13 @@ function onStart() {
+   padding: 6rpx 18rpx;
+   margin-bottom: 10rpx;
+   font-size: 22rpx;
+-  color: #fff;
++  color: $z-card;
+   font-weight: 700;
+ }
+ 
+ .plan-title {
+   display: block;
+-  color: #fff;
++  color: $z-card;
+   font-size: 38rpx;
+   font-weight: 900;
+   margin-bottom: 10rpx;
+@@ -343,7 +462,7 @@ function onStart() {
+ }
+ 
+ .meta-icon { font-size: 22rpx; }
+-.meta-val  { font-size: 22rpx; color: #fff; font-weight: 600; }
++.meta-val  { font-size: 22rpx; color: $z-card; font-weight: 600; }
+ 
+ // 地图
+ .section { padding: 28rpx 32rpx 0; }
+@@ -399,7 +518,7 @@ function onStart() {
+ 
+ .source-kind {
+   font-size: 19rpx;
+-  color: #0D4F4A;
++  color: $z-primary;
+   font-weight: 700;
+ }
+ 
+@@ -435,7 +554,7 @@ function onStart() {
+   display: flex;
+   align-items: center;
+   justify-content: center;
+-  color: #fff;
++  color: $z-card;
+   font-size: 26rpx;
+   font-weight: 800;
+   flex-shrink: 0;
+@@ -444,7 +563,7 @@ function onStart() {
+ .timeline-line {
+   flex: 1;
+   width: 2rpx;
+-  background: linear-gradient(to bottom, $z-accent, rgba(255, 107, 53, 0.27));
++  background: linear-gradient(to bottom, $z-accent, $z-accent + '44');
+   margin: 8rpx 0;
+   min-height: 40rpx;
+ }
+@@ -498,7 +617,7 @@ function onStart() {
+   display: block;
+   font-size: 20rpx;
+   font-weight: 700;
+-  color: #0D4F4A;
++  color: $z-primary;
+   margin-bottom: 4rpx;
+ }
+ 
+@@ -520,7 +639,7 @@ function onStart() {
+   display: block;
+   font-size: 20rpx;
+   font-weight: 700;
+-  color: #B8860B;
++  color: $z-amber-d;
+   margin-bottom: 4rpx;
+ }
+ 
+@@ -544,7 +663,7 @@ function onStart() {
+ 
+ .nav-btn {
+   font-size: 24rpx;
+-  color: #0D4F4A;
++  color: $z-primary;
+   font-weight: 700;
+   cursor: pointer;
+ }
+@@ -614,8 +733,8 @@ function onStart() {
+   }
+ 
+   &.primary {
+-    background: linear-gradient(135deg, #0D4F4A 0%, #1A7A73 100%);
+-    color: #fff;
++    background: linear-gradient(135deg, $z-primary 0%, $z-primary-m 100%);
++    color: $z-card;
+     box-shadow: 0 6rpx 20rpx rgba(13, 79, 74, 0.33);
+   }
+ 
+diff --git a/src/pages/saved/plans.vue b/src/pages/saved/plans.vue
+index f1eb31a..9cd04ab 100644
+--- a/src/pages/saved/plans.vue
++++ b/src/pages/saved/plans.vue
+@@ -2,12 +2,7 @@
+   <view class="page">
+     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
+       <view class="header-inner">
+-        <view class="back-btn" @tap="goBack">
+-          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
+-            <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#FF6B35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+-          </svg>
+-          <text class="back-text">返回</text>
+-        </view>
++        <text class="back" @tap="goBack">←</text>
+         <text class="title serif">我的攻略</text>
+         <text class="count mono">{{ list.length }} 份</text>
+       </view>
+@@ -16,26 +11,16 @@
+     <scroll-view scroll-y class="list-scroll">
+       <view v-if="list.length === 0" class="empty mono">还没有生成过方案，去首页试试吧</view>
+ 
+-      <view v-for="item in list" :key="item.no" class="card">
+-        <view class="card-top" @tap="viewPlan(item)">
+-          <view class="card-meta">
+-            <text class="no mono">{{ item.no }}</text>
+-            <text class="date mono">{{ formatDate(item.createdAt) }}</text>
+-          </view>
+-          <text class="plan-title serif">{{ item.title }}</text>
+-          <text class="summary">{{ item.summary }}</text>
+-          <view class="pills">
+-            <text class="pill">⏱ {{ item.totalTime }}</text>
+-            <text class="pill">💰 {{ item.totalBudget }}</text>
+-          </view>
++      <view v-for="item in list" :key="item.no" class="card" @tap="viewPlan(item)">
++        <view class="card-meta">
++          <text class="no mono">{{ item.no }}</text>
++          <text class="date mono">{{ formatDate(item.createdAt) }}</text>
+         </view>
+-        <view class="card-footer">
+-          <view class="del-btn" @tap="deletePlan(item.no)">
+-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
+-              <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="#C0392B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+-            </svg>
+-            <text class="del-text">删除</text>
+-          </view>
++        <text class="plan-title serif">{{ item.title }}</text>
++        <text class="summary">{{ item.summary }}</text>
++        <view class="pills">
++          <text class="pill">⏱ {{ item.totalTime }}</text>
++          <text class="pill">💰 {{ item.totalBudget }}</text>
+         </view>
+       </view>
+     </scroll-view>
+@@ -44,7 +29,7 @@
+ 
+ <script setup>
+ import { ref, onMounted } from 'vue'
+-import { getPlanHistory, removePlanHistory } from '../../api/storage.js'
++import { getPlanHistory } from '../../api/storage.js'
+ 
+ const statusBarHeight = ref(44)
+ const list = ref([])
+@@ -58,21 +43,7 @@ function goBack() { uni.navigateBack() }
+ 
+ function viewPlan(item) {
+   uni.setStorageSync('lastPlan', item)
+-  uni.navigateTo({ url: '/pages/result/result' })
+-}
+-
+-function deletePlan(no) {
+-  uni.showModal({
+-    title: '删除攻略',
+-    content: '确定删除该方案吗？',
+-    confirmColor: '#C0392B',
+-    success: (res) => {
+-      if (res.confirm) {
+-        removePlanHistory(no)
+-        list.value = getPlanHistory()
+-      }
+-    },
+-  })
++  uni.navigateTo({ url: `/pages/result/result?no=${encodeURIComponent(item.no)}` })
+ }
+ 
+ function formatDate(ts) {
+@@ -93,15 +64,7 @@ function formatDate(ts) {
+   padding-bottom: 24rpx;
+   &-inner { display: flex; align-items: center; padding: 16rpx 32rpx 0; gap: 16rpx; }
+ }
+-
+-.back-btn {
+-  display: flex;
+-  align-items: center;
+-  gap: 8rpx;
+-  padding: 8rpx 4rpx;
+-}
+-.back-text { font-size: 28rpx; color: $z-accent; }
+-
++.back { font-size: 36rpx; color: $z-accent; padding: 8rpx; }
+ .title { font-size: 36rpx; font-family: $serif; color: $z-text; flex: 1; }
+ .count { font-size: $font-mono; color: $z-muted; font-family: $mono; }
+ 
+@@ -111,17 +74,9 @@ function formatDate(ts) {
+ .card {
+   background: $z-card;
+   border-radius: $radius-card;
++  padding: 28rpx;
+   margin-bottom: 20rpx;
+-  overflow: hidden;
+-}
+-.card-top { padding: 28rpx 28rpx 16rpx; }
+-.card-footer {
+-  border-top: 1rpx solid $z-border;
+-  padding: 16rpx 28rpx;
+-  display: flex;
+-  justify-content: flex-end;
+ }
+-
+ .card-meta { display: flex; justify-content: space-between; margin-bottom: 12rpx; }
+ .no { font-family: $mono; font-size: $font-mono; color: $z-accent; }
+ .date { font-family: $mono; font-size: $font-mono; color: $z-muted; }
+@@ -129,12 +84,4 @@ function formatDate(ts) {
+ .summary { display: block; font-size: $font-body; color: $z-text2; line-height: 1.5; margin-bottom: 16rpx; }
+ .pills { display: flex; gap: 12rpx; }
+ .pill { font-size: $font-xs; color: $z-muted; background: $z-bg; padding: 6rpx 16rpx; border-radius: $radius-tag; }
+-
+-.del-btn {
+-  display: flex;
+-  align-items: center;
+-  gap: 8rpx;
+-  padding: 6rpx 12rpx;
+-}
+-.del-text { font-size: 24rpx; color: #C0392B; }
+ </style>
+diff --git a/src/pages/scenes/scenes.vue b/src/pages/scenes/scenes.vue
+index da5d338..01951eb 100644
+--- a/src/pages/scenes/scenes.vue
++++ b/src/pages/scenes/scenes.vue
+@@ -46,8 +46,8 @@
+         </view>
+       </view>
+ 
+-      <!-- ── 钓鱼专属：装备清单 ─────────────────────────────────── -->
+-      <view v-if="isFish" class="section gear-section">
++      <!-- ── 装备清单（仅当后端返回非空时显示）─────────────────── -->
++      <view v-if="gearList.length" class="section gear-section">
+         <view class="gear-card">
+           <view class="gear-head">
+             <text class="gear-title serif">🎒 装备清单</text>
+@@ -164,54 +164,69 @@
+ 
+ <script setup>
+ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+-import { onShow } from '@dcloudio/uni-app'
+-import { GEAR_LIST, api } from '../../api/mock.js'
+-import { consumePendingScene, getCity, getCoords } from '../../api/storage.js'
++import { api } from '../../api/mock.js'
++import { useCityStore } from '../../store/city.js'
+ import ZSectionHeader from '../../components/ZSectionHeader.vue'
+ import ZTabBar from '../../components/ZTabBar.vue'
+ 
++const cityStore = useCityStore()
++
+ const statusBarHeight = ref(44)
+ const tabBarHeight    = ref('80px')
+ 
+ const scenes = ref([])
+ const active = ref('fish')  // 默认钓鱼
+ 
+-const SCENE_FALLBACK = { id: '', no: '--', label: '加载中', icon: '⏳', color: '#8B9594', desc: '' }
+-const currentScene = computed(() => scenes.value.find(s => s.id === active.value) || scenes.value[0] || SCENE_FALLBACK)
++const currentScene = computed(() => scenes.value.find(s => s.id === active.value) || scenes.value[0] || null)
+ const isFish       = computed(() => active.value === 'fish')
+-const gearList     = ref(GEAR_LIST)
++const gearList     = ref([])
+ 
+ const sceneRoutes  = ref([])
+ const scenePois    = ref([])
+ 
+ async function loadScene(id) {
++  // 先清空，避免切换场景时残留上一个场景的装备
++  gearList.value = []
++  const city = cityStore.current
++  // 优先用 store 缓存的坐标，缺失时不阻塞（后端用 city 中心兜底）
++  const lat = cityStore.coords?.lat ?? null
++  const lng = cityStore.coords?.lng ?? null
+   try {
+-    const coords = getCoords()
+     const [routes, pois] = await Promise.all([
+-      api.getSceneRoutes(id, getCity()),
+-      api.getScenePois(id, getCity(), coords?.lat, coords?.lng),
++      api.getSceneRoutes(id, city),
++      api.getScenePois(id, city, lat, lng),
+     ])
+     sceneRoutes.value = routes
+     scenePois.value   = pois
+   } catch (e) {
+     uni.showToast({ title: '场景数据加载失败', icon: 'none' })
+   }
++  try {
++    const gear = await api.getGearList(id)
++    gearList.value = Array.isArray(gear) ? gear : []
++  } catch (_) {
++    gearList.value = []
++  }
+ }
+ 
+-watch(active, loadScene)
+-
+-function applyPendingScene() {
+-  const sceneId = consumePendingScene()
+-  if (sceneId && sceneId !== active.value) {
+-    active.value = sceneId
+-    return true
+-  }
+-  return false
++// 没有缓存坐标时主动定位一次（用户没经过首页直接进 scenes 的场景）
++async function ensureLocation() {
++  if (cityStore.coords?.lat != null) return
++  try {
++    const r = await new Promise((resolve) => {
++      uni.getLocation({ type: 'gcj02', success: resolve, fail: () => resolve({}) })
++    })
++    if (r.latitude != null && r.longitude != null) {
++      cityStore.setCoords(r.latitude, r.longitude)
++      try {
++        const g = await api.geoCity(r.latitude, r.longitude)
++        if (g?.city) cityStore.setFromLocation(g.city)
++      } catch (_) {}
++    }
++  } catch (_) {}
+ }
+ 
+-onShow(() => {
+-  applyPendingScene()
+-})
++watch(active, loadScene)
+ 
+ onMounted(async () => {
+   try {
+@@ -221,35 +236,57 @@ onMounted(async () => {
+     tabBarHeight.value = tabH + 'px'
+   } catch (_) {}
+ 
++  // 拿到坐标后再加载场景数据，确保 POI 是当地真实景点
++  await ensureLocation()
+   try {
+     scenes.value = await api.getScenes()
+   } catch (e) {
+     uni.showToast({ title: '场景列表加载失败', icon: 'none' })
+   }
+-  const changed = applyPendingScene()
+-  if (!changed) loadScene(active.value)
++  let loadedByPendingScene = false
++  try {
++    const pendingScene = uni.getStorageSync('zhoumi_pending_scene')
++    if (pendingScene) {
++      if (pendingScene !== active.value) {
++        active.value = pendingScene
++        loadedByPendingScene = true
++      }
++      uni.removeStorageSync('zhoumi_pending_scene')
++    }
++  } catch (_) {}
++  if (!loadedByPendingScene) loadScene(active.value)
+ 
+   // 监听从首页传过来的场景切换事件
+   uni.$on('switchScene', (sceneId) => {
+     active.value = sceneId
+   })
++  // 城市切换时重新加载场景数据
++  uni.$on('cityChanged', () => loadScene(active.value))
+ })
+ 
+ onUnmounted(() => {
+   uni.$off('switchScene')
++  uni.$off('cityChanged')
+ })
+ 
+ function setActive(id) {
+   active.value = id
+ }
+ 
++const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
++
+ async function goResult(route) {
+-  uni.showLoading({ title: '加载路线…', mask: true })
++  uni.showLoading({ title: '生成中…', mask: true })
+   try {
+-    const plan = await api.getRoutePlan(route.id, getCity())
++    const plan = await api.generateTrip({
++      city: cityStore.current, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
++    })
++    if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0) {
++      throw new Error('plan-invalid')
++    }
+     uni.setStorageSync('lastPlan', plan)
+     uni.hideLoading()
+-    uni.navigateTo({ url: '/pages/result/result?generated=1' })
++    uni.navigateTo({ url: `/pages/result/result?generated=1&no=${encodeURIComponent(plan.no)}` })
+   } catch (_) {
+     uni.hideLoading()
+     uni.switchTab({ url: '/pages/generate/generate' })
+@@ -380,7 +417,7 @@ function goPoi(id) {
+ 
+ .hero-title {
+   display: block;
+-  color: #fff;
++  color: $z-card;
+   font-size: 38rpx;
+   font-weight: 900;
+   margin-bottom: 4rpx;
+@@ -502,10 +539,7 @@ function goPoi(id) {
+ 
+ .route-cover-mask {
+   position: absolute;
+-  top: 0;
+-  right: 0;
+-  bottom: 0;
+-  left: 0;
++  inset: 0;
+   background: linear-gradient(to top, rgba(13, 79, 74, 0.72), transparent 60%);
+ }
+ 
+@@ -532,7 +566,7 @@ function goPoi(id) {
+ 
+ .route-cover-title {
+   display: block;
+-  color: #fff;
++  color: $z-card;
+   font-size: 30rpx;
+   font-weight: 800;
+   margin-bottom: 6rpx;
+@@ -586,7 +620,7 @@ function goPoi(id) {
+   top: 10rpx;
+   left: 10rpx;
+   background: rgba(0, 0, 0, 0.6);
+-  color: #fff;
++  color: $z-card;
+   font-size: 18rpx;
+   padding: 3rpx 10rpx;
+   border-radius: 8rpx;
+@@ -598,7 +632,7 @@ function goPoi(id) {
+   top: 10rpx;
+   right: 10rpx;
+   background: rgba(0, 0, 0, 0.6);
+-  color: #fff;
++  color: $z-card;
+   font-size: 18rpx;
+   padding: 3rpx 10rpx;
+   border-radius: 8rpx;
+diff --git a/src/uni.scss b/src/uni.scss
+index 50f6d80..1b56084 100644
+--- a/src/uni.scss
++++ b/src/uni.scss
+@@ -3,9 +3,22 @@
+ // 主色调
+ $z-primary:   #0D4F4A;   // 墨青绿
+ $z-primary-d: #062E2B;   // 深墨青
++$z-primary-m: #1A7A73;   // 中墨青
++$z-primary-l: #2A8278;   // 亮墨青
+ $z-accent:    #FF6B35;   // 暖橙
++$z-accent-l:  #FF9558;   // 亮暖橙
+ $z-amber:     #F4B942;   // 琥珀
++$z-amber-d:   #B8860B;   // 深琥珀
+ $z-mint:      #4FD1C5;   // 薄荷
++$z-success:   #22C55E;   // 成功绿
++$z-success-d: #059669;   // 深成功绿
++$z-success-bg:#D1FAE5;   // 成功浅底
++$z-danger:    #DC2626;   // 危险红
++$z-danger-bg: #FEE2E2;   // 危险浅底
++$z-pink:      #C2185B;   // 拒绝/粉红
++$z-warning:   #D97706;   // 警示橙
++$z-warning-bg:#FEF3C7;   // 警示浅底
++$z-neutral-bg:#F3F4F6;   // 中性浅底
+ 
+ // 中性色
+ $z-bg:     #F5F1EB;   // 暖米白
+diff --git a/vite.config.js b/vite.config.js
+index e941867..cb9d028 100644
+--- a/vite.config.js
++++ b/vite.config.js
+@@ -1,15 +1,23 @@
+-import { defineConfig } from 'vite'
++// Vite 配置 — H5 dev 通过 proxy 访问后端，避免跨域 + 让 .env 决定 prod 后端
++import { defineConfig, loadEnv } from 'vite'
+ import uni from '@dcloudio/vite-plugin-uni'
+ 
+-export default defineConfig({
+-  plugins: [uni()],
+-  server: {
+-    port: 3000,
+-    proxy: {
+-      '/api': {
+-        target: 'http://localhost:8000',
+-        changeOrigin: true,
++export default defineConfig(({ mode }) => {
++  const env = loadEnv(mode, process.cwd(), '')
++  // dev 时让 /api 走代理到真实后端；prod 走 VITE_API_BASE 拼接绝对地址
++  const proxyTarget = env.VITE_DEV_PROXY || 'https://tr.magies.top/zhoumi-api'
++
++  return {
++    plugins: [uni()],
++    server: {
++      port: 3000,
++      proxy: {
++        '/api': {
++          target: proxyTarget,
++          changeOrigin: true,
++          // proxyTarget 已包含 /zhoumi-api 前缀，所以保留 /api/xxx 直接拼接 OK
++        },
+       },
+     },
+-  },
++  }
+ })

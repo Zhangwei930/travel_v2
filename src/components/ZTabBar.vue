@@ -137,7 +137,7 @@ function onTap(item) {
   width: 104rpx;
   height: 104rpx;
   border-radius: 52rpx;
-  background: linear-gradient(135deg, #FF6B35 0%, #FF9558 100%);
+  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
   box-shadow: 0 12rpx 36rpx rgba(255, 107, 53, 0.55);
   margin-top: -28rpx;
   display: flex;

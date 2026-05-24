@@ -62,7 +62,7 @@ defineEmits(['action'])
 
 .sec-action {
   font-size: 23rpx;
-  color: #0D4F4A;
+  color: $z-primary;
   font-weight: 600;
 }
 </style>

@@ -3,25 +3,25 @@
     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
       <view class="header-inner">
         <text class="back" @tap="goBack">←</text>
-        <text class="title serif">我的攻略</text>
-        <text class="count mono">{{ list.length }} 份</text>
+        <text class="title serif">我的足迹</text>
+        <text class="count mono">{{ list.length }} 个</text>
       </view>
     </view>
 
     <scroll-view scroll-y class="list-scroll">
-      <view v-if="list.length === 0" class="empty mono">还没有生成过方案，去首页试试吧</view>
+      <view v-if="list.length === 0" class="empty mono">还没有访问过任何地点，去地点详情页打卡吧</view>
 
-      <view v-for="item in list" :key="item.no" class="card" @tap="viewPlan(item)">
-        <view class="card-meta">
-          <text class="no mono">{{ item.no }}</text>
-          <text class="date mono">{{ formatDate(item.createdAt) }}</text>
+      <view v-for="item in list" :key="item.id" class="card" @tap="viewPoi(item.id)">
+        <image v-if="item.img" :src="item.img" class="thumb" mode="aspectFill" lazy-load />
+        <view class="card-info">
+          <view class="meta-row">
+            <text class="no mono">{{ item.no }}</text>
+            <text class="date mono">{{ formatDate(item.visitedAt) }}</text>
+          </view>
+          <text class="name serif">{{ item.name }}</text>
+          <text class="meta">{{ item.cat }} · {{ item.dist }}</text>
         </view>
-        <text class="plan-title serif">{{ item.title }}</text>
-        <text class="summary">{{ item.summary }}</text>
-        <view class="pills">
-          <text class="pill">⏱ {{ item.totalTime }}</text>
-          <text class="pill">💰 {{ item.totalBudget }}</text>
-        </view>
+        <text class="arrow">›</text>
       </view>
     </scroll-view>
   </view>
@@ -29,23 +29,18 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getPlanHistory } from '../../api/storage.js'
+import { getVisitedList } from '../../api/storage.js'
 
 const statusBarHeight = ref(44)
 const list = ref([])
 
 onMounted(() => {
   try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {}
-  list.value = getPlanHistory()
+  list.value = getVisitedList()
 })
 
 function goBack() { uni.navigateBack() }
-
-function viewPlan(item) {
-  uni.setStorageSync('lastPlan', item)
-  uni.navigateTo({ url: `/pages/result/result?no=${encodeURIComponent(item.no)}` })
-}
-
+function viewPoi(id) { uni.navigateTo({ url: `/pages/poi/detail?id=${id}` }) }
 function formatDate(ts) {
   if (!ts) return ''
   const d = new Date(ts)
@@ -72,16 +67,20 @@ function formatDate(ts) {
 .empty { color: $z-muted; font-family: $mono; font-size: $font-mono; text-align: center; margin-top: 80rpx; display: block; }
 
 .card {
+  display: flex;
+  align-items: center;
   background: $z-card;
   border-radius: $radius-card;
-  padding: 28rpx;
-  margin-bottom: 20rpx;
+  padding: 20rpx;
+  margin-bottom: 16rpx;
+  gap: 20rpx;
 }
-.card-meta { display: flex; justify-content: space-between; margin-bottom: 12rpx; }
-.no { font-family: $mono; font-size: $font-mono; color: $z-accent; }
+.thumb { width: 120rpx; height: 120rpx; border-radius: $radius-small; flex-shrink: 0; }
+.card-info { flex: 1; }
+.meta-row { display: flex; justify-content: space-between; margin-bottom: 6rpx; }
+.no { font-family: $mono; font-size: $font-mono; color: $z-muted; }
 .date { font-family: $mono; font-size: $font-mono; color: $z-muted; }
-.plan-title { display: block; font-family: $serif; font-size: 32rpx; color: $z-text; margin-bottom: 10rpx; }
-.summary { display: block; font-size: $font-body; color: $z-text2; line-height: 1.5; margin-bottom: 16rpx; }
-.pills { display: flex; gap: 12rpx; }
-.pill { font-size: $font-xs; color: $z-muted; background: $z-bg; padding: 6rpx 16rpx; border-radius: $radius-tag; }
+.name { display: block; font-family: $serif; font-size: 30rpx; color: $z-text; margin-bottom: 6rpx; }
+.meta { display: block; font-size: $font-sm; color: $z-text2; }
+.arrow { font-size: 36rpx; color: $z-muted; }
 </style>

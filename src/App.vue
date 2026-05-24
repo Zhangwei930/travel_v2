@@ -41,9 +41,9 @@ view, text, input, button, image, scroll-view {
 }
 
 .btn-accent {
-  background: linear-gradient(135deg, $z-accent 0%, #FF9558 100%);
+  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
   box-shadow: 0 12rpx 36rpx rgba(255, 107, 53, 0.44);
-  color: #fff;
+  color: $z-card;
   border-radius: $radius-btn;
   display: flex;
   align-items: center;
@@ -51,9 +51,9 @@ view, text, input, button, image, scroll-view {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, $z-primary 0%, #1A7A73 100%);
+  background: linear-gradient(135deg, $z-primary 0%, $z-primary-m 100%);
   box-shadow: 0 6rpx 20rpx rgba(13, 79, 74, 0.33);
-  color: #fff;
+  color: $z-card;
   border-radius: $radius-btn;
   display: flex;
   align-items: center;

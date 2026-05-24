@@ -9,9 +9,10 @@
             <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" stroke="#fff" stroke-width="2"/>
             <circle cx="12" cy="9" r="3" stroke="#fff" stroke-width="2"/>
           </svg>
-          <text class="city-name">{{ city }}</text>
-          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 9 9">
-            <path d="M1 2.5l3.5 4 3.5-4" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+          <text class="city-name">{{ cityStore.locating ? '定位中…' : city }}</text>
+          <!-- 刷新箭头：暗示"重新定位"而非"切换城市" -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none">
+            <path d="M3 12a9 9 0 0115.5-6.4M21 12a9 9 0 01-15.5 6.4M21 3v6h-6M3 21v-6h6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </view>
         <view v-if="weather" class="weather-pill">
@@ -28,24 +29,6 @@
       <text class="main-sub">{{ weather?.advice ?? '加载中…' }} · 已为你准备 {{ routes.length }} 条本地路线</text>
     </view>
 
-    <!-- ══ AI 输入卡（悬浮在 header 下方，scroll-view 外）══════ -->
-    <view class="ai-card-wrap">
-      <view class="ai-card" @tap="goGenerate">
-        <view class="ai-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 26 26" fill="none">
-            <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
-          </svg>
-        </view>
-        <view class="ai-content">
-          <text class="ai-title serif">告诉我你的想法 · AI 帮你规划</text>
-          <text class="ai-hint">例如：周末想去钓鱼，自驾 2 小时内</text>
-        </view>
-        <view class="ai-btn">
-          <text class="ai-btn-text">开始</text>
-        </view>
-      </view>
-    </view>
-
     <!-- 滚动区域（Tab Bar 高度留白） -->
     <scroll-view
       scroll-y
@@ -53,6 +36,24 @@
       :style="{ paddingBottom: tabBarHeight }"
       :show-scrollbar="false"
     >
+      <!-- ══ AI 输入卡（悬浮 -18px）════════════════════════════ -->
+      <view class="ai-card-wrap">
+        <view class="ai-card" @tap="goGenerate">
+          <view class="ai-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 26 26" fill="none">
+              <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
+            </svg>
+          </view>
+          <view class="ai-content">
+            <text class="ai-title serif">告诉我你的想法 · AI 帮你规划</text>
+            <text class="ai-hint">例如：周末想去钓鱼，自驾 2 小时内</text>
+          </view>
+          <view class="ai-btn">
+            <text class="ai-btn-text">开始</text>
+          </view>
+        </view>
+      </view>
+
       <!-- ══ §01 按场景索引（9 宫格）═══════════════════════════ -->
       <view class="section">
         <z-section-header
@@ -105,7 +106,7 @@
           >
             <!-- 缩略图 -->
             <view class="poi-img-wrap">
-              <image :src="poi.img || poiFallbackImg(poi)" class="poi-img" mode="aspectFill" lazy-load @error="onImgError($event, poi)" />
+              <image :src="poi.img" class="poi-img" mode="aspectFill" lazy-load />
               <view class="poi-dist-badge">
                 <text>📍 {{ poi.dist }}</text>
               </view>
@@ -154,7 +155,7 @@
             >
               <!-- 封面 -->
               <view class="route-cover">
-                <image :src="route.img || `https://picsum.photos/seed/zr${route.id}/500/300`" class="route-img" mode="aspectFill" lazy-load @error="route.img = `https://picsum.photos/seed/zr${route.id}/500/300`" />
+                <image :src="route.img" class="route-img" mode="aspectFill" lazy-load />
                 <!-- R-01 编号 -->
                 <view class="route-no-badge" :style="{ color: route.color }">
                   <text class="mono">{{ route.no }}</text>
@@ -193,17 +194,19 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '../../api/mock.js'
-import { getCity, setCity, setCoords, setPendingScene } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTag from '../../components/ZTag.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
+import { useCityStore } from '../../store/city.js'
+import { storeToRefs } from 'pinia'
+
+const cityStore = useCityStore()
+const { current: city } = storeToRefs(cityStore)
 
 const statusBarHeight = ref(44)
 const tabBarHeight = ref('80px')
-
-const city    = ref(getCity())
 const weather = ref(null)
 const scenes  = ref([])
 const nearby  = ref([])
@@ -219,19 +222,48 @@ const nearbyVisible = computed(() => {
   ).slice(0, 3)
 })
 
-let cachedCoords = {}
-
-async function loadData() {
+async function loadFeed() {
+  // 纯定位驱动：高德定位 → 反查城市 → 所有 API 走当前坐标 + 城市
+  cityStore.locating = true
+  let coords = {}
   try {
-    const [w, n, r] = await Promise.all([
-      api.getWeather(city.value),
-      api.getNearby(city.value, cachedCoords.latitude, cachedCoords.longitude),
-      api.getRoutes(city.value),
+    coords = await new Promise((resolve) => {
+      uni.getLocation({ type: 'gcj02', success: resolve, fail: () => resolve({}) })
+    })
+  } catch (_) {}
+
+  const gotLocation = coords.latitude != null && coords.longitude != null
+  if (gotLocation) {
+    cityStore.locationDenied = false
+    cityStore.setCoords(coords.latitude, coords.longitude)
+    try {
+      const r = await api.geoCity(coords.latitude, coords.longitude)
+      if (r?.city) cityStore.setFromLocation(r.city)
+    } catch (_) {}
+  } else if (!cityStore.locationDenied) {
+    // 首次定位失败时温和提示一次（后端会用 city 中心兜底，所以不阻断功能）
+    cityStore.locationDenied = true
+    uni.showToast({
+      title: `未授权定位，将显示「${cityStore.current}」默认推荐；点击顶部城市可重试`,
+      icon: 'none',
+      duration: 3000,
+    })
+  }
+
+  const city = cityStore.current
+  cityStore.locating = false
+
+  try {
+    const [w, s, n, r] = await Promise.all([
+      api.getWeather(city),
+      api.getScenes(),
+      api.getNearby(coords.latitude, coords.longitude, city),
+      api.getRoutes(city),
     ])
     weather.value = w
+    scenes.value  = s
     nearby.value  = n
     routes.value  = r
-    nearbyPage.value = 0
   } catch (e) {
     uni.showToast({ title: '数据加载失败，请检查网络', icon: 'none' })
   }
@@ -244,62 +276,25 @@ onMounted(async () => {
     const tabH = (sys.safeAreaInsets?.bottom || 18) + 56
     tabBarHeight.value = tabH + 'px'
   } catch (_) {}
-
-  try {
-    scenes.value = await api.getScenes()
-  } catch (_) {}
-
-  try {
-    cachedCoords = await new Promise((resolve) => {
-      uni.getLocation({ type: 'gcj02', success: resolve, fail: () => resolve({}) })
-    })
-  } catch (_) {}
-
-  if (cachedCoords.latitude && cachedCoords.longitude) {
-    setCoords(cachedCoords.latitude, cachedCoords.longitude)
-    // 逆地理编码自动识别城市
-    try {
-      const res = await api.getLocationCity(cachedCoords.latitude, cachedCoords.longitude)
-      if (res.city && res.city !== city.value) {
-        city.value = res.city
-        setCity(res.city)
-      }
-    } catch (_) {}
-  }
-
-  loadData()
+  await loadFeed()
+  uni.$on('cityChanged', loadFeed)
 })
 
-// 按场景 seed 生成稳定的占位图（picsum.photos 按 id 固定图）
-function poiFallbackImg(poi) {
-  return `https://picsum.photos/seed/poi${poi.id}/400/300`
-}
-
-function onImgError(e, poi) {
-  // 图片加载失败时换占位图，避免空白
-  poi.img = `https://picsum.photos/seed/poi${poi.id}/400/300`
-}
+onUnmounted(() => {
+  uni.$off('cityChanged', loadFeed)
+})
 
 function refreshNearby() {
   if (!nearby.value.length) return
   nearbyPage.value = (nearbyPage.value + 1) % Math.ceil(nearby.value.length / 3)
 }
 
-const CITY_LIST = ['乌鲁木齐', '喀什', '伊宁', '库尔勒', '阿克苏', '北京', '上海', '成都', '西安', '深圳']
-
 function onCityTap() {
-  uni.showActionSheet({
-    itemList: CITY_LIST,
-    success: (res) => {
-      const selected = CITY_LIST[res.tapIndex]
-      if (selected === city.value) return
-      city.value = selected
-      setCity(selected)
-      weather.value = null
-      nearby.value  = []
-      routes.value  = []
-      loadData()
-    },
+  // 城市完全由定位决定 — 点击 = 重新定位
+  uni.showLoading({ title: '重新定位中…' })
+  loadFeed().finally(() => {
+    uni.hideLoading()
+    uni.showToast({ title: `当前定位：${cityStore.current}`, icon: 'none' })
   })
 }
 
@@ -308,21 +303,30 @@ function goGenerate() {
 }
 
 function goScene(sceneId) {
-  setPendingScene(sceneId)
+  try { uni.setStorageSync('zhoumi_pending_scene', sceneId) } catch (_) {}
   uni.switchTab({ url: '/pages/scenes/scenes' })
+  // 通过全局事件传递选中 scene（switchTab 不支持参数）
+  uni.$emit('switchScene', sceneId)
 }
 
 function goPoi(id) {
   uni.navigateTo({ url: `/pages/poi/detail?id=${id}` })
 }
 
+const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
+
 async function goResult(route) {
-  uni.showLoading({ title: '加载路线…', mask: true })
+  uni.showLoading({ title: '生成中…', mask: true })
   try {
-    const plan = await api.getRoutePlan(route.id, city.value)
+    const plan = await api.generateTrip({
+      city: cityStore.current, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
+    })
+    if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0) {
+      throw new Error('plan-invalid')
+    }
     uni.setStorageSync('lastPlan', plan)
     uni.hideLoading()
-    uni.navigateTo({ url: '/pages/result/result?generated=1' })
+    uni.navigateTo({ url: `/pages/result/result?generated=1&no=${encodeURIComponent(plan.no)}` })
   } catch (_) {
     uni.hideLoading()
     uni.switchTab({ url: '/pages/generate/generate' })
@@ -336,8 +340,6 @@ async function goResult(route) {
 .page {
   min-height: 100vh;
   background: $z-bg;
-  display: flex;
-  flex-direction: column;
 }
 
 .list-empty {
@@ -370,7 +372,7 @@ async function goResult(route) {
 }
 
 .city-name {
-  color: #fff;
+  color: $z-card;
   font-size: 28rpx;
   font-weight: 700;
 }
@@ -387,7 +389,7 @@ async function goResult(route) {
 .weather-icon { font-size: 26rpx; }
 
 .weather-text {
-  color: #fff;
+  color: $z-card;
   font-size: 24rpx;
   font-weight: 600;
 }
@@ -402,7 +404,7 @@ async function goResult(route) {
 
 .main-title {
   display: block;
-  color: #fff;
+  color: $z-card;
   font-size: 48rpx;
   font-weight: 900;
   letter-spacing: 2rpx;
@@ -415,17 +417,16 @@ async function goResult(route) {
   font-size: 24rpx;
 }
 
-// ── AI 卡（header 外，flex 流中）────────────────────────────
-.ai-card-wrap {
-  margin: -36rpx 28rpx 8rpx;
-  position: relative;
-  z-index: 3;
-  flex-shrink: 0;
-}
-
 // ── 滚动区 ──────────────────────────────────────────────────
 .scroll-body {
-  flex: 1;
+  position: relative;
+}
+
+// ── AI 输入卡 ───────────────────────────────────────────────
+.ai-card-wrap {
+  margin: -36rpx 28rpx 0;
+  position: relative;
+  z-index: 2;
 }
 
 .ai-card {
@@ -443,7 +444,7 @@ async function goResult(route) {
   width: 68rpx;
   height: 68rpx;
   border-radius: 34rpx;
-  background: linear-gradient(135deg, #FF6B35 0%, #FF9558 100%);
+  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -477,7 +478,7 @@ async function goResult(route) {
 }
 
 .ai-btn-text {
-  color: #fff;
+  color: $z-card;
   font-size: 23rpx;
   font-weight: 700;
 }
@@ -585,7 +586,7 @@ async function goResult(route) {
   bottom: 8rpx;
   left: 8rpx;
   background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  color: $z-card;
   font-size: 18rpx;
   padding: 3rpx 10rpx;
   border-radius: $radius-pill;
@@ -702,7 +703,7 @@ async function goResult(route) {
   position: absolute;
   bottom: 16rpx;
   left: 22rpx;
-  color: #fff;
+  color: $z-card;
   font-size: 28rpx;
   font-weight: 800;
   text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.5);
