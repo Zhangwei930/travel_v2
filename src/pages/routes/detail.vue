@@ -1,25 +1,8 @@
 <template>
   <view class="page">
-    <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
-      <view class="header-row">
-        <view class="back-btn" @tap="goBack">
-          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
-            <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          </svg>
-        </view>
-        <view class="header-text">
-          <text class="header-mono mono">ROUTE · {{ route?.no || 'R-??' }}</text>
-          <text class="header-title serif">{{ route?.title || '路线详情' }}</text>
-        </view>
-      </view>
-      <view class="header-meta">
-        <text class="meta-item">🕐 {{ route?.duration || '半日' }}</text>
-        <text class="meta-item">📍 {{ stopCount }} 站</text>
-        <text v-if="route?.budget" class="meta-item">💰 {{ route.budget }}</text>
-      </view>
-    </view>
+    <u-nav-bar :title="route?.title || '路线详情'" />
 
-    <scroll-view scroll-y class="scroll-body" :style="{ paddingBottom: actionBarHeight }" :show-scrollbar="false">
+    <scroll-view scroll-y class="scroll-body" :style="{ paddingBottom: safeBottom }" :show-scrollbar="false">
       <!-- 地图预览 -->
       <view class="map-card">
         <map
@@ -38,14 +21,36 @@
         </view>
       </view>
 
-      <!-- 路线摘要 -->
-      <view v-if="route?.summary" class="summary-card">
-        <text class="summary-text">{{ route.summary }}</text>
+      <!-- 路线信息卡 -->
+      <view class="info-card">
+        <view class="info-row">
+          <view class="info-item">
+            <text class="info-label">预估耗时</text>
+            <text class="info-val">{{ route?.duration || '半日' }}</text>
+          </view>
+          <view class="info-divider" />
+          <view class="info-item">
+            <text class="info-label">游玩站点</text>
+            <text class="info-val">{{ stopCount }} 站</text>
+          </view>
+          <view v-if="route?.budget" class="info-divider" />
+          <view v-if="route?.budget" class="info-item">
+            <text class="info-label">预估开支</text>
+            <text class="info-val">{{ route.budget }}</text>
+          </view>
+        </view>
+        <view v-if="route?.summary" class="info-summary">
+          <text>{{ route.summary }}</text>
+        </view>
       </view>
 
       <!-- 路线节点 -->
       <view class="section">
-        <z-section-header no="S" title="路线节点" :sub="`${stopCount} 站 · 顺路推荐`" />
+        <view class="section-head">
+          <text class="section-title">路线节点</text>
+          <text class="section-sub">{{ stopCount }} 站 · 顺序推荐</text>
+        </view>
+
         <view class="timeline">
           <view
             v-for="(stop, idx) in stops"
@@ -53,53 +58,59 @@
             class="timeline-item"
           >
             <view class="timeline-marker">
-              <text class="timeline-no mono">{{ String(idx + 1).padStart(2, '0') }}</text>
-              <view v-if="idx < stops.length - 1" class="timeline-line" />
+              <view class="marker-dot" />
+              <view v-if="idx < stops.length - 1" class="marker-line" />
             </view>
-            <view class="timeline-card">
-              <view class="timeline-head">
-                <text class="stop-name serif">{{ stop.name }}</text>
+            <view class="timeline-content" @tap="goPoi(stop)">
+              <view class="stop-head">
+                <text class="stop-name">{{ stop.name }}</text>
                 <text v-if="stop.distance" class="stop-dist">{{ stop.distance }}</text>
               </view>
               <text v-if="stop.reason" class="stop-reason">{{ stop.reason }}</text>
-              <view class="stop-actions">
-                <text v-if="stop.stay_duration" class="stop-stay mono">停留 {{ stop.stay_duration }}</text>
+              <view class="stop-foot">
+                <text v-if="stop.stay_duration" class="stop-stay">建议停留 {{ stop.stay_duration }}</text>
                 <view
-                  class="stop-nav"
+                  class="nav-tag"
                   :class="{ disabled: stop.lat == null || stop.lng == null }"
                   @tap.stop="navTo(stop)"
-                >到这里</view>
+                >
+                  <text>导航</text>
+                </view>
               </view>
             </view>
           </view>
         </view>
       </view>
 
-      <!-- 提示与避坑 -->
-      <view v-if="route?.tips || defaultTips.length" class="section">
-        <z-section-header no="T" title="提示与避坑" sub="出行前请核实当日营业与天气" />
-        <view class="tip-card">
-          <text v-if="route?.tips" class="tip-text">{{ route.tips }}</text>
-          <view v-else>
-            <text v-for="t in defaultTips" :key="t" class="tip-item">· {{ t }}</text>
-          </view>
+      <!-- 提示 -->
+      <view class="section tips-section">
+        <view class="section-head">
+          <text class="section-title">出行提示</text>
+        </view>
+        <view class="tips-card">
+          <text v-if="route?.tips">{{ route.tips }}</text>
+          <template v-else>
+            <text v-for="(t, i) in defaultTips" :key="i" class="tip-line">· {{ t }}</text>
+          </template>
         </view>
       </view>
     </scroll-view>
 
-    <!-- 底部主操作 -->
-    <view class="action-bar" :style="{ paddingBottom: safeBottom }">
-      <view class="primary-action" :class="{ disabled: !firstNavStop }" @tap="navAll">跟着路线导航</view>
+    <!-- 底部导航 -->
+    <view class="action-bar" :style="{ paddingBottom: safeBottomPadding }">
+      <view class="nav-all-btn" :class="{ disabled: !mappableStops.length }" @tap="chooseNavStop">
+        <text>选择站点导航</text>
+      </view>
     </view>
   </view>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import UNavBar from '../../components/UNavBar.vue'
 
-const statusBarHeight = ref(44)
-const safeBottom = ref('18px')
-const actionBarHeight = ref('148rpx')
+const safeBottom = ref('120rpx')
+const safeBottomPadding = ref('24rpx')
 
 const route = ref(null)
 
@@ -122,7 +133,7 @@ const markers = computed(() =>
     callout: {
       content: `${s._idx + 1}. ${s.name}`,
       color: '#ffffff',
-      bgColor: '#0D4F4A',
+      bgColor: '#1A7A73',
       padding: 6,
       borderRadius: 6,
       display: 'ALWAYS',
@@ -134,7 +145,7 @@ const polyline = computed(() => {
   if (mappableStops.value.length < 2) return []
   return [{
     points: mappableStops.value.map(s => ({ latitude: Number(s.lat), longitude: Number(s.lng) })),
-    color: '#0D4F4ACC',
+    color: '#1A7A73CC',
     width: 4,
     arrowLine: true,
   }]
@@ -150,12 +161,10 @@ const center = computed(() => {
   }
 })
 
-const firstNavStop = computed(() => mappableStops.value[0] || null)
-
 const defaultTips = [
-  '出发前确认每站营业/开放时间',
-  '相邻两站间步行 / 公交时间已纳入推荐时长',
-  '雨天或恶劣天气优先选择室内站点',
+  '出发前请核实各站点当日营业时间',
+  '相邻站间距离已按最优路线计算',
+  '如遇天气变化，建议调整户外行程',
 ]
 
 function loadRoute() {
@@ -167,10 +176,9 @@ function loadRoute() {
   } catch (_) {}
 }
 
-function goBack() {
-  const stack = getCurrentPages()
-  if (stack.length > 1) uni.navigateBack()
-  else uni.switchTab({ url: '/pages/index/index' })
+function goPoi(stop) {
+  if (!stop?.id) return
+  uni.navigateTo({ url: `/pages/poi/detail?id=${stop.id}` })
 }
 
 function navTo(stop) {
@@ -186,21 +194,26 @@ function navTo(stop) {
   })
 }
 
-function navAll() {
-  if (!firstNavStop.value) {
+function chooseNavStop() {
+  if (!mappableStops.value.length) {
     uni.showToast({ title: '该路线暂无可导航站点', icon: 'none' })
     return
   }
-  navTo(firstNavStop.value)
+  uni.showActionSheet({
+    itemList: mappableStops.value.map(stop => `${stop._idx + 1}. ${stop.name}`),
+    success: (res) => {
+      const stop = mappableStops.value[res.tapIndex]
+      if (stop) navTo(stop)
+    },
+  })
 }
 
 onMounted(() => {
   try {
     const sys = uni.getSystemInfoSync()
-    statusBarHeight.value = sys.statusBarHeight || 44
     const sb = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
-    safeBottom.value = sb + 'px'
-    actionBarHeight.value = (sb + 92) + 'px'
+    safeBottomPadding.value = sb + 'px'
+    safeBottom.value = (sb + 120) + 'rpx'
   } catch (_) {}
   loadRoute()
 })
@@ -211,275 +224,254 @@ onMounted(() => {
 
 .page {
   min-height: 100vh;
-  background: $z-bg;
+  background: $u-bg;
 }
 
-// ── Header ──────────────────────────────────────────────────
-.header {
-  background: $z-primary;
-  padding: 0 32rpx 24rpx;
-}
-
-.header-row {
-  display: flex;
-  align-items: center;
-  gap: 18rpx;
-  padding-top: 16rpx;
-}
-
-.back-btn {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 32rpx;
-  background: rgba(255, 255, 255, 0.18);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.header-mono {
-  display: block;
-  font-size: 20rpx;
-  color: rgba(255, 255, 255, 0.6);
-  letter-spacing: 2rpx;
-  margin-bottom: 4rpx;
-}
-
-.header-title {
-  display: block;
-  font-size: 38rpx;
-  font-weight: 900;
-  color: $z-card;
-  line-height: 1.2;
-}
-
-.header-meta {
-  display: flex;
-  gap: 18rpx;
-  margin-top: 18rpx;
-  padding-left: 82rpx;
-  flex-wrap: wrap;
-}
-
-.meta-item {
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 22rpx;
-}
-
-// ── Map ─────────────────────────────────────────────────────
-.scroll-body { position: relative; }
-
-.map-card {
-  margin: -28rpx 28rpx 0;
-  background: $z-card;
-  border-radius: 22rpx;
-  overflow: hidden;
-  box-shadow: 0 6rpx 24rpx rgba(13, 79, 74, 0.12);
+.scroll-body {
   position: relative;
-  z-index: 1;
+}
+
+// ── 地图 ────────────────────────────────────────────────────
+.map-card {
+  height: 400rpx;
+  background: $u-bg-soft;
 }
 
 .route-map {
   width: 100%;
-  height: 380rpx;
+  height: 100%;
 }
 
 .map-empty {
-  height: 220rpx;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12rpx;
-  color: $z-muted;
+  color: $u-text-mute;
 }
 
 .map-empty-icon { font-size: 60rpx; }
-.map-empty-text { font-size: 23rpx; }
+.map-empty-text { font-size: 24rpx; }
 
-// ── Summary ─────────────────────────────────────────────────
-.summary-card {
-  margin: 22rpx 28rpx 0;
-  background: $z-card;
-  border-radius: 18rpx;
-  padding: 22rpx 26rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
+// ── 信息卡 ──────────────────────────────────────────────────
+.info-card {
+  margin: -24rpx 32rpx 0;
+  background: $u-bg;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  box-shadow: $u-shadow-lg;
+  position: relative;
+  z-index: 2;
 }
 
-.summary-text {
-  display: block;
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.info-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.info-label {
+  font-size: 20rpx;
+  color: $u-text-mute;
+}
+
+.info-val {
+  font-size: 30rpx;
+  font-weight: 800;
+  color: $u-text;
+}
+
+.info-divider {
+  width: 1rpx;
+  height: 40rpx;
+  background: $u-line;
+}
+
+.info-summary {
+  margin-top: 24rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid $u-line;
   font-size: 24rpx;
-  color: $z-text2;
+  color: $u-text-sub;
   line-height: 1.6;
 }
 
-// ── Section ─────────────────────────────────────────────────
-.section { padding: 28rpx 28rpx 0; }
+// ── 章节标题 ────────────────────────────────────────────────
+.section {
+  padding: 32rpx 32rpx 0;
+}
 
-// ── Timeline ────────────────────────────────────────────────
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 24rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: 800;
+  color: $u-text;
+}
+
+.section-sub {
+  font-size: 22rpx;
+  color: $u-text-mute;
+}
+
+// ── 时间轴 ──────────────────────────────────────────────────
 .timeline {
   display: flex;
   flex-direction: column;
-  gap: 4rpx;
-  margin-top: 8rpx;
 }
 
 .timeline-item {
   display: flex;
-  align-items: stretch;
-  gap: 16rpx;
+  gap: 24rpx;
 }
 
 .timeline-marker {
-  width: 60rpx;
+  width: 24rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
 }
 
-.timeline-no {
-  width: 48rpx;
-  height: 48rpx;
-  border-radius: 24rpx;
+.marker-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 8rpx;
   background: $z-primary;
-  color: $z-card;
-  font-size: 20rpx;
-  font-weight: 900;
-  letter-spacing: 1rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 18rpx;
+  margin-top: 12rpx;
+  position: relative;
   z-index: 1;
 }
 
-.timeline-line {
+.marker-line {
   flex: 1;
-  width: 4rpx;
-  background: rgba(13, 79, 74, 0.18);
+  width: 2rpx;
+  background: $u-line;
   margin-top: 4rpx;
 }
 
-.timeline-card {
+.timeline-content {
   flex: 1;
   min-width: 0;
-  margin: 12rpx 0 18rpx;
-  background: $z-card;
-  border-radius: 16rpx;
-  padding: 18rpx 22rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
+  padding-bottom: 40rpx;
 }
 
-.timeline-head {
+.stop-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 12rpx;
+  margin-bottom: 8rpx;
 }
 
 .stop-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 27rpx;
-  font-weight: 800;
-  color: $z-text;
-  line-height: 1.25;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: $u-text;
 }
 
 .stop-dist {
-  font-size: 20rpx;
-  color: $z-muted;
+  font-size: 22rpx;
+  color: $u-text-mute;
   flex-shrink: 0;
 }
 
 .stop-reason {
   display: block;
-  font-size: 22rpx;
-  color: $z-text2;
-  line-height: 1.5;
-  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: $u-text-sub;
+  line-height: 1.55;
+  margin-bottom: 12rpx;
 }
 
-.stop-actions {
+.stop-foot {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 14rpx;
-  gap: 14rpx;
 }
 
 .stop-stay {
-  color: $z-muted;
-  font-size: 19rpx;
-  letter-spacing: 1rpx;
+  font-size: 20rpx;
+  color: $u-text-mute;
 }
 
-.stop-nav {
-  height: 52rpx;
-  min-width: 96rpx;
-  padding: 0 18rpx;
-  border-radius: 10rpx;
-  background: rgba(13, 79, 74, 0.08);
+.nav-tag {
+  height: 48rpx;
+  padding: 0 20rpx;
+  border-radius: 24rpx;
+  background: $u-tint-mint;
   color: $z-primary;
   font-size: 22rpx;
-  font-weight: 800;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
 
   &.disabled {
-    background: rgba(0, 0, 0, 0.06);
-    color: $z-muted;
+    background: $u-bg-soft;
+    color: $u-text-mute;
   }
 }
 
-// ── Tips ────────────────────────────────────────────────────
-.tip-card {
-  margin-top: 12rpx;
-  background: $z-card;
-  border-radius: 16rpx;
-  padding: 20rpx 22rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
+// ── 提示卡 ──────────────────────────────────────────────────
+.tips-section {
+  padding-bottom: 40rpx;
 }
 
-.tip-text,
-.tip-item {
-  display: block;
-  font-size: 22rpx;
-  color: $z-text2;
+.tips-card {
+  background: $u-bg-soft;
+  border-radius: 18rpx;
+  padding: 24rpx;
+  font-size: 24rpx;
+  color: $u-text-sub;
   line-height: 1.6;
 }
 
-// ── Action bar ──────────────────────────────────────────────
+.tip-line { display: block; }
+
+// ── 底部栏 ──────────────────────────────────────────────────
 .action-bar {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.98);
-  border-top: 1rpx solid $z-border;
-  padding: 16rpx 28rpx 0;
-  z-index: 9;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+  padding: 20rpx 32rpx;
+  z-index: 99;
+  border-top: 1rpx solid $u-line;
 }
 
-.primary-action {
-  height: 92rpx;
-  border-radius: 18rpx;
+.nav-all-btn {
+  height: 96rpx;
   background: $z-primary;
-  color: $z-card;
-  font-size: 30rpx;
-  font-weight: 900;
+  color: #fff;
+  border-radius: 48rpx;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 30rpx;
+  font-weight: 800;
+  box-shadow: 0 8rpx 20rpx rgba(13, 79, 74, 0.2);
 
-  &.disabled { background: $z-muted; }
+  &.disabled {
+    background: $u-text-mute;
+    box-shadow: none;
+  }
 }
 </style>

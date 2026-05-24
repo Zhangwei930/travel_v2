@@ -22,8 +22,7 @@
     },
     "requiredPrivateInfos": [
       "getLocation"
-    ],
-    "__usePrivacyCheck__": true
+    ]
   },
   "h5": {
     "title": "周密出游",

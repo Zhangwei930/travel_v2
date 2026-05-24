@@ -35,10 +35,11 @@
         >
           <view class="poi-thumb">
             <image
-              :src="poi.img || coverFallback(poi.id)"
+              :src="poiThumb(poi)"
               class="poi-thumb-img"
               mode="aspectFill"
               lazy-load
+              @error="onPoiImageError(poi)"
             />
           </view>
           <view class="poi-content">
@@ -73,7 +74,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
+import { poiImage } from '../../api/assets.js'
 import { useCityStore } from '../../store/city.js'
+import { setAssistantContext } from '../../api/storage.js'
 import ZTabBar from '../../components/ZTabBar.vue'
 import UNavBar from '../../components/UNavBar.vue'
 
@@ -95,6 +98,7 @@ const filters = [
 const active = ref('all')
 const allPois = ref([])
 const loading = ref(false)
+const brokenPoiImages = ref({})
 
 const visiblePois = computed(() => {
   const f = filters.find(x => x.id === active.value) || filters[0]
@@ -110,15 +114,13 @@ function ratingFor(p) {
   return (4.2 + seed / 20).toFixed(1)
 }
 
-const FALLBACKS = [
-  'https://images.unsplash.com/photo-1504826260979-242151ee45b7?w=400',
-  'https://images.unsplash.com/photo-1466441523584-7eaa61cd2f54?w=400',
-  'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=400',
-  'https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=400',
-]
-function coverFallback(id) {
-  const i = Math.abs(Number(id) || 0) % FALLBACKS.length
-  return FALLBACKS[i]
+function poiThumb(poi) {
+  return poiImage(poi, brokenPoiImages.value[poi?.id])
+}
+
+function onPoiImageError(poi) {
+  if (!poi?.id) return
+  brokenPoiImages.value = { ...brokenPoiImages.value, [poi.id]: true }
 }
 
 onLoad((options) => {
@@ -177,7 +179,18 @@ function goPoi(id) {
 }
 
 function onSearch() {
-  uni.showToast({ title: '搜索功能开发中', icon: 'none' })
+  const context = {
+    city: cityStore.current,
+    lat: cityStore.coords?.lat ?? '',
+    lng: cityStore.coords?.lng ?? '',
+    scene: sceneId.value,
+    intent: 'scene_search',
+  }
+  setAssistantContext(context)
+  uni.switchTab({
+    url: '/pages/assistant/chat',
+    success: () => uni.$emit('assistantContext', context),
+  })
 }
 </script>
 

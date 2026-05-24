@@ -1,13 +1,9 @@
-// 当前城市 — 完全由定位驱动（不提供手动切换）
-//
-// 产品定位：本地化出游，根据高德实时定位推荐附近。
-// 用户不需要手动选城市，城市只是 UI 上"我在哪"的展示，以及
-// 后端展示用。定位失败时首页不展示附近推荐，避免把城市中心伪装成当前位置。
 import { defineStore } from 'pinia'
 
 const KEY_CITY    = 'zhoumi_current_city'
 const KEY_COORDS  = 'zhoumi_current_coords'
-const DEFAULT_CITY = '成都'
+export const DEFAULT_CITY = '成都'
+export const DEFAULT_COORDS = { lat: 30.5728, lng: 104.0668 }
 
 function readCached() {
   try { return uni.getStorageSync(KEY_CITY) || DEFAULT_CITY } catch (_) { return DEFAULT_CITY }
@@ -34,6 +30,15 @@ export const useCityStore = defineStore('city', {
       if (lat == null || lng == null) return
       this.coords = { lat, lng }
       try { uni.setStorageSync(KEY_COORDS, this.coords) } catch (_) {}
+    },
+    setDefaultLocation() {
+      this.current = DEFAULT_CITY
+      this.coords = { ...DEFAULT_COORDS }
+      this.locationDenied = true
+      try {
+        uni.setStorageSync(KEY_CITY, this.current)
+        uni.setStorageSync(KEY_COORDS, this.coords)
+      } catch (_) {}
     },
   },
 })

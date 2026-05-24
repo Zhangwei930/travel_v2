@@ -78,6 +78,7 @@ class RecommendPoiOut(BaseModel):
     lat: float | None = None
     lng: float | None = None
     nav_ready: bool = False
+    img: str | None = None
 
 
 class RouteStopOut(BaseModel):
@@ -236,6 +237,20 @@ class KbApproveIn(BaseModel):
     id: int
     status: str = Field(default="approved", description="approved/rejected/needs_update")
     review_note: str | None = None
+    generated_answer: str | None = None
+
+
+class KbAnalyzeIn(BaseModel):
+    id: int
+
+
+class KbAnalyzeOut(BaseModel):
+    id: int
+    suggested_status: str
+    confidence: str
+    issues: list[str]
+    revised_answer: str
+    provider: str
 
 
 class SceneGearOut(BaseModel):

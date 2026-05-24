@@ -24,25 +24,18 @@
             <text class="weather-icon">{{ weatherIcon }}</text>
             <text class="weather-text">{{ weatherText }}</text>
           </view>
-          <text class="radius-text">3~5km推荐范围</text>
+          <text class="radius-text">默认推荐距离 3-5km</text>
         </view>
       </view>
 
       <!-- 出游助手 mascot pill -->
       <view class="mascot-card">
         <view class="mascot-avatar">
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-            <rect x="8" y="11" width="16" height="13" rx="4" fill="#fff"/>
-            <circle cx="13" cy="17" r="1.6" fill="#0D4F4A"/>
-            <circle cx="19" cy="17" r="1.6" fill="#0D4F4A"/>
-            <rect x="14" y="20" width="4" height="1.4" rx="0.7" fill="#0D4F4A"/>
-            <rect x="15" y="7" width="2" height="4" rx="1" fill="#fff"/>
-            <circle cx="16" cy="6" r="1.4" fill="#fff"/>
-          </svg>
+          <text class="mascot-avatar-text">助</text>
         </view>
         <view class="mascot-text">
           <text class="mascot-title">出游助手</text>
-          <text class="mascot-sub">已根据您的位置，为您准备了 4 种出游方式</text>
+          <text class="mascot-sub">{{ mascotSub }}</text>
         </view>
       </view>
 
@@ -56,25 +49,7 @@
           @tap="goEntry(entry.id)"
         >
           <view class="entry-icon-wrap">
-            <!-- place_index -->
-            <svg v-if="entry.id === 'place_index'" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" stroke="#8B6914" stroke-width="2"/>
-              <circle cx="12" cy="9" r="3" fill="#8B6914"/>
-            </svg>
-            <!-- nearby_now -->
-            <svg v-else-if="entry.id === 'nearby_now'" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="9" stroke="#1A7A73" stroke-width="2"/>
-              <path d="M12 6v6l4 2" stroke="#1A7A73" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <!-- hot_routes -->
-            <svg v-else-if="entry.id === 'hot_routes'" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <rect x="4" y="7" width="16" height="13" rx="2" stroke="#C03E1F" stroke-width="2"/>
-              <path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2" stroke="#C03E1F" stroke-width="2"/>
-            </svg>
-            <!-- assistant -->
-            <svg v-else xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M21 12a8 8 0 01-12.5 6.6L3 20l1.4-5.5A8 8 0 1121 12z" stroke="#0D4F4A" stroke-width="2" stroke-linejoin="round"/>
-            </svg>
+            <text class="entry-icon">{{ entryIcon(entry.id) }}</text>
           </view>
           <text class="entry-label">{{ entryLabel(entry.id) }}</text>
           <text class="entry-desc">{{ entryDesc(entry.id) }}</text>
@@ -87,11 +62,11 @@
           <text class="section-title">附近现在适合去</text>
           <text class="section-more" @tap="goNearby">更多 ›</text>
         </view>
-        <view v-if="locationError" class="hint-card">
-          <text>开启定位后才能推荐附近真实可去的地点</text>
+        <view v-if="fallbackLocationUsed" class="hint-card">
+          <text>未获取到定位，当前展示{{ cityStore.current || DEFAULT_CITY }}默认推荐</text>
           <view class="hint-btn" @tap="loadFeed()">重新定位</view>
         </view>
-        <view v-else-if="!nearbyVisible.length" class="hint-card mute">
+        <view v-if="!nearbyVisible.length" class="hint-card mute">
           <text>{{ feedLoading ? '正在加载附近推荐…' : '附近暂无可推荐地点' }}</text>
         </view>
         <view v-else class="poi-list">
@@ -102,10 +77,13 @@
             @tap="goPoi(poi.id)"
           >
             <view class="poi-thumb">
-              <image v-if="poi.img" :src="poi.img" class="poi-thumb-img" mode="aspectFill" lazy-load />
-              <view v-else class="poi-thumb-fallback">
-                <text>📍</text>
-              </view>
+              <image
+                :src="poiThumb(poi)"
+                class="poi-thumb-img"
+                mode="aspectFill"
+                lazy-load
+                @error="onPoiImageError(poi)"
+              />
             </view>
             <view class="poi-content">
               <view class="poi-line1">
@@ -118,6 +96,7 @@
                   :key="tag"
                   class="poi-tag"
                 >{{ tag }}</text>
+                <text v-if="poi.kb_status" class="poi-tag kb-tag">{{ kbLabel(poi.kb_status) }}</text>
               </view>
               <view class="poi-line3">
                 <text class="poi-cat">{{ poi.category || '地点' }}</text>
@@ -125,6 +104,7 @@
                   <text class="rating-star">★</text>
                   <text class="rating-num">{{ poi.rating || (4.0 + (poi.id % 10) / 10).toFixed(1) }}</text>
                 </view>
+                <view class="poi-nav" @tap.stop="navPoi(poi)">导航</view>
               </view>
             </view>
           </view>
@@ -150,13 +130,12 @@
             >
               <view class="route-cover">
                 <image
-                  v-if="route.img || routeFallbackImg(route)"
-                  :src="route.img || routeFallbackImg(route)"
+                  :src="routeThumb(route)"
                   class="route-img"
                   mode="aspectFill"
                   lazy-load
+                  @error="onRouteImageError(route)"
                 />
-                <view v-else class="route-img-fallback" />
               </view>
               <view class="route-body">
                 <text class="route-title">{{ route.title }}</text>
@@ -178,8 +157,9 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import ZTabBar from '../../components/ZTabBar.vue'
 import UNavBar from '../../components/UNavBar.vue'
-import { useCityStore } from '../../store/city.js'
+import { DEFAULT_CITY, useCityStore } from '../../store/city.js'
 import { setAssistantContext, setHomeFeedCache } from '../../api/storage.js'
+import { poiImage, routeImage } from '../../api/assets.js'
 
 const cityStore = useCityStore()
 
@@ -197,14 +177,23 @@ const routes = ref([])
 const loaded = ref(false)
 const feedLoading = ref(false)
 const locationError = ref(false)
+const fallbackLocationUsed = ref(false)
+const brokenPoiImages = ref({})
+const brokenRouteImages = ref({})
 
 const nearbyVisible = computed(() => nearby.value.slice(0, 3))
 
 const locText = computed(() => {
   if (cityStore.locating) return '定位中…'
-  if (locationError.value) return '需要定位'
+  if (fallbackLocationUsed.value) return `${cityStore.current || DEFAULT_CITY} · 默认推荐`
   return cityStore.current || '当前位置'
 })
+
+const mascotSub = computed(() => (
+  fallbackLocationUsed.value
+    ? '定位未开启，已先为您准备默认城市出游方式'
+    : '已根据您的位置，为您准备了 4 种出游方式'
+))
 
 const weatherIcon = computed(() => weather.value?.icon || '☀️')
 const weatherText = computed(() => {
@@ -238,15 +227,41 @@ function entryDesc(id) {
   }[id] || ''
 }
 
-const ROUTE_FALLBACKS = [
-  'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=600',
-  'https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=600',
-  'https://images.unsplash.com/photo-1495774856032-8b90bbb32b32?w=600',
-]
-function routeFallbackImg(route) {
-  if (!route?.id) return ROUTE_FALLBACKS[0]
-  const idx = Math.abs(String(route.id).split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % ROUTE_FALLBACKS.length
-  return ROUTE_FALLBACKS[idx]
+function entryIcon(id) {
+  return {
+    place_index: '址',
+    nearby_now:  '近',
+    hot_routes:  '线',
+    assistant:   '问',
+  }[id] || '游'
+}
+
+function kbLabel(status) {
+  return {
+    hit: '知识库',
+    unchanged: '知识库',
+    partial: '部分收录',
+    stale: '待更新',
+    miss: '地图来源',
+  }[status] || '地图来源'
+}
+
+function poiThumb(poi) {
+  return poiImage(poi, brokenPoiImages.value[poi?.id])
+}
+
+function routeThumb(route) {
+  return routeImage(route, brokenRouteImages.value[route?.id])
+}
+
+function onPoiImageError(poi) {
+  if (!poi?.id) return
+  brokenPoiImages.value = { ...brokenPoiImages.value, [poi.id]: true }
+}
+
+function onRouteImageError(route) {
+  if (!route?.id) return
+  brokenRouteImages.value = { ...brokenRouteImages.value, [route.id]: true }
 }
 
 function normalizeEntries(feedEntries) {
@@ -259,12 +274,21 @@ async function loadFeed(intent = '') {
   cityStore.locating = true
   feedLoading.value = true
   locationError.value = false
+  fallbackLocationUsed.value = false
   try {
-    const coords = await new Promise((resolve, reject) => {
-      uni.getLocation({ type: 'gcj02', success: resolve, fail: reject })
-    })
-    cityStore.locationDenied = false
-    cityStore.setCoords(coords.latitude, coords.longitude)
+    let coords
+    try {
+      coords = await new Promise((resolve, reject) => {
+        uni.getLocation({ type: 'gcj02', success: resolve, fail: reject })
+      })
+      cityStore.locationDenied = false
+      cityStore.setCoords(coords.latitude, coords.longitude)
+    } catch (_) {
+      cityStore.setDefaultLocation()
+      locationError.value = true
+      fallbackLocationUsed.value = true
+      coords = { latitude: cityStore.coords.lat, longitude: cityStore.coords.lng }
+    }
 
     const feed = await api.getHomeFeed({
       lat: coords.latitude,
@@ -280,7 +304,6 @@ async function loadFeed(intent = '') {
     setHomeFeedCache(feed)
     loaded.value = true
   } catch (_) {
-    cityStore.locationDenied = true
     locationError.value = true
     weather.value = null
     nearby.value = []
@@ -346,6 +369,19 @@ function goPoi(id) {
   uni.navigateTo({ url: `/pages/poi/detail?id=${id}&lat=${lat || ''}&lng=${lng || ''}` })
 }
 
+function navPoi(poi) {
+  if (!poi?.lat || !poi?.lng) {
+    uni.showToast({ title: '暂无坐标，无法导航', icon: 'none' })
+    return
+  }
+  uni.openLocation({
+    latitude: Number(poi.lat),
+    longitude: Number(poi.lng),
+    name: poi.name,
+    address: poi.address || poi.category || '',
+  })
+}
+
 function openRoute(route) {
   if (!route) return
   try { uni.setStorageSync('currentRoute', route) } catch (_) {}
@@ -353,7 +389,12 @@ function openRoute(route) {
 }
 
 function onSearch() {
-  uni.showToast({ title: '搜索功能开发中', icon: 'none' })
+  const context = { ...buildAssistantContext(), intent: 'search' }
+  setAssistantContext(context)
+  uni.switchTab({
+    url: '/pages/assistant/chat',
+    success: () => uni.$emit('assistantContext', context),
+  })
 }
 </script>
 
@@ -448,6 +489,13 @@ function onSearch() {
   flex-shrink: 0;
 }
 
+.mascot-avatar-text {
+  color: #fff;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .mascot-text { flex: 1; min-width: 0; }
 
 .mascot-title {
@@ -497,6 +545,13 @@ function onSearch() {
   align-items: center;
   justify-content: center;
   margin-bottom: 6rpx;
+}
+
+.entry-icon {
+  font-size: 28rpx;
+  font-weight: 900;
+  color: $z-primary;
+  line-height: 1;
 }
 
 .entry-label {
@@ -565,16 +620,6 @@ function onSearch() {
 
 .poi-thumb-img { width: 100%; height: 100%; }
 
-.poi-thumb-fallback {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 40rpx;
-  color: $u-text-mute;
-}
-
 .poi-content {
   flex: 1;
   min-width: 0;
@@ -622,6 +667,11 @@ function onSearch() {
   border-radius: 6rpx;
 }
 
+.kb-tag {
+  color: $u-text-sub;
+  background: $u-bg-soft;
+}
+
 .poi-line3 {
   display: flex;
   justify-content: space-between;
@@ -637,6 +687,20 @@ function onSearch() {
   display: flex;
   align-items: center;
   gap: 4rpx;
+}
+
+.poi-nav {
+  height: 42rpx;
+  padding: 0 18rpx;
+  border-radius: 21rpx;
+  background: $z-primary;
+  color: $z-card;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20rpx;
+  font-weight: 800;
+  flex-shrink: 0;
 }
 
 .rating-star {
@@ -687,12 +751,6 @@ function onSearch() {
 
 .route-img { width: 100%; height: 100%; }
 
-.route-img-fallback {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, #D7EBE5, #C5E0D6);
-}
-
 .route-body { padding: 14rpx; }
 
 .route-title {
@@ -724,6 +782,7 @@ function onSearch() {
   flex-direction: column;
   align-items: center;
   gap: 16rpx;
+  margin-bottom: 16rpx;
 
   &.mute { color: $u-text-mute; }
 }

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     cors_origins: str = "*"
-    default_city: str = "乌鲁木齐"
+    default_city: str = "成都"
 
     map_provider: str = "stub"
     amap_key: str = ""

@@ -39,15 +39,29 @@
         <text class="question serif">{{ item.question }}</text>
         <text class="answer">{{ item.generated_answer }}</text>
 
+        <view v-if="analysisMap[item.id]" class="ai-box">
+          <view class="ai-head">
+            <text class="ai-title">AI分析</text>
+            <text class="ai-status">{{ statusLabel(analysisMap[item.id].suggested_status) }} · 置信度{{ analysisMap[item.id].confidence }}</text>
+          </view>
+          <text
+            v-for="issue in analysisMap[item.id].issues"
+            :key="issue"
+            class="ai-issue"
+          >· {{ issue }}</text>
+          <text v-if="analysisMap[item.id].revised_answer" class="ai-answer">{{ analysisMap[item.id].revised_answer }}</text>
+        </view>
+
         <view v-if="item.source_urls?.length" class="urls">
           <text class="url-label mono">来源：</text>
           <text v-for="(u, i) in item.source_urls.slice(0, 2)" :key="i" class="url">{{ u }}</text>
         </view>
 
         <view class="actions">
-          <view class="btn approve" @tap="review(item.id, 'approved')">✓ 通过</view>
-          <view class="btn reject" @tap="review(item.id, 'rejected')">✕ 拒绝</view>
-          <view class="btn update" @tap="review(item.id, 'needs_update')">✎ 待修改</view>
+          <view class="btn ai" @tap="analyze(item)">AI分析</view>
+          <view class="btn approve" @tap="review(item, 'approved')">✓ 通过</view>
+          <view class="btn reject" @tap="review(item, 'rejected')">✕ 拒绝</view>
+          <view class="btn update" @tap="review(item, 'needs_update')">✎ 待修改</view>
         </view>
       </view>
     </scroll-view>
@@ -89,6 +103,7 @@ const tokenInput = ref('')
 const list = ref([])
 const gear = ref([])             // [{scene_id, label, icon, items}, ...]
 const drafts = ref({})           // scene_id -> 编辑中的数组（未保存）
+const analysisMap = ref({})      // pending id -> AI analysis
 const loading = ref(false)
 const tab = ref('kb')            // 'kb' | 'gear'
 
@@ -172,18 +187,42 @@ async function saveGear(sceneId) {
   }
 }
 
-async function review(id, status) {
+async function analyze(item) {
+  try {
+    const res = await request('/api/admin/kb/analyze', {
+      method: 'POST',
+      data: { id: item.id },
+      header: { 'X-Admin-Token': token.value },
+    })
+    analysisMap.value = { ...analysisMap.value, [item.id]: res }
+    uni.showToast({ title: 'AI分析完成', icon: 'success' })
+  } catch {
+    uni.showToast({ title: 'AI分析失败', icon: 'none' })
+  }
+}
+
+async function review(item, status) {
+  const analysis = analysisMap.value[item.id]
+  const generatedAnswer = analysis?.revised_answer || item.generated_answer
   try {
     await request('/api/admin/kb/approve', {
       method: 'POST',
-      data: { id, status },
+      data: { id: item.id, status, generated_answer: generatedAnswer },
       header: { 'X-Admin-Token': token.value },
     })
-    list.value = list.value.filter(i => i.id !== id)
+    list.value = list.value.filter(i => i.id !== item.id)
     uni.showToast({ title: status === 'approved' ? '已通过' : '已处理', icon: 'success' })
   } catch {
     uni.showToast({ title: '操作失败', icon: 'none' })
   }
+}
+
+function statusLabel(status) {
+  return {
+    approved: '建议通过',
+    rejected: '建议拒绝',
+    needs_update: '建议修改',
+  }[status] || '建议复核'
 }
 
 function riskClass(level) {
@@ -281,6 +320,35 @@ function goBack() {
   margin-bottom: 20rpx;
 }
 
+.ai-box {
+  background: $z-neutral-bg;
+  border-radius: $radius-card;
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+}
+.ai-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 10rpx;
+}
+.ai-title { font-size: 24rpx; font-weight: 800; color: $z-accent; }
+.ai-status { font-size: 22rpx; color: $z-muted; }
+.ai-issue {
+  display: block;
+  font-size: 24rpx;
+  color: $z-text2;
+  line-height: 1.45;
+}
+.ai-answer {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: $z-text;
+  line-height: 1.5;
+}
+
 .urls { margin-bottom: 20rpx; }
 .url-label { font-family: $mono; font-size: $font-mono; color: $z-muted; }
 .url {
@@ -297,6 +365,7 @@ function goBack() {
 .btn {
   flex: 1; text-align: center; padding: 16rpx 0;
   border-radius: $radius-card; font-size: 26rpx;
+  &.ai      { background: $z-success-bg; color: $z-success-d; }
   &.approve { background: $z-accent; color: $z-card; }
   &.reject  { background: $z-danger-bg; color: $z-danger; }
   &.update  { background: $z-neutral-bg; color: $z-text; }

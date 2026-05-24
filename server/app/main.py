@@ -19,6 +19,7 @@ app.add_middleware(
 
 app.include_router(catalog.router)
 app.include_router(home.router)
+app.include_router(home.compat_router)
 app.include_router(trip.router)
 app.include_router(kb.router)
 app.include_router(feedback.router)

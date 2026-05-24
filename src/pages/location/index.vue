@@ -1,55 +1,63 @@
 <template>
-  <view class="loc-page" :style="{ paddingTop: statusBarHeight + 'px' }">
-    <view class="loc-header">
-      <text class="loc-kicker mono">§ LOCATION · REQUIRED</text>
-      <text class="loc-title serif">{{ pending ? '定位中…' : '正在定位中' }}</text>
-      <text class="loc-sub">需要您的位置权限，才能推荐附近真实可去的地点，结合天气和时段给出合理路线。</text>
-    </view>
+  <view class="page">
+    <u-nav-bar title="定位服务" />
 
-    <view class="loc-card">
-      <view class="loc-pin-wrap">
-        <view class="loc-pin">
-          <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none">
-            <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" stroke="#0D4F4A" stroke-width="2"/>
-            <circle cx="12" cy="9" r="3" stroke="#0D4F4A" stroke-width="2"/>
-          </svg>
+    <view class="loc-content">
+      <view class="loc-icon-wrap">
+        <view class="loc-icon-bg">
+          <text class="loc-icon">📍</text>
         </view>
-        <view v-if="pending" class="loc-pin-pulse" />
+        <view v-if="pending" class="loc-ripple" />
       </view>
 
-      <view class="loc-detail">
-        <text class="loc-detail-title serif">权限用途</text>
-        <view class="loc-detail-list">
-          <text class="loc-detail-item">· 推荐附近 3~5 公里内的目的地</text>
-          <text class="loc-detail-item">· 按当前天气、时段调整推荐</text>
-          <text class="loc-detail-item">· 生成可一键导航的可执行路线</text>
-          <text class="loc-detail-item">· 位置数据只在本机使用，不会上传明文</text>
+      <view class="text-wrap">
+        <text class="loc-title">{{ pending ? '正在定位中...' : '定位服务未开启' }}</text>
+        <text class="loc-sub">允许位置权限后，系统将为您：</text>
+      </view>
+
+      <view class="usage-list">
+        <view class="usage-item" v-for="(item, i) in usage" :key="i">
+          <view class="usage-dot" />
+          <text class="usage-text">{{ item }}</text>
         </view>
       </view>
     </view>
 
-    <view class="loc-actions">
-      <view class="primary-btn" :class="{ disabled: pending }" @tap="retry">{{ pending ? '正在定位…' : '重新定位' }}</view>
-      <view class="secondary-btn" @tap="useDefault">使用默认城市继续</view>
+    <view class="action-wrap" :style="{ paddingBottom: safeBottom }">
+      <view class="btn primary" :class="{ disabled: pending }" @tap="retry">
+        <text>{{ pending ? '定位中...' : '重新尝试定位' }}</text>
+      </view>
+      <view class="btn secondary" @tap="useDefault">
+        <text>使用默认城市进入</text>
+      </view>
+      <text class="action-hint">也可先进入默认城市，稍后在「出游」Tab 重新定位</text>
     </view>
-
-    <text class="loc-hint mono">默认城市：{{ cityStore.current }} · 之后可在出游 Tab 点城市重新定位</text>
   </view>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useCityStore } from '../../store/city.js'
 import { api } from '../../api/mock.js'
+import UNavBar from '../../components/UNavBar.vue'
 
 const cityStore = useCityStore()
-const statusBarHeight = ref(44)
 const pending = ref(false)
+const safeBottom = ref('40rpx')
 
-try {
-  const sys = uni.getSystemInfoSync()
-  statusBarHeight.value = sys.statusBarHeight || 44
-} catch (_) {}
+const usage = [
+  '推荐附近 3-5 公里内的优质目的地',
+  '按当前天气与时段智能调整推荐权重',
+  '规划可一键导航的即兴出游路线',
+  '位置数据仅用于本地计算，保障隐私'
+]
+
+onMounted(() => {
+  try {
+    const sys = uni.getSystemInfoSync()
+    safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 20, 20) + 'px'
+  } catch (_) {}
+})
 
 function gotoHome() {
   uni.reLaunch({ url: '/pages/index/index' })
@@ -74,15 +82,29 @@ function retry() {
       pending.value = false
       gotoHome()
     },
-    fail: () => {
+    fail: (err) => {
       pending.value = false
-      uni.showToast({ title: '仍未获取到位置权限', icon: 'none' })
+      const errMsg = err?.errMsg || ''
+      if (errMsg.includes('auth deny') || errMsg.includes('auth denied')) {
+        uni.showModal({
+          title: '定位权限未开启',
+          content: '我们需要您的位置信息来推荐出游地点。请前往设置开启。',
+          confirmText: '去设置',
+          success: (res) => {
+            if (res.confirm) {
+              uni.openSetting()
+            }
+          }
+        })
+      } else {
+        uni.showToast({ title: '定位失败: ' + errMsg, icon: 'none', duration: 3000 })
+      }
     },
   })
 }
 
 function useDefault() {
-  cityStore.locationDenied = true
+  cityStore.setDefaultLocation()
   gotoHome()
 }
 </script>
@@ -90,144 +112,136 @@ function useDefault() {
 <style lang="scss">
 @import '../../uni.scss';
 
-.loc-page {
+.page {
   min-height: 100vh;
-  background: $z-bg;
+  background: #fff;
   display: flex;
   flex-direction: column;
-  padding: 32rpx 32rpx 60rpx;
 }
 
-.loc-header {
-  margin-top: 16rpx;
-  margin-bottom: 36rpx;
+.loc-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 60rpx;
 }
 
-.loc-kicker {
-  display: block;
-  font-size: 20rpx;
-  color: $z-muted;
-  letter-spacing: 3rpx;
-  margin-bottom: 12rpx;
-}
-
-.loc-title {
-  display: block;
-  font-size: 46rpx;
-  font-weight: 900;
-  color: $z-text;
-  margin-bottom: 10rpx;
-}
-
-.loc-sub {
-  display: block;
-  font-size: 24rpx;
-  color: $z-muted;
-  line-height: 1.55;
-  max-width: 600rpx;
-}
-
-.loc-card {
-  background: $z-card;
-  border-radius: 26rpx;
-  padding: 36rpx 32rpx;
-  box-shadow: 0 8rpx 28rpx rgba(13, 79, 74, 0.08);
-  margin-bottom: 36rpx;
-}
-
-.loc-pin-wrap {
+.loc-icon-wrap {
   position: relative;
+  width: 200rpx;
+  height: 200rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 140rpx;
-  margin-bottom: 28rpx;
+  margin-bottom: 60rpx;
 }
 
-.loc-pin {
-  width: 120rpx;
-  height: 120rpx;
-  border-radius: 60rpx;
-  background: rgba(13, 79, 74, 0.08);
+.loc-icon-bg {
+  width: 140rpx;
+  height: 140rpx;
+  background: $u-bg-soft;
+  border-radius: 70rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 2;
+  box-shadow: $u-shadow;
 }
 
-.loc-pin-pulse {
+.loc-icon { font-size: 64rpx; }
+
+.loc-ripple {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 120rpx;
-  height: 120rpx;
-  border-radius: 60rpx;
-  background: rgba(13, 79, 74, 0.18);
-  animation: pin-ripple 1.4s infinite ease-out;
+  width: 140rpx;
+  height: 140rpx;
+  background: $u-tint-mint;
+  border-radius: 70rpx;
+  animation: ripple 1.5s infinite ease-out;
 }
 
-@keyframes pin-ripple {
-  0%   { transform: translate(-50%, -50%) scale(1);   opacity: 0.5; }
-  100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
+@keyframes ripple {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
 }
 
-.loc-detail-title {
+.text-wrap {
+  text-align: center;
+  margin-bottom: 48rpx;
+}
+
+.loc-title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 800;
+  color: $u-text;
+  margin-bottom: 12rpx;
+}
+
+.loc-sub {
   display: block;
   font-size: 26rpx;
-  font-weight: 800;
-  color: $z-text;
-  margin-bottom: 14rpx;
+  color: $u-text-mute;
 }
 
-.loc-detail-list {
+.usage-list {
   display: flex;
   flex-direction: column;
-  gap: 8rpx;
+  gap: 20rpx;
 }
 
-.loc-detail-item {
-  display: block;
-  font-size: 23rpx;
-  color: $z-text2;
-  line-height: 1.5;
+.usage-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
 }
 
-.loc-actions {
+.usage-dot {
+  width: 10rpx;
+  height: 10rpx;
+  background: $z-primary;
+  border-radius: 5rpx;
+}
+
+.usage-text {
+  font-size: 26rpx;
+  color: $u-text-sub;
+}
+
+.action-wrap {
+  padding: 40rpx 48rpx;
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
-  margin-bottom: 24rpx;
+  gap: 20rpx;
 }
 
-.primary-btn,
-.secondary-btn {
-  height: 88rpx;
-  border-radius: 16rpx;
+.btn {
+  height: 96rpx;
+  border-radius: 48rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28rpx;
+  font-size: 30rpx;
   font-weight: 800;
+
+  &.primary {
+    background: $z-primary;
+    color: #fff;
+    box-shadow: 0 8rpx 20rpx rgba(13, 79, 74, 0.2);
+    &.disabled { opacity: 0.5; }
+  }
+
+  &.secondary {
+    background: $u-bg-soft;
+    color: $u-text;
+  }
 }
 
-.primary-btn {
-  color: $z-card;
-  background: $z-primary;
-
-  &.disabled { opacity: 0.6; }
-}
-
-.secondary-btn {
-  color: $z-primary;
-  background: rgba(13, 79, 74, 0.08);
-}
-
-.loc-hint {
-  display: block;
+.action-hint {
   text-align: center;
   font-size: 20rpx;
-  color: $z-muted;
-  letter-spacing: 1rpx;
+  color: $u-text-mute;
+  margin-top: 10rpx;
 }
 </style>

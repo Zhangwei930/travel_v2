@@ -1,53 +1,56 @@
 <template>
   <view class="page">
-    <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
-      <view class="top-row">
-        <view class="back-btn" @tap="goBack">‹</view>
-        <view class="title-wrap">
-          <text class="kicker mono">FEATURED ROUTES</text>
-          <text class="title serif">精选路线</text>
-          <text class="sub">{{ cityStore.current }} · {{ weatherText }}</text>
-        </view>
-        <view class="reload-btn" @tap="reload">刷新</view>
+    <u-nav-bar title="精选路线" />
+    <text class="page-subtitle">多种时长路线组合</text>
+
+    <!-- 时长 tab -->
+    <view class="duration-tabs">
+      <view
+        v-for="t in tabs"
+        :key="t.id"
+        class="dur-tab"
+        :class="{ active: active === t.id }"
+        @tap="setTab(t.id)"
+      >
+        <text class="dur-tab-text">{{ t.label }}</text>
+        <view v-if="active === t.id" class="dur-tab-underline" />
       </view>
     </view>
 
     <scroll-view scroll-y class="scroll-body" :show-scrollbar="false">
-      <view v-if="loading" class="state-card">
-        <text class="state-icon">⌖</text>
-        <text class="state-title serif">正在获取精选路线</text>
-        <text class="state-sub">路线基于当前位置和附近 3-5km 推荐。</text>
-      </view>
-
+      <view v-if="loading" class="hint">加载中…</view>
       <view v-else-if="locationError" class="state-card">
-        <text class="state-icon">!</text>
-        <text class="state-title serif">需要开启定位</text>
-        <text class="state-sub">没有当前位置时不展示附近路线。</text>
-        <view class="primary-btn" @tap="reload">重新定位</view>
+        <text class="state-title">需要开启定位</text>
+        <text class="state-sub">允许位置权限后才会推荐附近路线</text>
+        <view class="state-btn" @tap="reload">重新定位</view>
       </view>
+      <view v-else-if="!visibleRoutes.length" class="hint">该时长暂无精选路线</view>
 
-      <view v-else class="section">
-        <view v-if="!routes.length" class="empty mono">暂无精选路线</view>
-        <view class="route-list">
-          <view v-for="route in routes" :key="route.id" class="route-card" @tap="openRoute(route)">
-            <view class="route-head">
-              <view>
-                <text class="route-title serif">{{ route.title }}</text>
-                <text class="route-sub">{{ route.duration }} · {{ route.budget || '预算可控' }}</text>
+      <view class="route-list">
+        <view
+          v-for="route in visibleRoutes"
+          :key="route.id"
+          class="route-card"
+          @tap="openRoute(route)"
+        >
+          <view class="route-thumb">
+            <image
+              :src="routeThumb(route)"
+              class="route-thumb-img"
+              mode="aspectFill"
+              lazy-load
+              @error="onRouteImageError(route)"
+            />
+          </view>
+          <view class="route-body">
+            <text class="route-title">{{ route.title }}</text>
+            <text class="route-summary">{{ route.summary || ' ' }}</text>
+            <view class="route-meta">
+              <view class="meta-left">
+                <text class="meta-item">🕐 约{{ route.duration || '半日' }}</text>
+                <text class="meta-item">🚶 {{ route.stops?.length || 0 }}个地点</text>
               </view>
-              <text class="route-badge">{{ route.stops?.length || 0 }}站</text>
-            </view>
-            <text class="reason" :numberOfLines="2">{{ route.summary }}</text>
-            <view class="stops">
-              <view v-for="stop in route.stops.slice(0, 4)" :key="stop.name" class="stop-row">
-                <text class="dot" />
-                <text class="stop-name">{{ stop.name }}</text>
-                <text class="stop-dist">{{ stop.distance }}</text>
-              </view>
-            </view>
-            <view class="card-foot">
-              <text class="source">点击查看完整路线 · {{ route.stops?.length || 0 }} 站</text>
-              <view class="nav-btn">查看详情</view>
+              <text class="meta-dist">约{{ totalDist(route) }}</text>
             </view>
           </view>
         </view>
@@ -60,44 +63,60 @@
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
-import { getCoords, getHomeFeedCache, setHomeFeedCache } from '../../api/storage.js'
+import { routeImage } from '../../api/assets.js'
+import { getHomeFeedCache, setHomeFeedCache } from '../../api/storage.js'
 import { useCityStore } from '../../store/city.js'
+import UNavBar from '../../components/UNavBar.vue'
 
 const cityStore = useCityStore()
-const statusBarHeight = ref(44)
 const loading = ref(false)
 const locationError = ref(false)
-const weather = ref(null)
-const routes = ref([])
+const allRoutes = ref([])
+const brokenRouteImages = ref({})
 
-const weatherText = computed(() => weather.value ? `${weather.value.temp}° ${weather.value.cond}` : '定位推荐')
+const tabs = [
+  { id: '2h',    label: '2小时' },
+  { id: 'half',  label: '半日' },
+  { id: 'day',   label: '一日' },
+]
+const active = ref('2h')
 
-onLoad(async (options) => {
-  applyContext(options)
-  try {
-    const sys = uni.getSystemInfoSync()
-    statusBarHeight.value = sys.statusBarHeight || 44
-  } catch (_) {}
-  await loadFeed(false)
+const visibleRoutes = computed(() => {
+  const match = active.value === '2h'   ? /2\s*小时|2h|两小时/i
+              : active.value === 'half' ? /半日|半天|3\s*小时|4\s*小时/i
+              :                            /一日|全天|一天|day/i
+  return allRoutes.value.filter(r => match.test(r.duration || ''))
 })
 
-function asNumber(value, fallback = null) {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : fallback
+function setTab(id) { active.value = id }
+
+function parseDistanceKm(text) {
+  if (!text) return 0
+  const m = String(text).match(/([0-9.]+)\s*(km|m|公里|米)?/i)
+  if (!m) return 0
+  const n = parseFloat(m[1])
+  return /^m|米$/i.test(m[2] || '') ? n / 1000 : n
 }
 
-function readText(value) {
-  if (value == null) return ''
-  try { return decodeURIComponent(String(value)) } catch (_) { return String(value) }
+function totalDist(route) {
+  const stops = route?.stops || []
+  if (!stops.length) return '—'
+  const km = stops.reduce((sum, s) => sum + parseDistanceKm(s.distance || ''), 0)
+  return km.toFixed(1) + 'km'
 }
 
-function applyContext(options = {}) {
-  const lat = asNumber(options.lat, cityStore.coords?.lat ?? null)
-  const lng = asNumber(options.lng, cityStore.coords?.lng ?? null)
-  const city = readText(options.city) || cityStore.current
-  if (lat != null && lng != null) cityStore.setCoords(lat, lng)
-  if (city) cityStore.setFromLocation(city)
+function routeThumb(route) {
+  return routeImage(route, brokenRouteImages.value[route?.id])
 }
+
+function onRouteImageError(route) {
+  if (!route?.id) return
+  brokenRouteImages.value = { ...brokenRouteImages.value, [route.id]: true }
+}
+
+onLoad(async () => {
+  await loadFeed(false)
+})
 
 async function loadFeed(forceLocation) {
   loading.value = true
@@ -105,18 +124,17 @@ async function loadFeed(forceLocation) {
   try {
     const cached = !forceLocation ? getHomeFeedCache() : null
     if (cached) {
-      applyFeed(cached)
+      allRoutes.value = cached.routes || []
+      loading.value = false
       return
     }
-
-    let coords = cityStore.coords || getCoords()
+    let coords = cityStore.coords
     if (!coords || forceLocation) {
       coords = await new Promise((resolve, reject) => {
         uni.getLocation({ type: 'gcj02', success: (r) => resolve({ lat: r.latitude, lng: r.longitude }), fail: reject })
       })
       cityStore.setCoords(coords.lat, coords.lng)
     }
-
     const feed = await api.getHomeFeed({
       lat: coords.lat,
       lng: coords.lng,
@@ -125,27 +143,17 @@ async function loadFeed(forceLocation) {
     })
     if (feed?.location?.city) cityStore.setFromLocation(feed.location.city)
     setHomeFeedCache(feed)
-    applyFeed(feed)
+    allRoutes.value = feed.routes || []
   } catch (_) {
     locationError.value = true
-    routes.value = []
-    weather.value = null
+    allRoutes.value = []
   } finally {
     loading.value = false
   }
 }
 
-function applyFeed(feed) {
-  weather.value = feed.weather || null
-  routes.value = feed.routes || []
-}
-
 function reload() {
   loadFeed(true)
-}
-
-function goBack() {
-  uni.navigateBack()
 }
 
 function openRoute(route) {
@@ -160,239 +168,168 @@ function openRoute(route) {
 
 .page {
   min-height: 100vh;
-  background: $z-bg;
+  background: $u-bg;
 }
 
-.header {
-  background: $z-primary;
-  padding: 0 28rpx 34rpx;
+.page-subtitle {
+  display: block;
+  text-align: center;
+  font-size: 22rpx;
+  color: $u-text-mute;
+  padding: 4rpx 0 16rpx;
 }
 
-.top-row {
+// ── 时长 tabs ──────────────────────────────────────────────
+.duration-tabs {
   display: flex;
-  align-items: center;
-  gap: 18rpx;
-  padding-top: 18rpx;
+  padding: 0 32rpx;
+  background: $u-bg;
+  border-bottom: 1rpx solid $u-line;
+  margin-bottom: 6rpx;
 }
 
-.back-btn,
-.reload-btn {
-  height: 62rpx;
-  border-radius: 12rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: $z-card;
-  background: rgba(255, 255, 255, 0.14);
-  flex-shrink: 0;
+.dur-tab {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0 16rpx;
+  position: relative;
 }
 
-.back-btn {
-  width: 62rpx;
-  font-size: 44rpx;
+.dur-tab-text {
+  font-size: 28rpx;
+  color: $u-text-sub;
+  font-weight: 500;
 }
 
-.reload-btn {
-  padding: 0 20rpx;
-  font-size: 23rpx;
+.dur-tab.active .dur-tab-text {
+  color: $z-primary;
   font-weight: 800;
 }
 
-.title-wrap {
-  flex: 1;
-  min-width: 0;
+.dur-tab-underline {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48rpx;
+  height: 4rpx;
+  border-radius: 2rpx;
+  background: $z-primary;
 }
 
-.kicker {
-  display: block;
-  color: rgba(255, 255, 255, 0.58);
-  font-size: 18rpx;
-  margin-bottom: 2rpx;
-}
-
-.title {
-  display: block;
-  color: $z-card;
-  font-size: 36rpx;
-  font-weight: 900;
-  margin-bottom: 4rpx;
-}
-
-.sub {
-  display: block;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 22rpx;
-}
-
+// ── 列表 ────────────────────────────────────────────────────
 .scroll-body {
-  height: calc(100vh - 160rpx);
+  position: relative;
+  background: $u-bg;
 }
 
-.section {
-  padding: 26rpx 28rpx 48rpx;
+.hint {
+  text-align: center;
+  color: $u-text-mute;
+  font-size: 24rpx;
+  padding: 60rpx 0;
 }
 
 .state-card {
-  margin: 28rpx;
-  background: $z-card;
+  margin: 40rpx 24rpx 0;
+  background: $u-bg;
   border-radius: 18rpx;
-  padding: 46rpx 30rpx;
+  padding: 36rpx 28rpx;
   text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
+  box-shadow: $u-shadow;
 }
 
-.state-icon {
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: 44rpx;
-  background: rgba(13, 79, 74, 0.08);
-  color: $z-primary;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 38rpx;
-  font-weight: 900;
-  margin-bottom: 20rpx;
-}
-
-.state-title {
-  font-size: 32rpx;
-  font-weight: 900;
-  color: $z-text;
-  margin-bottom: 8rpx;
-}
-
-.state-sub,
-.empty {
-  color: $z-muted;
-  font-size: 24rpx;
-}
-
-.primary-btn {
-  margin-top: 24rpx;
-  height: 64rpx;
-  padding: 0 28rpx;
-  border-radius: 12rpx;
-  background: $z-primary;
-  color: $z-card;
-  font-size: 24rpx;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
+.state-title { display: block; font-size: 28rpx; font-weight: 800; color: $u-text; margin-bottom: 8rpx; }
+.state-sub   { display: block; font-size: 22rpx; color: $u-text-sub; margin-bottom: 24rpx; }
+.state-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 64rpx; padding: 0 32rpx; border-radius: 12rpx;
+  background: $z-primary; color: #fff; font-size: 24rpx; font-weight: 700;
 }
 
 .route-list {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: 16rpx;
+  padding: 16rpx 24rpx 32rpx;
 }
 
 .route-card {
-  background: $z-card;
-  border-radius: 16rpx;
-  padding: 20rpx;
+  background: $u-bg;
+  border-radius: 20rpx;
+  padding: 16rpx;
   display: flex;
-  flex-direction: column;
-  gap: 14rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
+  gap: 16rpx;
+  box-shadow: $u-shadow;
+  cursor: pointer;
 }
 
-.route-head,
-.card-foot {
+.route-thumb {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 14rpx;
+  overflow: hidden;
+  background: $u-bg-soft;
+  flex-shrink: 0;
+}
+
+.route-thumb-img { width: 100%; height: 100%; }
+
+.route-body {
+  flex: 1;
+  min-width: 0;
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
-  gap: 16rpx;
 }
 
 .route-title {
   display: block;
-  color: $z-text;
-  font-size: 29rpx;
-  font-weight: 900;
-  line-height: 1.25;
-  margin-bottom: 6rpx;
-}
-
-.route-sub,
-.source,
-.stop-dist {
-  color: $z-muted;
-  font-size: 21rpx;
-}
-
-.reason {
-  display: block;
-  color: $z-text2;
-  font-size: 23rpx;
-  line-height: 1.5;
-}
-
-.route-badge {
-  height: 46rpx;
-  padding: 0 16rpx;
-  border-radius: 10rpx;
-  background: rgba(255, 107, 53, 0.12);
-  color: $z-accent;
-  display: flex;
-  align-items: center;
-  font-size: 22rpx;
+  font-size: 28rpx;
   font-weight: 800;
-  flex-shrink: 0;
-}
-
-.stops {
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-}
-
-.stop-row {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-}
-
-.dot {
-  width: 12rpx;
-  height: 12rpx;
-  border-radius: 6rpx;
-  background: $z-primary;
-  flex-shrink: 0;
-}
-
-.stop-name {
-  flex: 1;
-  min-width: 0;
-  color: $z-text2;
-  font-size: 24rpx;
+  color: $u-text;
+  margin-bottom: 6rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.card-foot {
-  align-items: center;
+.route-summary {
+  display: block;
+  font-size: 22rpx;
+  color: $u-text-sub;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  margin-bottom: 10rpx;
 }
 
-.nav-btn {
-  height: 58rpx;
-  min-width: 108rpx;
-  padding: 0 20rpx;
-  border-radius: 10rpx;
-  background: $z-primary;
-  color: $z-card;
-  font-size: 24rpx;
-  font-weight: 800;
+.route-meta {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  gap: 12rpx;
 }
 
-.nav-btn.disabled {
-  background: $z-muted;
+.meta-left {
+  display: flex;
+  gap: 14rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.meta-item {
+  font-size: 20rpx;
+  color: $u-text-mute;
+}
+
+.meta-dist {
+  font-size: 22rpx;
+  color: $z-primary;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 </style>

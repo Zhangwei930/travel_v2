@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import PoiIndex, TravelKnowledge
-from app.schemas import HomeEntryOut, HomeFeedOut, LocationOut
+from app.schemas import HomeEntryOut, HomeFeedOut, LocationOut, RecommendPoiOut, RouteCardOut
 from app.services import map_provider
 from app.services.recommend_service import recommend_pois
 from app.services.route_builder import build_home_routes
@@ -14,6 +14,7 @@ from app.services.weather_provider import get_weather
 from app.taxonomy import SCENES
 
 router = APIRouter(prefix="/api/home", tags=["home"])
+compat_router = APIRouter(prefix="/api", tags=["home"])
 
 HOME_ENTRIES = [
     HomeEntryOut(id="place_index", title="按场所索引"),
@@ -76,6 +77,7 @@ def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None
             row.lat = item["lat"]
             row.lng = item["lng"]
             row.category = item["category"]
+            row.image = item.get("image")
             row.source = "amap"
             row.fetched_at = now
             row.expires_at = expires
@@ -89,6 +91,7 @@ def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None
                 lat=item["lat"],
                 lng=item["lng"],
                 category=item["category"],
+                image=item.get("image"),
                 source="amap",
                 fetched_at=now,
                 expires_at=expires,
@@ -115,15 +118,46 @@ def _local_rows(db: Session, city: str, scene: str | None) -> list[tuple[PoiInde
     return rows
 
 
-@router.get("/feed", response_model=HomeFeedOut)
-def home_feed(
-    lat: float = Query(...),
-    lng: float = Query(...),
-    city: str | None = Query(default=None),
-    intent: str | None = Query(default=None),
-    scene: str | None = Query(default=None),
-    db: Session = Depends(get_db),
-):
+def _distance_value(distance: str) -> float:
+    if distance.endswith("km"):
+        return float(distance[:-2] or 0)
+    if distance.endswith("m"):
+        return float(distance[:-1] or 0) / 1000
+    return 999.0
+
+
+def _filter_nearby(items: list[RecommendPoiOut], filter_id: str | None) -> list[RecommendPoiOut]:
+    if filter_id == "nearest":
+        return sorted(items, key=lambda item: _distance_value(item.distance))
+    if filter_id == "free":
+        return [item for item in items if any("免费" in tag or "免门票" in tag for tag in item.tags)]
+    if filter_id == "indoor":
+        return [
+            item for item in items
+            if "室内" in (item.category or "") or any("室内" in tag for tag in item.tags)
+        ]
+    return items
+
+
+def _filter_routes(items: list[RouteCardOut], duration: str | None) -> list[RouteCardOut]:
+    if not duration:
+        return items
+    duration_map = {
+        "2h": ("2小时", "2h", "两小时"),
+        "half": ("半日", "半天", "3小时", "4小时"),
+        "day": ("一日", "全天", "一天"),
+    }
+    needles = duration_map.get(duration, (duration,))
+    return [item for item in items if any(needle in (item.duration or "") for needle in needles)]
+
+
+def _build_home_feed(
+    lat: float,
+    lng: float,
+    city: str | None,
+    scene: str | None,
+    db: Session,
+) -> HomeFeedOut:
     resolved_city = (
         map_provider.normalize_city(city)
         or map_provider.amap_reverse_city(lat, lng)
@@ -161,3 +195,55 @@ def home_feed(
         routes=routes,
         assistant_chips=ASSISTANT_CHIPS,
     )
+
+
+@router.get("/feed", response_model=HomeFeedOut)
+def home_feed(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    city: str | None = Query(default=None),
+    intent: str | None = Query(default=None),
+    scene: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    return _build_home_feed(lat=lat, lng=lng, city=city, scene=scene, db=db)
+
+
+@router.get("/bootstrap", response_model=HomeFeedOut)
+def home_bootstrap(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    city: str | None = Query(default=None),
+    intent: str | None = Query(default=None),
+    scene: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    return _build_home_feed(lat=lat, lng=lng, city=city, scene=scene, db=db)
+
+
+@compat_router.get("/nearby/recommend", response_model=list[RecommendPoiOut])
+def nearby_recommend(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    city: str | None = Query(default=None),
+    scene: str | None = Query(default=None),
+    filter: str | None = Query(default=None),
+    time_slot: str | None = Query(default=None),
+    weather: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    feed = _build_home_feed(lat=lat, lng=lng, city=city, scene=scene, db=db)
+    return _filter_nearby(feed.nearby_now, filter)
+
+
+@compat_router.get("/routes/featured", response_model=list[RouteCardOut])
+def routes_featured(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    city: str | None = Query(default=None),
+    scene: str | None = Query(default=None),
+    duration: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    feed = _build_home_feed(lat=lat, lng=lng, city=city, scene=scene, db=db)
+    return _filter_routes(feed.routes, duration)

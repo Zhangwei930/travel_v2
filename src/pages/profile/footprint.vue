@@ -25,7 +25,7 @@
 
           <!-- 右：卡片 -->
           <view class="card">
-            <image v-if="item.img" :src="item.img" class="thumb" mode="aspectFill" lazy-load />
+            <image :src="thumbFor(item)" class="thumb" mode="aspectFill" lazy-load @error="onImageError(item)" />
             <view class="info">
               <text class="name serif">{{ item.name }}</text>
               <text class="cat">{{ item.cat }}</text>
@@ -41,18 +41,27 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getVisited } from '../../api/storage.js'
+import { getVisitedList } from '../../api/storage.js'
+import { poiImage } from '../../api/assets.js'
 
 const statusBarHeight = ref(44)
 const list = ref([])
+const brokenImages = ref({})
 
 onMounted(() => {
   try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {}
-  list.value = getVisited()
+  list.value = getVisitedList()
 })
 
 function goBack() { uni.navigateBack() }
 function viewPoi(id) { uni.navigateTo({ url: `/pages/poi/detail?id=${id}` }) }
+function thumbFor(item) { return poiImage(item, Boolean(brokenImages.value[item.id])) }
+function onImageError(item) {
+  brokenImages.value = {
+    ...brokenImages.value,
+    [item.id]: true,
+  }
+}
 
 function formatDate(ts) {
   if (!ts) return ''

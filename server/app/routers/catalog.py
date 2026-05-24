@@ -23,6 +23,10 @@ def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
 
 
 def _poi_out(poi: PoiIndex, kn: TravelKnowledge | None, origin, dist_text: str | None = None) -> PoiOut:
+    img_url = (kn.cover_image if kn else None) or poi.image or ""
+    if not img_url and poi.lat and poi.lng and settings.amap_key:
+        img_url = f"https://restapi.amap.com/v3/staticmap?location={poi.lng},{poi.lat}&zoom=15&size=400x400&markers=mid,,A:{poi.lng},{poi.lat}&key={settings.amap_key}"
+
     return PoiOut(
         id=poi.id,
         no=(kn.display_no if kn else None) or f"NO.{poi.id:03d}",
@@ -32,7 +36,7 @@ def _poi_out(poi: PoiIndex, kn: TravelKnowledge | None, origin, dist_text: str |
         time=(kn.play_duration if kn else None) or "1-2h",
         budget=(kn.budget_level if kn else None) or "免费",
         tags=(kn.scene_tags if kn else None) or [],
-        img=(kn.cover_image if kn else None) or "",
+        img=img_url,
         reason=(kn.recommend_reason if kn else None) or "",
     )
 
@@ -64,18 +68,24 @@ def _amap_nearby(lat: float, lng: float, city: str | None, db: Session) -> list[
         if row:
             row.name, row.lat, row.lng = p["name"], p["lat"], p["lng"]
             row.category, row.address = p["category"], p["address"]
+            row.image = p.get("image") or row.image
             row.city = cache_city
             row.fetched_at, row.expires_at = now, expires
         else:
             row = PoiIndex(
                 provider="amap", provider_poi_id=p["provider_poi_id"], name=p["name"],
                 city=cache_city, address=p["address"], lat=p["lat"], lng=p["lng"],
-                category=p["category"], source="amap", fetched_at=now, expires_at=expires,
+                category=p["category"], image=p.get("image"), source="amap", fetched_at=now, expires_at=expires,
             )
             db.add(row)
             db.flush()
         kn = kn_by_name.get(p["name"])
         dist = map_provider.format_distance(p["distance_m"] / 1000) if p["distance_m"] is not None else "—"
+
+        img_url = (kn.cover_image if kn else None) or row.image or ""
+        if not img_url and row.lat and row.lng and settings.amap_key:
+            img_url = f"https://restapi.amap.com/v3/staticmap?location={row.lng},{row.lat}&zoom=15&size=400x400&markers=mid,,A:{row.lng},{row.lat}&key={settings.amap_key}"
+
         out.append(PoiOut(
             id=row.id,
             no=(kn.display_no if kn else None) or f"NO.{row.id:03d}",
@@ -85,7 +95,7 @@ def _amap_nearby(lat: float, lng: float, city: str | None, db: Session) -> list[
             time=(kn.play_duration if kn else None) or "—",
             budget=(kn.budget_level if kn else None) or "—",
             tags=(kn.scene_tags if kn else None) or p["type_tags"],
-            img=(kn.cover_image if kn else None) or p["image"],
+            img=img_url,
             reason=(kn.recommend_reason if kn else None) or (row.address or ""),
         ))
     db.commit()

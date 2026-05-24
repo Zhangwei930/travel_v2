@@ -1,16 +1,6 @@
 <template>
   <view class="page">
-    <!-- Header -->
-    <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
-      <view class="header-inner">
-        <view class="bot-avatar">🤖<view class="online-dot" /></view>
-        <view class="header-text">
-          <text class="header-title serif">出游助手</text>
-          <text class="header-sub mono">本地知识库 · 在线</text>
-        </view>
-        <view class="header-clear" @tap="clearHistory">清空</view>
-      </view>
-    </view>
+    <u-nav-bar title="咨询助手" />
 
     <!-- 消息区 -->
     <scroll-view
@@ -23,37 +13,57 @@
       <view class="msg-list">
         <view v-for="(msg, i) in messages" :key="i" class="msg-row" :class="msg.role">
           <!-- Bot 头像 -->
-          <view v-if="msg.role === 'bot'" class="bot-bubble-avatar">🤖</view>
+          <view v-if="msg.role === 'bot'" class="bot-avatar-wrap">
+            <view class="bot-avatar">🤖</view>
+          </view>
+          
           <view class="bubble-wrap" :class="msg.role">
             <view v-if="msg.text" class="bubble" :class="msg.role">
               <text>{{ msg.text }}</text>
             </view>
-            <!-- Bot 快捷 chips -->
-            <view v-if="msg.chips" class="chips-row">
+
+            <!-- Bot 快捷回复 -->
+            <view v-if="msg.chips && msg.role === 'bot'" class="chips-row">
               <view v-for="c in msg.chips" :key="c" class="quick-chip" @tap="sendMsg(c)">{{ c }}</view>
             </view>
-            <!-- 数据源徽章 -->
-            <view v-if="msg.sources" class="sources-row">
+
+            <!-- 数据源 -->
+            <view v-if="msg.sources && msg.role === 'bot'" class="sources-row">
               <view v-for="s in msg.sources" :key="s.k" class="source-badge">
-                <text class="source-k mono">[{{ s.k }}]</text>
+                <text class="source-k">[{{ s.k }}]</text>
                 <text class="source-v">{{ s.v }}</text>
               </view>
             </view>
+
+            <!-- 推荐卡片：地点 -->
             <view v-if="msg.destinations?.length" class="assistant-cards">
               <view
                 v-for="poi in msg.destinations"
                 :key="poi.id"
                 class="assistant-poi"
-                @tap="openNav(poi)"
+                @tap="goPoi(poi.id, poi)"
               >
-                <view class="assistant-poi-main">
-                  <text class="assistant-poi-name serif">{{ poi.name }}</text>
-                  <text class="assistant-poi-meta">{{ poi.category || '地点' }} · {{ poi.distance }}</text>
-                  <text class="assistant-poi-reason">{{ poi.reason }}</text>
+                <view class="poi-card-inner">
+                  <image
+                    :src="destinationThumb(poi)"
+                    class="assistant-poi-thumb"
+                    mode="aspectFill"
+                    lazy-load
+                    @error="onDestinationImageError(poi)"
+                  />
+                  <view class="poi-card-text">
+                    <text class="poi-card-name">{{ poi.name }}</text>
+                    <text class="poi-card-meta">{{ poi.category || '景点' }} · {{ poi.distance }}</text>
+                    <text class="poi-card-reason">{{ poi.reason }}</text>
+                  </view>
+                  <view class="poi-card-nav" @tap.stop="openNav(poi)">
+                    <text>导航</text>
+                  </view>
                 </view>
-                <view class="assistant-nav">导航</view>
               </view>
             </view>
+
+            <!-- 推荐卡片：路线 -->
             <view v-if="msg.routes?.length" class="assistant-cards">
               <view
                 v-for="route in msg.routes"
@@ -61,8 +71,19 @@
                 class="assistant-route"
                 @tap="openRoute(route)"
               >
-                <text class="assistant-poi-name serif">{{ route.title }}</text>
-                <text class="assistant-poi-meta">{{ route.duration }} · {{ route.stops?.length || 0 }}站</text>
+                <view class="route-card-inner">
+                  <image
+                    :src="assistantRouteThumb(route)"
+                    class="assistant-route-thumb"
+                    mode="aspectFill"
+                    lazy-load
+                    @error="onAssistantRouteImageError(route)"
+                  />
+                  <view class="route-card-text">
+                    <text class="route-card-title">{{ route.title }}</text>
+                    <text class="route-card-meta">{{ route.duration }} · {{ route.stops?.length || 0 }}站</text>
+                  </view>
+                </view>
               </view>
             </view>
           </view>
@@ -70,7 +91,9 @@
 
         <!-- 打字中 -->
         <view v-if="typing" class="msg-row bot">
-          <view class="bot-bubble-avatar">🤖</view>
+          <view class="bot-avatar-wrap">
+            <view class="bot-avatar">🤖</view>
+          </view>
           <view class="bubble bot typing-bubble">
             <view class="typing-dots">
               <view class="dot" /><view class="dot" /><view class="dot" />
@@ -80,7 +103,7 @@
       </view>
     </scroll-view>
 
-    <!-- 底部输入区（fixed 在 tab-bar 上方）-->
+    <!-- 底部输入区 -->
     <view class="composer" :style="{ bottom: tabBarHeight + 'px' }">
       <!-- FAQ 快捷条 -->
       <scroll-view scroll-x class="faq-scroll" :show-scrollbar="false">
@@ -89,21 +112,22 @@
         </view>
       </scroll-view>
 
-      <!-- 输入区 -->
+      <!-- 输入栏 -->
       <view class="input-bar">
         <view class="input-wrap">
           <input
             class="msg-input"
             v-model="inputText"
-            placeholder="问问附近适合去哪…"
-            placeholder-style="color: #8B9594;"
+            placeholder="问问助手，比如：附近停车方便吗？"
+            placeholder-style="color: #94A3B8;"
             :adjust-position="true"
             confirm-type="send"
             @confirm="sendMsg(inputText)"
           />
           <view class="send-btn" :class="{ active: inputText.length > 0 }" @tap="sendMsg(inputText)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 26 26" fill="none">
-              <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
             </svg>
           </view>
         </view>
@@ -118,19 +142,23 @@
 import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import ZTabBar from '../../components/ZTabBar.vue'
+import UNavBar from '../../components/UNavBar.vue'
 import { api } from '../../api/mock.js'
 import { streamAsk } from '../../api/stream.js'
 import { useCityStore } from '../../store/city.js'
 import { getAssistantContext } from '../../api/storage.js'
+import { poiImage, routeImage } from '../../api/assets.js'
 
 const cityStore = useCityStore()
 
 const statusBarHeight = ref(44)
-const tabBarHeight    = ref(80)        // ZTabBar 占用高度（含 safeArea）
-const msgScrollH      = ref(400)       // 消息滚动区显式高度，避免被遮挡
+const tabBarHeight    = ref(80)
+const msgScrollH      = ref(400)
 const scrollTop       = ref(0)
 const inputText       = ref('')
 const typing          = ref(false)
+const brokenDestinationImages = ref({})
+const brokenRouteImages = ref({})
 const HISTORY_KEY     = 'zhoumi_assistant_messages'
 const chatContext     = ref({
   city: cityStore.current,
@@ -138,13 +166,15 @@ const chatContext     = ref({
   lng: cityStore.coords?.lng ?? null,
   weather: '',
   time_slot: '',
+  scene: '',
+  intent: '',
 })
 
-const faqs = ['钓点限钓吗？', '需要钓鱼证吗？', '停车方便吗？', '下雨改去哪？', '适合带孩子吗？', '傍晚还能玩什么？']
+const faqs = ['钓点限钓吗？', '需要钓鱼证吗？', '停车方便吗？', '下雨改去哪？', '适合带孩子吗？']
 
 const defaultMessages = [
   { role: 'bot', text: '你好👋 我是周密出游助手，可以帮你规划路线、查询地点、解决出游疑问。' },
-  { role: 'bot', chips: ['钓点限钓吗？', '需要钓鱼证吗？', '停车方便吗？', '下雨改去哪？'] },
+  { role: 'bot', chips: ['附近有哪些好玩的？', '推荐一条 Citywalk 路线', '现在天气适合钓鱼吗？'] },
 ]
 
 function loadMessages() {
@@ -161,89 +191,53 @@ watch(messages, (val) => {
   try { uni.setStorageSync(HISTORY_KEY, val.slice(-80)) } catch (_) {}
 }, { deep: true })
 
-function asNumber(value, fallback = null) {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : fallback
-}
-
-function readText(value) {
-  if (value == null) return ''
-  try { return decodeURIComponent(String(value)) } catch (_) { return String(value) }
-}
-
 function applyChatContext(options = {}) {
   const cached = getAssistantContext() || {}
   const source = { ...cached, ...options }
-  const lat = asNumber(source.lat, cityStore.coords?.lat ?? null)
-  const lng = asNumber(source.lng, cityStore.coords?.lng ?? null)
-  const city = readText(source.city) || cityStore.current
+  const lat = Number(source.lat) || cityStore.coords?.lat || null
+  const lng = Number(source.lng) || cityStore.coords?.lng || null
+  const city = source.city || cityStore.current
 
-  if (lat != null && lng != null) cityStore.setCoords(lat, lng)
-  if (city) cityStore.setFromLocation(city)
-
+  if (lat && lng) cityStore.setCoords(lat, lng)
+  
   chatContext.value = {
-    city,
-    lat,
-    lng,
-    weather: readText(source.weather),
-    time_slot: readText(source.time_slot),
+    city, lat, lng,
+    weather: source.weather || '',
+    time_slot: source.time_slot || '',
+    scene: source.scene || '',
+    intent: source.intent || '',
   }
 }
 
-function clearHistory() {
-  uni.showModal({
-    title: '清空对话',
-    content: '将删除所有聊天记录，仅保留欢迎语。是否继续？',
-    confirmText: '清空',
-    confirmColor: '#E55B45',
-    success: ({ confirm }) => {
-      if (!confirm) return
-      try { uni.removeStorageSync(HISTORY_KEY) } catch (_) {}
-      messages.value = defaultMessages.map(item => ({ ...item }))
-      uni.showToast({ title: '已清空', icon: 'success' })
-    },
-  })
-}
-
-onLoad((options) => {
-  applyChatContext(options)
-})
+onLoad((options) => { applyChatContext(options) })
 
 onMounted(() => {
   try {
     const sys = uni.getSystemInfoSync()
     const statusH = sys.statusBarHeight || 44
     const safeB   = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
-    const winH    = sys.windowHeight || (sys.screenHeight - statusH) || 600
+    const winH    = sys.windowHeight || 600
     statusBarHeight.value = statusH
-    // ZTabBar = paddingTop 12rpx(~6px) + icon 行 ~50px + paddingBottom safeArea
     const tabH = safeB + 56
     tabBarHeight.value = tabH
-    // header 实际高度：paddingTop(statusH) + 头像行 ~52 + paddingBottom 12 ≈ statusH + 64
-    const headerH = statusH + 64
-    // composer 高度：faq 行 ~50 + input 行 ~70 + 安全区
-    const composerH = 50 + 70 + safeB
-    msgScrollH.value = Math.max(200, winH - headerH - tabH - composerH)
+    const navH = 44 + statusH
+    const composerH = 160 // Estimated
+    msgScrollH.value = winH - navH - tabH - composerH
   } catch (_) {}
   uni.$on('assistantContext', applyChatContext)
+  scrollToBottom()
 })
 
-onShow(() => {
-  applyChatContext()
-})
-
-onUnmounted(() => {
-  uni.$off('assistantContext', applyChatContext)
-})
+onShow(() => { applyChatContext() })
+onUnmounted(() => { uni.$off('assistantContext', applyChatContext) })
 
 function sendMsg(text) {
   const q = text?.trim()
   if (!q) return
 
-  // 取本轮发送前的最近 6 条 user/bot 消息作为多轮上下文（不含本次新问题）
   const history = messages.value
     .filter(m => m.text && (m.role === 'user' || m.role === 'bot'))
-    .slice(-6)
+    .slice(-4)
     .map(m => ({ role: m.role, text: m.text }))
 
   messages.value.push({ role: 'user', text: q })
@@ -251,17 +245,17 @@ function sendMsg(text) {
   typing.value = true
   scrollToBottom()
 
-  // 占位 bot 消息（流式期间逐字追加）
   const botMsg = { role: 'bot', text: '', sources: null, chips: null, destinations: null, routes: null }
   let started = false
+
   const payload = {
     question: q,
     city: chatContext.value.city,
     lat: chatContext.value.lat,
     lng: chatContext.value.lng,
-    intent: 'assistant',
-    weather: chatContext.value.weather,
-    time_slot: chatContext.value.time_slot,
+    scene: chatContext.value.scene || undefined,
+    intent: chatContext.value.intent || 'assistant',
+    weather: chatContext.value.weather || undefined,
     history,
   }
 
@@ -277,7 +271,6 @@ function sendMsg(text) {
       scrollToBottom()
     },
     onText: (t) => {
-      // 命中知识库/缓存：一次性显示整段
       botMsg.text = t
       scrollToBottom()
     },
@@ -287,70 +280,82 @@ function sendMsg(text) {
     },
     onDone: () => {
       typing.value = false
-      if (!started) {
-        // 流没起来（meta 都没收到）→ 降级
-        fallbackNonStream(q)
-      }
+      if (!started) fallbackNonStream(payload)
     },
     onError: () => {
       typing.value = false
-      if (!started) {
-        fallbackNonStream(q)
-      } else {
-        botMsg.text = (botMsg.text || '') + '\n[连接中断]'
-      }
+      if (!started) fallbackNonStream(payload)
     },
   })
+}
 
-  function fallbackNonStream(q) {
-    api.ask(payload)
-      .then((res) => {
-        messages.value.push({
-          role: 'bot',
-          text: res.text,
-          sources: res.sources,
-          chips: res.chips,
-          destinations: res.destinations,
-          routes: res.routes,
-        })
-        scrollToBottom()
+function fallbackNonStream(payload) {
+  api.ask(payload)
+    .then((res) => {
+      messages.value.push({
+        role: 'bot',
+        text: res.text,
+        sources: res.sources,
+        chips: res.chips,
+        destinations: res.destinations,
+        routes: res.routes,
       })
-      .catch(() => {
-        messages.value.push({ role: 'bot', text: '网络异常，请稍后重试。' })
-        scrollToBottom()
-      })
-  }
+      scrollToBottom()
+    })
+    .catch(() => {
+      messages.value.push({ role: 'bot', text: '暂时无法连接助手，请稍后再试。' })
+      scrollToBottom()
+    })
 }
 
 function scrollToBottom() {
   nextTick(() => { scrollTop.value = 99999 })
 }
 
+function goPoi(id, poi) {
+  try { uni.setStorageSync('currentPoiPreview', poi) } catch (_) {}
+  uni.navigateTo({ url: `/pages/poi/detail?id=${id}` })
+}
+
 function openNav(poi) {
-  if (!poi?.nav_ready || poi.lat == null || poi.lng == null) {
-    uni.showToast({ title: '该地点暂无可用坐标', icon: 'none' })
-    return
+  if (poi.lat && poi.lng) {
+    uni.openLocation({
+      latitude: Number(poi.lat),
+      longitude: Number(poi.lng),
+      name: poi.name,
+    })
   }
-  uni.openLocation({
-    latitude: Number(poi.lat),
-    longitude: Number(poi.lng),
-    name: poi.name,
-    address: poi.address || poi.category || '',
-  })
 }
 
 function openRoute(route) {
-  const stop = (route?.stops || []).find(s => s.lat != null && s.lng != null)
-  if (!stop) {
-    uni.showToast({ title: '该路线暂无可导航站点', icon: 'none' })
-    return
+  try { uni.setStorageSync('currentRoute', route) } catch (_) {}
+  uni.navigateTo({ url: '/pages/routes/detail' })
+}
+
+function imageKey(item) {
+  return String(item?.id ?? item?.name ?? item?.title ?? '')
+}
+
+function destinationThumb(poi) {
+  return poiImage(poi, Boolean(brokenDestinationImages.value[imageKey(poi)]))
+}
+
+function onDestinationImageError(poi) {
+  brokenDestinationImages.value = {
+    ...brokenDestinationImages.value,
+    [imageKey(poi)]: true,
   }
-  uni.openLocation({
-    latitude: Number(stop.lat),
-    longitude: Number(stop.lng),
-    name: stop.name,
-    address: stop.reason || '',
-  })
+}
+
+function assistantRouteThumb(route) {
+  return routeImage(route, Boolean(brokenRouteImages.value[imageKey(route)]))
+}
+
+function onAssistantRouteImageError(route) {
+  brokenRouteImages.value = {
+    ...brokenRouteImages.value,
+    [imageKey(route)]: true,
+  }
 }
 </script>
 
@@ -359,337 +364,263 @@ function openRoute(route) {
 
 .page {
   min-height: 100vh;
-  background: $z-bg;
-}
-
-.header {
-  background: $z-card;
-  padding: 0 32rpx 24rpx;
-  border-bottom: 1rpx solid $z-border;
-  flex-shrink: 0;
-}
-
-.header-inner {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-  padding-top: 16rpx;
-}
-
-.header-text { flex: 1; min-width: 0; }
-.header-clear {
-  padding: 8rpx 20rpx;
-  border: 1rpx solid $z-border;
-  border-radius: 22rpx;
-  font-size: 24rpx;
-  color: $z-muted;
-  background: $z-card;
-  flex-shrink: 0;
-}
-
-.bot-avatar {
-  width: 76rpx;
-  height: 76rpx;
-  border-radius: 38rpx;
-  background: linear-gradient(135deg, $z-primary 0%, $z-primary-l 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 36rpx;
-  position: relative;
-  flex-shrink: 0;
-}
-
-.online-dot {
-  position: absolute;
-  bottom: 2rpx;
-  right: 2rpx;
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 8rpx;
-  background: $z-success;
-  border: 2rpx solid $z-card;
-}
-
-.header-title {
-  display: block;
-  font-size: 30rpx;
-  font-weight: 800;
-  color: $z-text;
-}
-
-.header-sub {
-  display: block;
-  font-size: 20rpx;
-  color: $z-muted;
-  letter-spacing: 1rpx;
-  margin-top: 4rpx;
+  background: $u-bg;
 }
 
 .msg-scroll {
-  background: $z-bg;
+  background: $u-bg;
 }
 
 .msg-list {
-  padding: 18rpx 24rpx 24rpx;
+  padding: 32rpx 28rpx;
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 32rpx;
 }
 
 .msg-row {
   display: flex;
-  align-items: flex-start;
-  gap: 12rpx;
-
-  &.user {
-    flex-direction: row-reverse;
-  }
+  gap: 20rpx;
+  
+  &.user { flex-direction: row-reverse; }
 }
 
-.bot-bubble-avatar {
-  width: 60rpx;
-  height: 60rpx;
-  border-radius: 30rpx;
-  background: linear-gradient(135deg, $z-primary 0%, $z-primary-l 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26rpx;
+.bot-avatar-wrap {
+  width: 72rpx;
+  height: 72rpx;
   flex-shrink: 0;
 }
 
+.bot-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 20rpx;
+  background: $u-bg-soft;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+}
+
 .bubble-wrap {
-  max-width: 75%;
+  max-width: 80%;
   display: flex;
   flex-direction: column;
-  gap: 10rpx;
-
+  gap: 16rpx;
+  
   &.user { align-items: flex-end; }
 }
 
 .bubble {
-  padding: 20rpx 24rpx;
-  border-radius: 24rpx;
-  font-size: 26rpx;
-  line-height: 1.55;
-
+  padding: 24rpx 28rpx;
+  font-size: 28rpx;
+  line-height: 1.6;
+  
   &.bot {
-    background: $z-card;
-    color: $z-text;
-    border-bottom-left-radius: 6rpx;
-    box-shadow: 0 2rpx 8rpx rgba(13, 79, 74, 0.06);
+    background: $u-bg;
+    color: $u-text;
+    border-radius: 4rpx 28rpx 28rpx 28rpx;
+    box-shadow: $u-shadow;
   }
-
+  
   &.user {
     background: $z-primary;
-    color: $z-card;
-    border-bottom-right-radius: 6rpx;
+    color: #fff;
+    border-radius: 28rpx 4rpx 28rpx 28rpx;
+    box-shadow: 0 4rpx 12rpx rgba(13, 79, 74, 0.15);
   }
 }
 
-.typing-bubble {
-  padding: 20rpx 28rpx;
-}
-
+// Typing
 .typing-dots {
   display: flex;
-  gap: 10rpx;
+  gap: 8rpx;
   align-items: center;
+  height: 32rpx;
 }
 
 .dot {
   width: 10rpx;
   height: 10rpx;
   border-radius: 5rpx;
-  background: $z-muted;
-  animation: dotBounce 1.4s ease-in-out infinite;
-
+  background: $u-text-mute;
+  animation: dotBounce 1.4s infinite;
   &:nth-child(2) { animation-delay: 0.2s; }
   &:nth-child(3) { animation-delay: 0.4s; }
 }
 
 @keyframes dotBounce {
-  0%, 80%, 100% { transform: scale(1); opacity: 0.5; }
-  40%            { transform: scale(1.4); opacity: 1; }
+  0%, 80%, 100% { transform: scale(1); opacity: 0.4; }
+  40% { transform: scale(1.3); opacity: 1; }
 }
 
+// Chips
 .chips-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10rpx;
+  gap: 12rpx;
 }
 
 .quick-chip {
-  padding: 10rpx 20rpx;
-  background: rgba(13, 79, 74, 0.08);
-  border: 1rpx solid rgba(13, 79, 74, 0.2);
-  border-radius: $radius-pill;
-  font-size: 23rpx;
-  color: $z-primary;
-  cursor: pointer;
+  padding: 12rpx 24rpx;
+  background: $u-bg;
+  border: 1rpx solid $u-line;
+  border-radius: 32rpx;
+  font-size: 24rpx;
+  color: $u-text-sub;
 }
 
+// Sources
 .sources-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8rpx;
+  gap: 12rpx;
 }
 
 .source-badge {
+  background: $u-bg-soft;
+  padding: 4rpx 12rpx;
+  border-radius: 6rpx;
   display: flex;
   align-items: center;
   gap: 6rpx;
-  background: $z-bg;
-  border-radius: 8rpx;
-  padding: 6rpx 12rpx;
 }
 
-.source-k {
-  font-size: 18rpx;
+.source-k { font-size: 18rpx; color: $z-primary; font-weight: 700; }
+.source-v { font-size: 18rpx; color: $u-text-mute; }
+
+// Cards
+.assistant-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  width: 100%;
+}
+
+.assistant-poi, .assistant-route {
+  background: $u-bg;
+  border-radius: 24rpx;
+  box-shadow: $u-shadow;
+  overflow: hidden;
+  border: 1rpx solid $u-line;
+}
+
+.poi-card-inner {
+  padding: 24rpx;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.assistant-poi-thumb {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 16rpx;
+  flex-shrink: 0;
+  background: $u-bg-soft;
+}
+
+.poi-card-text { flex: 1; min-width: 0; }
+.poi-card-name { display: block; font-size: 28rpx; font-weight: 800; color: $u-text; margin-bottom: 4rpx; }
+.poi-card-meta { display: block; font-size: 22rpx; color: $u-text-mute; margin-bottom: 8rpx; }
+.poi-card-reason { display: block; font-size: 24rpx; color: $u-text-sub; line-height: 1.4; }
+
+.poi-card-nav {
+  height: 60rpx;
+  padding: 0 24rpx;
+  background: $u-tint-mint;
   color: $z-primary;
+  border-radius: 30rpx;
+  display: flex;
+  align-items: center;
+  font-size: 24rpx;
   font-weight: 700;
-  letter-spacing: 0.5rpx;
+  flex-shrink: 0;
 }
 
-.source-v {
-  font-size: 20rpx;
-  color: $z-muted;
+.route-card-inner {
+  padding: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
 }
 
-// Composer（FAQ + 输入栏一起 fixed 在 TabBar 上方）
+.assistant-route-thumb {
+  width: 112rpx;
+  height: 88rpx;
+  border-radius: 16rpx;
+  flex-shrink: 0;
+  background: $u-bg-soft;
+}
+
+.route-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
+.route-card-title { font-size: 28rpx; font-weight: 800; color: $u-text; }
+.route-card-meta { font-size: 22rpx; color: $u-text-mute; }
+
+// Composer
 .composer {
   position: fixed;
   left: 0;
   right: 0;
-  z-index: 1000;
-  background: $z-card;
-  border-top: 1rpx solid $z-border;
-  box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.05);
+  background: #fff;
+  border-top: 1rpx solid $u-line;
+  z-index: 100;
 }
 
-// FAQ
 .faq-scroll {
-  background: $z-card;
-  border-bottom: 1rpx solid $z-line;
-  padding: 12rpx 0;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid $u-line;
 }
 
 .faq-row {
   display: flex;
-  gap: 12rpx;
-  padding: 0 24rpx;
+  gap: 16rpx;
+  padding: 0 28rpx;
   white-space: nowrap;
 }
 
 .faq-chip {
-  display: inline-block;
-  padding: 10rpx 22rpx;
-  background: $z-bg;
-  border-radius: $radius-pill;
-  font-size: 23rpx;
-  color: $z-text2;
-  cursor: pointer;
-  flex-shrink: 0;
+  padding: 10rpx 24rpx;
+  background: $u-bg-soft;
+  border-radius: 30rpx;
+  font-size: 24rpx;
+  color: $u-text-sub;
 }
 
-// 输入区
 .input-bar {
-  background: $z-card;
-  padding: 16rpx 24rpx 24rpx;
+  padding: 20rpx 28rpx 28rpx;
 }
 
 .input-wrap {
   display: flex;
   align-items: center;
-  gap: 16rpx;
-  background: $z-bg;
-  border-radius: $radius-pill;
-  padding: 12rpx 16rpx 12rpx 28rpx;
+  gap: 20rpx;
+  background: $u-bg-soft;
+  border-radius: 48rpx;
+  padding: 12rpx 12rpx 12rpx 32rpx;
 }
 
 .msg-input {
   flex: 1;
-  font-size: 26rpx;
-  color: $z-text;
-  background: transparent;
-  border: none;
+  font-size: 28rpx;
+  color: $u-text;
 }
 
 .send-btn {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 32rpx;
-  background: $z-muted;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 36rpx;
+  background: $u-text-mute;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  transition: background 0.2s;
-
+  color: #fff;
+  transition: all 0.2s;
+  
   &.active {
     background: $z-primary;
+    box-shadow: 0 4rpx 12rpx rgba(13, 79, 74, 0.2);
   }
-}
-
-.assistant-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 12rpx;
-}
-
-.assistant-poi,
-.assistant-route {
-  background: $z-card;
-  border: 1rpx solid $z-border;
-  border-radius: 16rpx;
-  padding: 18rpx;
-  box-shadow: 0 2rpx 8rpx rgba(13, 79, 74, 0.06);
-}
-
-.assistant-poi {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
-
-.assistant-poi-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.assistant-poi-name {
-  display: block;
-  font-size: 25rpx;
-  font-weight: 800;
-  color: $z-text;
-  margin-bottom: 4rpx;
-}
-
-.assistant-poi-meta,
-.assistant-poi-reason {
-  display: block;
-  font-size: 21rpx;
-  color: $z-muted;
-  line-height: 1.4;
-}
-
-.assistant-poi-reason {
-  color: $z-text2;
-  margin-top: 6rpx;
-}
-
-.assistant-nav {
-  height: 54rpx;
-  padding: 0 18rpx;
-  border-radius: 12rpx;
-  background: $z-primary;
-  color: $z-card;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22rpx;
-  font-weight: 800;
-  flex-shrink: 0;
 }
 </style>

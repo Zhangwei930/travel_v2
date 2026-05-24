@@ -12,7 +12,7 @@
       <view v-if="list.length === 0" class="empty mono">还没有访问过任何地点，去地点详情页打卡吧</view>
 
       <view v-for="item in list" :key="item.id" class="card" @tap="viewPoi(item.id)">
-        <image v-if="item.img" :src="item.img" class="thumb" mode="aspectFill" lazy-load />
+        <image :src="thumbFor(item)" class="thumb" mode="aspectFill" lazy-load @error="onImageError(item)" />
         <view class="card-info">
           <view class="meta-row">
             <text class="no mono">{{ item.no }}</text>
@@ -30,9 +30,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getVisitedList } from '../../api/storage.js'
+import { poiImage } from '../../api/assets.js'
 
 const statusBarHeight = ref(44)
 const list = ref([])
+const brokenImages = ref({})
 
 onMounted(() => {
   try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {}
@@ -41,6 +43,13 @@ onMounted(() => {
 
 function goBack() { uni.navigateBack() }
 function viewPoi(id) { uni.navigateTo({ url: `/pages/poi/detail?id=${id}` }) }
+function thumbFor(item) { return poiImage(item, Boolean(brokenImages.value[item.id])) }
+function onImageError(item) {
+  brokenImages.value = {
+    ...brokenImages.value,
+    [item.id]: true,
+  }
+}
 function formatDate(ts) {
   if (!ts) return ''
   const d = new Date(ts)

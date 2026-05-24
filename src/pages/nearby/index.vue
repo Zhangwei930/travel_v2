@@ -40,10 +40,11 @@
         >
           <view class="poi-thumb">
             <image
-              :src="poi.img || coverFallback(poi.id)"
+              :src="poiThumb(poi)"
               class="poi-thumb-img"
               mode="aspectFill"
               lazy-load
+              @error="onPoiImageError(poi)"
             />
           </view>
           <view class="poi-content">
@@ -75,6 +76,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../api/mock.js'
+import { poiImage } from '../../api/assets.js'
 import { useCityStore } from '../../store/city.js'
 import UNavBar from '../../components/UNavBar.vue'
 
@@ -93,6 +95,7 @@ const active = ref('all')
 const pois = ref([])
 const loading = ref(false)
 const locationError = ref(false)
+const brokenPoiImages = ref({})
 
 function parseDistanceKm(text) {
   if (!text) return Number.POSITIVE_INFINITY
@@ -136,18 +139,16 @@ function setFilter(id) {
 function ratingFor(p) {
   if (p.rating) return Number(p.rating).toFixed(1)
   const seed = (p.id ?? 0) % 10
-  return (4.2 + seed / 20).toFixed(1)
+  return (4.3 + seed / 20).toFixed(1)
 }
 
-const FALLBACKS = [
-  'https://images.unsplash.com/photo-1504826260979-242151ee45b7?w=400',
-  'https://images.unsplash.com/photo-1466441523584-7eaa61cd2f54?w=400',
-  'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=400',
-  'https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=400',
-]
-function coverFallback(id) {
-  const i = Math.abs(Number(id) || 0) % FALLBACKS.length
-  return FALLBACKS[i]
+function poiThumb(poi) {
+  return poiImage(poi, brokenPoiImages.value[poi?.id])
+}
+
+function onPoiImageError(poi) {
+  if (!poi?.id) return
+  brokenPoiImages.value = { ...brokenPoiImages.value, [poi.id]: true }
 }
 
 async function reload() {

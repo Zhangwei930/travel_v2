@@ -17,8 +17,7 @@ def ask(payload: AskIn, db: Session = Depends(get_db)):
     return kb_service.ask(payload, db)
 
 
-@router.post("/kb/ask_stream")
-def ask_stream(payload: AskIn, db: Session = Depends(get_db)):
+def _ask_stream_response(payload: AskIn, db: Session):
     result = kb_service.ask(payload, db)
 
     def line(event: dict) -> str:
@@ -38,3 +37,18 @@ def ask_stream(payload: AskIn, db: Session = Depends(get_db)):
         yield line({"event": "done"})
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+@router.post("/kb/ask_stream")
+def ask_stream(payload: AskIn, db: Session = Depends(get_db)):
+    return _ask_stream_response(payload, db)
+
+
+@router.post("/consult/ask", response_model=AskOut)
+def consult_ask(payload: AskIn, db: Session = Depends(get_db)):
+    return ask(payload, db)
+
+
+@router.post("/consult/ask_stream")
+def consult_ask_stream(payload: AskIn, db: Session = Depends(get_db)):
+    return _ask_stream_response(payload, db)

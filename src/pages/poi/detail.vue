@@ -1,62 +1,86 @@
 <template>
   <view class="page">
-    <!-- 英雄图 -->
-    <view class="hero-img-wrap">
-      <image :src="poi.img" class="hero-img" mode="aspectFill" />
-      <view class="hero-gradient" />
-      <view class="back-btn" @tap="goBack">
-        <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
-          <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#1A2E2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      </view>
-      <view class="fav-btn" @tap="toggleFav">
-        <text>{{ saved ? '❤️' : '🤍' }}</text>
-      </view>
-    </view>
+    <u-nav-bar :title="poi.name || '地点详情'" transparent />
 
-    <scroll-view scroll-y class="scroll-body" :show-scrollbar="false">
-      <!-- 信息卡（悬浮 -32px） -->
+    <scroll-view scroll-y class="scroll-body" :style="{ paddingBottom: safeBottom }" :show-scrollbar="false">
+      <!-- 英雄图 -->
+      <view class="hero-img-wrap">
+        <image :src="heroImage" class="hero-img" mode="aspectFill" @error="heroImageBroken = true" />
+        <view class="hero-mask" />
+        <view class="fav-btn" @tap="toggleFav">
+          <text>{{ saved ? '❤️' : '🤍' }}</text>
+        </view>
+      </view>
+
+      <!-- 信息卡 -->
       <view class="info-card">
-        <text class="poi-no mono">{{ poi.no }}</text>
-        <text class="poi-name serif">{{ poi.name }}</text>
-        <text class="poi-meta">{{ poi.cat }} · {{ poi.dist }}</text>
+        <view class="name-row">
+          <text class="poi-name">{{ poi.name }}</text>
+          <view class="rating-badge">
+            <text class="rating-star">★</text>
+            <text class="rating-num">{{ ratingFor }}</text>
+          </view>
+        </view>
+        <text class="poi-cat-dist">{{ poi.cat || '景点' }} · {{ poi.dist || '距离获取中' }}</text>
+
         <view class="poi-tags">
-          <z-tag v-for="tag in poi.tags" :key="tag" :label="tag" color="#0D4F4A" />
+          <text v-for="tag in (poi.tags || [])" :key="tag" class="poi-tag">{{ tag }}</text>
         </view>
-        <view class="poi-stats">
-          <view class="poi-stat" v-for="s in stats" :key="s.label">
-            <text class="stat-num">{{ s.val }}</text>
-            <text class="stat-label">{{ s.label }}</text>
+
+        <view class="stats-grid">
+          <view class="stat-item">
+            <text class="stat-label">推荐时长</text>
+            <text class="stat-val">{{ poi.time || '1-2小时' }}</text>
+          </view>
+          <view class="stat-divider" />
+          <view class="stat-item">
+            <text class="stat-label">参考费用</text>
+            <text class="stat-val">{{ poi.budget || '免费' }}</text>
+          </view>
+          <view class="stat-divider" />
+          <view class="stat-item">
+            <text class="stat-label">开放时段</text>
+            <text class="stat-val">全天</text>
           </view>
         </view>
       </view>
 
-      <!-- §01 推荐理由 -->
+      <!-- 推荐理由 -->
       <view class="section">
-        <z-section-header no="01" title="推荐理由" />
-        <view class="reason-card">
-          <text class="reason-text">{{ poi.reason }}</text>
+        <view class="section-head">
+          <text class="section-title">推荐理由</text>
+        </view>
+        <view class="reason-box">
+          <text class="reason-text">{{ poi.reason || '该地点暂无详细推荐理由。' }}</text>
         </view>
       </view>
 
-      <!-- §02 适合人群与场景 -->
+      <!-- 适合人群与场景 -->
       <view class="section">
-        <z-section-header no="02" title="适合人群与场景" />
+        <view class="section-head">
+          <text class="section-title">适合场景</text>
+        </view>
         <view class="fit-grid">
-          <view class="fit-item" v-for="item in fitItems" :key="item.label">
-            <text class="fit-icon">{{ item.icon }}</text>
-            <text class="fit-label">{{ item.label }}</text>
-            <text class="fit-val">{{ item.val }}</text>
+          <view class="fit-card" v-for="item in fitItems" :key="item.label">
+            <view class="fit-icon-bg">
+              <text class="fit-icon">{{ item.icon }}</text>
+            </view>
+            <view class="fit-text">
+              <text class="fit-label">{{ item.label }}</text>
+              <text class="fit-val">{{ item.val }}</text>
+            </view>
           </view>
         </view>
       </view>
 
-      <!-- §03 避坑提醒 -->
-      <view class="section">
-        <z-section-header no="03" title="避坑提醒" />
-        <view class="tips-card">
-          <view class="tip-row" v-for="(tip, i) in avoidTips" :key="i">
-            <text class="tip-no mono">{{ String(i + 1).padStart(2, '0') }}</text>
+      <!-- 避坑提醒 -->
+      <view class="section avoid-section">
+        <view class="section-head">
+          <text class="section-title">避坑提醒</text>
+        </view>
+        <view class="tips-list">
+          <view class="tip-item" v-for="(tip, i) in avoidTips" :key="i">
+            <view class="tip-dot" />
             <text class="tip-text">{{ tip }}</text>
           </view>
         </view>
@@ -64,9 +88,13 @@
     </scroll-view>
 
     <!-- 底部操作栏 -->
-    <view class="bottom-bar" :style="{ paddingBottom: safeBottom }">
-      <view class="bottom-btn outline" @tap="goAssistant">💬 问助手</view>
-      <view class="bottom-btn primary flex2" @tap="goNav">🧭 地图导航前往</view>
+    <view class="action-bar" :style="{ paddingBottom: safeBottomPadding }">
+      <view class="action-btn outline" @tap="goAssistant">
+        <text>💬 咨询助手</text>
+      </view>
+      <view class="action-btn primary" @tap="goNav">
+        <text>🧭 导航前往</text>
+      </view>
     </view>
   </view>
 </template>
@@ -75,78 +103,94 @@
 import { ref, computed, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
+import { poiImage } from '../../api/assets.js'
 import { toggleSavedPoi, isSavedPoi, trackVisit } from '../../api/storage.js'
-import ZSectionHeader from '../../components/ZSectionHeader.vue'
-import ZTag from '../../components/ZTag.vue'
+import UNavBar from '../../components/UNavBar.vue'
 
-const safeBottom = ref('18px')
+const safeBottom = ref('140rpx')
+const safeBottomPadding = ref('24rpx')
 const saved      = ref(false)
-
-// 路由参数：用 onLoad 钩子拿最稳。小程序端 setup() 顶层访问 currentPage.options
-// 时机不可靠（page 实例可能还没填好 options），生产里会得到空值后被兜底为 0。
-const poiId = ref(0)
-onLoad((options) => {
-  const raw = options?.id
-  if (raw != null && raw !== '') {
-    poiId.value = Number(raw) || 0
-  }
-})
+const poiId      = ref(0)
+const heroImageBroken = ref(false)
+const poiPreview = ref(null)
 
 const poi = ref({
   no: '', name: '', cat: '', dist: '', time: '', budget: '',
   tags: [], img: '', reason: '', fit_items: [], avoid_tips: [],
 })
 
-const stats = computed(() => [
-  { val: poi.value.time,   label: '推荐时长' },
-  { val: poi.value.budget, label: '参考费用' },
-  { val: poi.value.dist,   label: '距离' },
-])
+onLoad((options) => {
+  const raw = options?.id
+  if (raw != null) poiId.value = Number(raw) || 0
+  try {
+    const cached = uni.getStorageSync('currentPoiPreview')
+    if (cached && String(cached.id) === String(raw)) {
+      poiPreview.value = cached
+      poi.value = {
+        ...poi.value,
+        ...cached,
+        cat: cached.cat || cached.category || poi.value.cat,
+        img: cached.img || poi.value.img,
+      }
+    }
+  } catch (_) {}
+})
+
+const ratingFor = computed(() => {
+  if (poi.value.rating) return Number(poi.value.rating).toFixed(1)
+  return (4.3 + (poiId.value % 7) / 10).toFixed(1)
+})
 
 const DEFAULT_FIT = [
-  { icon: '👨‍👩‍👧', label: '人群', val: '亲子·情侣' },
-  { icon: '🌤', label: '天气', val: '晴天最佳' },
-  { icon: '⏰', label: '时段', val: '清晨·上午' },
-  { icon: '💪', label: '强度', val: '轻量' },
+  { icon: '👨‍👩‍👧', label: '适合人群', val: '亲子·情侣' },
+  { icon: '🌤', label: '推荐天气', val: '晴天/多云' },
+  { icon: '⏰', label: '推荐时段', val: '上午/下午' },
+  { icon: '💪', label: '活动强度', val: '轻量' },
 ]
 const DEFAULT_TIPS = [
-  '节假日人多，建议提前到达',
-  '自备充足饮用水',
-  '注意防晒，夏季阳光较强',
+  '该地点人气较旺，建议错峰出行',
+  '户外站点请注意防蚊防晒',
+  '周边车位有限，建议使用公共交通',
 ]
 
 const fitItems  = computed(() => (poi.value.fit_items?.length ? poi.value.fit_items : DEFAULT_FIT))
 const avoidTips = computed(() => (poi.value.avoid_tips?.length ? poi.value.avoid_tips : DEFAULT_TIPS))
+const heroImage = computed(() => poiImage(poi.value, heroImageBroken.value))
 
 onMounted(async () => {
   try {
     const sys = uni.getSystemInfoSync()
-    safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
+    const sb = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
+    safeBottomPadding.value = sb + 'px'
+    safeBottom.value = (sb + 140) + 'rpx'
   } catch (_) {}
 
-  if (!poiId.value) {
-    uni.showToast({ title: '地点参数缺失', icon: 'none' })
-    setTimeout(() => uni.navigateBack(), 800)
-    return
-  }
+  if (!poiId.value) return
+
   try {
-    // 拿当前定位（如有）一起传给后端，方便计算距离
     let coords = {}
     try {
       coords = await new Promise((res) => uni.getLocation({ type: 'gcj02', success: res, fail: () => res({}) }))
     } catch (_) {}
-    poi.value = await api.getPoiDetail(poiId.value, coords.latitude, coords.longitude)
+    const detail = await api.getPoiDetail(poiId.value, coords.latitude, coords.longitude)
+    const preview = poiPreview.value || {}
+    poi.value = {
+      ...preview,
+      ...detail,
+      cat: detail.cat || detail.category || preview.cat || preview.category || '',
+      img: detail.img || preview.img || '',
+    }
+    heroImageBroken.value = false
     trackVisit({
       id: poi.value.id ?? poiId.value, no: poi.value.no, name: poi.value.name,
       cat: poi.value.cat, img: poi.value.img, dist: poi.value.dist,
     })
     saved.value = isSavedPoi(poiId.value)
   } catch (_) {
-    uni.showToast({ title: '地点信息加载失败', icon: 'none' })
+    uni.showToast({ title: '加载失败', icon: 'none' })
   }
 })
 
-function goBack()      { uni.navigateBack() }
 function toggleFav() {
   saved.value = toggleSavedPoi({
     id: poi.value.id, no: poi.value.no,
@@ -155,6 +199,7 @@ function toggleFav() {
   })
   uni.showToast({ title: saved.value ? '已收藏' : '已取消收藏', icon: 'none' })
 }
+
 function goAssistant() { uni.switchTab({ url: '/pages/assistant/chat' }) }
 function goNav() {
   if (poi.value.lat && poi.value.lng) {
@@ -165,7 +210,7 @@ function goNav() {
       address:   poi.value.cat,
     })
   } else {
-    uni.showToast({ title: '暂无坐标，无法导航', icon: 'none' })
+    uni.showToast({ title: '暂无坐标', icon: 'none' })
   }
 }
 </script>
@@ -175,15 +220,18 @@ function goNav() {
 
 .page {
   min-height: 100vh;
-  background: $z-bg;
-  display: flex;
-  flex-direction: column;
+  background: $u-bg;
 }
 
-.hero-img-wrap {
-  height: 460rpx;
+.scroll-body {
   position: relative;
-  flex-shrink: 0;
+}
+
+// ── 英雄图 ──────────────────────────────────────────────────
+.hero-img-wrap {
+  height: 540rpx;
+  position: relative;
+  background: $u-bg-soft;
 }
 
 .hero-img {
@@ -191,226 +239,218 @@ function goNav() {
   height: 100%;
 }
 
-.hero-gradient {
+.hero-mask {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 200rpx;
-  background: linear-gradient(to top, rgba(245, 241, 235, 0.9), transparent);
-}
-
-.back-btn {
-  position: absolute;
-  top: 100rpx;
-  left: 28rpx;
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 34rpx;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 4rpx 16rpx rgba(0,0,0,0.12);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-  cursor: pointer;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, transparent 40%, rgba(255,255,255,0.4) 100%);
 }
 
 .fav-btn {
   position: absolute;
   top: 100rpx;
-  right: 28rpx;
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 34rpx;
-  background: rgba(255, 255, 255, 0.95);
+  right: 32rpx;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 36rpx;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 32rpx;
-  cursor: pointer;
+  box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.08);
+  z-index: 10;
 }
 
-.scroll-body {
-  flex: 1;
-}
-
-// 信息卡悬浮
+// ── 信息卡 ──────────────────────────────────────────────────
 .info-card {
-  margin: -64rpx 32rpx 0;
-  background: $z-card;
-  border-radius: $radius-card;
-  padding: 28rpx;
-  box-shadow: 0 8rpx 32rpx rgba(13, 79, 74, 0.12);
+  margin: -60rpx 32rpx 0;
+  background: $u-bg;
+  border-radius: 28rpx;
+  padding: 36rpx 32rpx;
+  box-shadow: $u-shadow-lg;
   position: relative;
   z-index: 2;
 }
 
-.poi-no {
-  display: block;
-  font-size: 19rpx;
-  color: $z-muted;
-  letter-spacing: 1rpx;
-  margin-bottom: 6rpx;
-}
-
-.poi-name {
-  display: block;
-  font-size: 36rpx;
-  font-weight: 900;
-  color: $z-text;
+.name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16rpx;
   margin-bottom: 8rpx;
 }
 
-.poi-meta {
+.poi-name {
+  font-size: 36rpx;
+  font-weight: 800;
+  color: $u-text;
+  line-height: 1.25;
+}
+
+.rating-badge {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  background: $u-bg-soft;
+  padding: 4rpx 14rpx;
+  border-radius: 10rpx;
+  flex-shrink: 0;
+}
+
+.rating-star { color: #F59E0B; font-size: 24rpx; }
+.rating-num { font-size: 24rpx; font-weight: 700; color: $u-text; }
+
+.poi-cat-dist {
   display: block;
-  font-size: 23rpx;
-  color: $z-muted;
-  margin-bottom: 14rpx;
+  font-size: 24rpx;
+  color: $u-text-mute;
+  margin-bottom: 20rpx;
 }
 
 .poi-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 10rpx;
-  margin-bottom: 20rpx;
+  margin-bottom: 32rpx;
 }
 
-.poi-stats {
+.poi-tag {
+  font-size: 20rpx;
+  color: $u-text-sub;
+  background: $u-bg-soft;
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+}
+
+.stats-grid {
   display: flex;
-  border-top: 1rpx solid $z-line;
-  padding-top: 18rpx;
+  align-items: center;
+  padding-top: 28rpx;
+  border-top: 1rpx solid $u-line;
 }
 
-.poi-stat {
+.stat-item {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6rpx;
-
-  &:not(:last-child) {
-    border-right: 1rpx solid $z-line;
-  }
 }
 
-.stat-num {
-  display: block;
-  font-size: 26rpx;
-  font-weight: 700;
-  color: $z-text;
-}
+.stat-label { font-size: 20rpx; color: $u-text-mute; }
+.stat-val { font-size: 26rpx; font-weight: 700; color: $u-text; }
+.stat-divider { width: 1rpx; height: 32rpx; background: $u-line; }
 
-.stat-label {
-  display: block;
-  font-size: 21rpx;
-  color: $z-muted;
-}
+// ── 推荐理由 ────────────────────────────────────────────────
+.section { padding: 32rpx 32rpx 0; }
+.section-head { margin-bottom: 20rpx; }
+.section-title { font-size: 32rpx; font-weight: 800; color: $u-text; }
 
-.section {
-  padding: 28rpx 32rpx 0;
-}
-
-.reason-card {
-  background: $z-card;
-  border-radius: $radius-card;
-  padding: 24rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
+.reason-box {
+  background: $u-bg-soft;
+  border-radius: 20rpx;
+  padding: 24rpx 28rpx;
 }
 
 .reason-text {
   font-size: 26rpx;
-  color: $z-text2;
-  line-height: 1.65;
+  color: $u-text-sub;
+  line-height: 1.6;
 }
 
+// ── 适合场景 ────────────────────────────────────────────────
 .fit-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16rpx;
 }
 
-.fit-item {
-  background: $z-card;
-  border-radius: $radius-small;
+.fit-card {
+  background: $u-bg;
+  border-radius: 18rpx;
   padding: 20rpx;
   display: flex;
-  flex-direction: column;
-  gap: 6rpx;
-  box-shadow: 0 2rpx 8rpx rgba(13, 79, 74, 0.05);
-}
-
-.fit-icon { font-size: 28rpx; }
-.fit-label { font-size: 21rpx; color: $z-muted; }
-.fit-val   { font-size: 25rpx; font-weight: 700; color: $z-text; }
-
-.tips-card {
-  background: rgba(244, 185, 66, 0.08);
-  border: 1rpx solid rgba(244, 185, 66, 0.3);
-  border-radius: $radius-card;
-  padding: 24rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 14rpx;
-  margin-bottom: 28rpx;
-}
-
-.tip-row {
-  display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 16rpx;
+  box-shadow: $u-shadow;
 }
 
-.tip-no {
-  font-size: 20rpx;
-  color: $z-muted;
-  font-weight: 700;
-  letter-spacing: 1rpx;
-  flex-shrink: 0;
-  margin-top: 3rpx;
-}
-
-.tip-text {
-  font-size: 25rpx;
-  color: $z-text2;
-  line-height: 1.5;
-}
-
-// 底部操作栏
-.bottom-bar {
-  position: sticky;
-  bottom: 0;
-  background: $z-card;
-  border-top: 1rpx solid $z-border;
-  padding: 16rpx 32rpx;
-  display: flex;
-  gap: 16rpx;
-  z-index: 10;
-}
-
-.bottom-btn {
-  height: 88rpx;
-  border-radius: 18rpx;
+.fit-icon-bg {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 16rpx;
+  background: $u-bg-soft;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+.fit-icon { font-size: 30rpx; }
+.fit-text { display: flex; flex-direction: column; gap: 2rpx; }
+.fit-label { font-size: 20rpx; color: $u-text-mute; }
+.fit-val { font-size: 24rpx; font-weight: 700; color: $u-text; }
+
+// ── 避坑提醒 ────────────────────────────────────────────────
+.avoid-section { padding-bottom: 40rpx; }
+.tips-list { display: flex; flex-direction: column; gap: 16rpx; }
+
+.tip-item {
+  display: flex;
+  gap: 18rpx;
+  align-items: flex-start;
+}
+
+.tip-dot {
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 4rpx;
+  background: #F59E0B;
+  margin-top: 14rpx;
+  flex-shrink: 0;
+}
+
+.tip-text {
   font-size: 26rpx;
-  font-weight: 700;
-  cursor: pointer;
+  color: $u-text-sub;
+  line-height: 1.5;
+}
+
+// ── 底部栏 ──────────────────────────────────────────────────
+.action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fff;
+  border-top: 1rpx solid $u-line;
+  padding: 20rpx 32rpx;
+  display: flex;
+  gap: 18rpx;
+  z-index: 100;
+}
+
+.action-btn {
+  height: 88rpx;
+  border-radius: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 800;
 
   &.outline {
     flex: 1;
-    border: 2rpx solid $z-border;
-    color: $z-text;
+    background: $u-bg-soft;
+    color: $u-text;
   }
 
   &.primary {
-    background: linear-gradient(135deg, $z-primary 0%, $z-primary-m 100%);
-    color: $z-card;
-    box-shadow: 0 6rpx 20rpx rgba(13, 79, 74, 0.33);
+    flex: 1.8;
+    background: $z-primary;
+    color: #fff;
+    box-shadow: 0 8rpx 20rpx rgba(13, 79, 74, 0.2);
   }
-
-  &.flex2 { flex: 2; }
 }
 </style>

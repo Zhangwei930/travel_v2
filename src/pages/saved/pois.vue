@@ -12,7 +12,7 @@
       <view v-if="list.length === 0" class="empty mono">还没有收藏地点，去地点详情页点 ❤️ 试试</view>
 
       <view v-for="item in list" :key="item.id" class="card" @tap="viewPoi(item.id)">
-        <image v-if="item.img" :src="item.img" class="thumb" mode="aspectFill" lazy-load />
+        <image :src="thumbFor(item)" class="thumb" mode="aspectFill" lazy-load @error="onImageError(item)" />
         <view class="card-info">
           <text class="no mono">{{ item.no }}</text>
           <text class="name serif">{{ item.name }}</text>
@@ -27,9 +27,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getSavedPois } from '../../api/storage.js'
+import { poiImage } from '../../api/assets.js'
 
 const statusBarHeight = ref(44)
 const list = ref([])
+const brokenImages = ref({})
 
 onMounted(() => {
   try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {}
@@ -38,6 +40,13 @@ onMounted(() => {
 
 function goBack() { uni.navigateBack() }
 function viewPoi(id) { uni.navigateTo({ url: `/pages/poi/detail?id=${id}` }) }
+function thumbFor(item) { return poiImage(item, Boolean(brokenImages.value[item.id])) }
+function onImageError(item) {
+  brokenImages.value = {
+    ...brokenImages.value,
+    [item.id]: true,
+  }
+}
 </script>
 
 <style lang="scss" scoped>
