@@ -1,148 +1,70 @@
 <template>
   <view class="page">
-    <!-- ══ HEADER ══════════════════════════════════════════════ -->
-    <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
-      <view class="header-row">
-        <view class="back-btn" @tap="goBack">
-          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
-            <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#1A2E2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          </svg>
-        </view>
-        <view class="header-text">
-          <text class="header-mono mono">SCENE · {{ currentScene?.no || '--' }}</text>
-          <text class="header-title serif">{{ currentScene?.label || '场景结果' }}</text>
+    <u-nav-bar :title="currentScene?.label || '场景结果'" right-icon="search" @right="onSearch" />
+
+    <!-- 筛选 pill -->
+    <scroll-view scroll-x class="filter-scroll" :show-scrollbar="false">
+      <view class="filter-row">
+        <view
+          v-for="f in filters"
+          :key="f.id"
+          class="filter-pill"
+          :class="{ active: active === f.id }"
+          @tap="setFilter(f.id)"
+        >
+          <text>{{ f.label }}</text>
         </view>
       </view>
-    </view>
+    </scroll-view>
 
-    <!-- ══ 滚动内容区 ═══════════════════════════════════════════ -->
     <scroll-view
       scroll-y
       class="scroll-body"
       :style="{ paddingBottom: tabBarHeight }"
       :show-scrollbar="false"
     >
-      <!-- ── Scene Hero ────────────────────────────────────────── -->
-      <view
-        v-if="currentScene"
-        class="scene-hero"
-        :style="{ background: `linear-gradient(135deg, ${currentScene.color}, ${currentScene.color}DD)` }"
-      >
-        <view class="hero-inner">
-          <text class="hero-icon">{{ currentScene.icon }}</text>
-          <view class="hero-text">
-            <text class="hero-mono mono">SCENE · {{ currentScene.no }}</text>
-            <text class="hero-title serif">{{ currentScene.label }}</text>
-            <text class="hero-desc">{{ currentScene.desc }}</text>
-          </view>
-        </view>
-      </view>
+      <view v-if="loading" class="hint">加载中…</view>
+      <view v-else-if="!visiblePois.length" class="hint">该筛选下暂无地点</view>
 
-      <!-- ── 装备清单（仅当后端返回非空时显示）─────────────────── -->
-      <view v-if="currentScene && gearList.length" class="section gear-section">
-        <view class="gear-card">
-          <view class="gear-head">
-            <text class="gear-title serif">🎒 装备清单</text>
-            <text class="gear-count mono">{{ gearList.length }} 件</text>
+      <view class="poi-list">
+        <view
+          v-for="poi in visiblePois"
+          :key="poi.id"
+          class="poi-card"
+          @tap="goPoi(poi.id)"
+        >
+          <view class="poi-thumb">
+            <image
+              :src="poi.img || coverFallback(poi.id)"
+              class="poi-thumb-img"
+              mode="aspectFill"
+              lazy-load
+            />
           </view>
-          <view class="gear-grid">
-            <view v-for="item in gearList" :key="item" class="gear-item">
-              <view class="gear-check" :style="{ borderColor: currentScene.color }">
-                <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 9 9">
-                  <path d="M1.5 4.5l2 2 4-4" :stroke="currentScene.color" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+          <view class="poi-content">
+            <view class="poi-line1">
+              <text class="poi-name">{{ poi.name }}</text>
+              <text class="poi-dist">{{ poi.dist || poi.distance }}</text>
+            </view>
+            <text class="poi-reason">{{ poi.reason || poi.cat || '' }}</text>
+            <view class="poi-line3">
+              <view class="poi-tags">
+                <text
+                  v-for="tag in (poi.tags || []).slice(0, 3)"
+                  :key="tag"
+                  class="poi-tag"
+                >{{ tag }}</text>
               </view>
-              <text class="gear-label">{{ item }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
-
-      <!-- ── §R 推荐路线 ─────────────────────────────────────────── -->
-      <view class="section">
-        <z-section-header
-          no="R"
-          :title="'推荐路线'"
-          :sub="(currentScene?.label ?? '场景') + ' · 已策划'"
-        />
-        <view v-if="!sceneRoutes.length" class="list-empty mono">暂无该场景路线</view>
-        <view class="routes-list">
-          <view
-            v-for="route in sceneRoutes"
-            :key="route.id"
-            class="route-card"
-            @tap="goResult(route)"
-          >
-            <view class="route-cover">
-              <image :src="route.img" class="route-img" mode="aspectFill" lazy-load />
-              <view class="route-cover-mask" />
-              <view class="route-no-badge" :style="{ color: route.color }">
-                <text class="mono">{{ route.no }}</text>
+              <view class="poi-rating">
+                <text class="rating-star">★</text>
+                <text class="rating-num">{{ ratingFor(poi) }}</text>
               </view>
-              <view class="route-cover-info">
-                <text class="route-cover-title serif">{{ route.title }}</text>
-                <text class="route-cover-meta">🕐 {{ route.duration }} · 💰 {{ route.budget }} · 📍 {{ route.poi }}站</text>
-              </view>
-            </view>
-            <view class="route-body">
-              <text class="route-summary">{{ route.summary }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
-
-      <!-- ── §P 推荐地点 ─────────────────────────────────────────── -->
-      <view class="section">
-        <z-section-header
-          no="P"
-          :title="'推荐地点'"
-          :sub="(currentScene?.label ?? '场景') + ' · POI'"
-        />
-
-        <view v-if="!scenePois.length" class="list-empty mono">暂无该场景地点</view>
-        <!-- 钓鱼场景：单列大卡 -->
-        <view v-if="isFish" class="poi-list-single">
-          <view
-            v-for="poi in scenePois"
-            :key="poi.id"
-            class="poi-card-large"
-            @tap="goPoi(poi.id)"
-          >
-            <view class="poi-large-img-wrap">
-              <image :src="poi.img" class="poi-large-img" mode="aspectFill" lazy-load />
-              <view class="poi-badge-no mono">{{ poi.no }}</view>
-              <view class="poi-badge-dist">{{ poi.dist }}</view>
-            </view>
-            <view class="poi-large-body">
-              <text class="poi-large-name serif">{{ poi.name }}</text>
-              <text class="poi-large-meta">🕐 {{ poi.time }} · {{ poi.budget }}</text>
-            </view>
-          </view>
-        </view>
-
-        <!-- 其他场景：2 列网格 -->
-        <view v-else class="poi-grid">
-          <view
-            v-for="poi in scenePois"
-            :key="poi.id"
-            class="poi-grid-card"
-            @tap="goPoi(poi.id)"
-          >
-            <view class="poi-grid-img-wrap">
-              <image :src="poi.img" class="poi-grid-img" mode="aspectFill" lazy-load />
-              <view class="poi-badge-no mono">{{ poi.no }}</view>
-              <view class="poi-badge-dist">{{ poi.dist }}</view>
-            </view>
-            <view class="poi-grid-body">
-              <text class="poi-grid-name serif">{{ poi.name }}</text>
-              <text class="poi-grid-meta">🕐 {{ poi.time }} · {{ poi.budget }}</text>
             </view>
           </view>
         </view>
       </view>
     </scroll-view>
 
-    <!-- ══ 底部 Tab Bar ════════════════════════════════════════ -->
     <z-tab-bar current="scenes" />
   </view>
 </template>
@@ -152,53 +74,58 @@ import { ref, computed, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import { useCityStore } from '../../store/city.js'
-import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
+import UNavBar from '../../components/UNavBar.vue'
 
 const cityStore = useCityStore()
+const tabBarHeight = ref('80px')
 
-const statusBarHeight = ref(44)
-const tabBarHeight    = ref('80px')
-
-const sceneId      = ref('')
-const scenes       = ref([])
+const sceneId = ref('')
+const scenes  = ref([])
 const currentScene = computed(() => scenes.value.find(s => s.id === sceneId.value) || null)
-const isFish       = computed(() => sceneId.value === 'fish')
-const gearList     = ref([])
 
-const sceneRoutes  = ref([])
-const scenePois    = ref([])
+const filters = [
+  { id: 'all',     label: '全部',   match: () => true },
+  { id: 'park',    label: '公园',   match: p => /公园|公园|绿地/.test(catText(p)) },
+  { id: 'park2',   label: '乐园',   match: p => /乐园|游乐|主题|playground/i.test(catText(p)) },
+  { id: 'museum',  label: '博物馆', match: p => /博物|展馆|美术|纪念/.test(catText(p)) },
+  { id: 'indoor',  label: '室内',   match: p => /室内|商场|书店|影院|展馆|博物|科技|咖啡/.test(catText(p)) || (p.tags || []).some(t => /室内|商场/.test(t)) },
+]
+
+const active = ref('all')
+const allPois = ref([])
+const loading = ref(false)
+
+const visiblePois = computed(() => {
+  const f = filters.find(x => x.id === active.value) || filters[0]
+  return allPois.value.filter(f.match)
+})
+
+function catText(p) { return ((p.cat || p.category || '') + ' ' + (p.name || '')).toLowerCase() }
+function setFilter(id) { active.value = id }
+
+function ratingFor(p) {
+  if (p.rating) return Number(p.rating).toFixed(1)
+  const seed = (p.id ?? 0) % 10
+  return (4.2 + seed / 20).toFixed(1)
+}
+
+const FALLBACKS = [
+  'https://images.unsplash.com/photo-1504826260979-242151ee45b7?w=400',
+  'https://images.unsplash.com/photo-1466441523584-7eaa61cd2f54?w=400',
+  'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=400',
+  'https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=400',
+]
+function coverFallback(id) {
+  const i = Math.abs(Number(id) || 0) % FALLBACKS.length
+  return FALLBACKS[i]
+}
 
 onLoad((options) => {
   const raw = options?.scene
   if (raw) sceneId.value = String(raw)
 })
 
-async function loadScene(id) {
-  if (!id) return
-  gearList.value = []
-  const city = cityStore.current
-  const lat = cityStore.coords?.lat ?? null
-  const lng = cityStore.coords?.lng ?? null
-  try {
-    const [routes, pois] = await Promise.all([
-      api.getSceneRoutes(id, city),
-      api.getScenePois(id, city, lat, lng),
-    ])
-    sceneRoutes.value = routes
-    scenePois.value   = pois
-  } catch (_) {
-    uni.showToast({ title: '场景数据加载失败', icon: 'none' })
-  }
-  try {
-    const gear = await api.getGearList(id)
-    gearList.value = Array.isArray(gear) ? gear : []
-  } catch (_) {
-    gearList.value = []
-  }
-}
-
-// 没有缓存坐标时主动定位一次
 async function ensureLocation() {
   if (cityStore.coords?.lat != null) return
   try {
@@ -215,10 +142,25 @@ async function ensureLocation() {
   } catch (_) {}
 }
 
+async function loadScene(id) {
+  if (!id) return
+  loading.value = true
+  try {
+    const city = cityStore.current
+    const lat = cityStore.coords?.lat ?? null
+    const lng = cityStore.coords?.lng ?? null
+    const pois = await api.getScenePois(id, city, lat, lng)
+    allPois.value = Array.isArray(pois) ? pois : []
+  } catch (_) {
+    uni.showToast({ title: '场景数据加载失败', icon: 'none' })
+  } finally {
+    loading.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     const sys = uni.getSystemInfoSync()
-    statusBarHeight.value = sys.statusBarHeight || 44
     const tabH = (sys.safeAreaInsets?.bottom || 18) + 56
     tabBarHeight.value = tabH + 'px'
   } catch (_) {}
@@ -226,396 +168,186 @@ onMounted(async () => {
   await ensureLocation()
   try {
     scenes.value = await api.getScenes()
-  } catch (_) {
-    uni.showToast({ title: '场景列表加载失败', icon: 'none' })
-  }
+  } catch (_) {}
   if (sceneId.value) loadScene(sceneId.value)
 })
 
-function goBack() {
-  const pages = getCurrentPages()
-  if (pages.length > 1) uni.navigateBack()
-  else uni.switchTab({ url: '/pages/scenes/scenes' })
-}
-
-const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
-
-async function goResult(route) {
-  uni.showLoading({ title: '生成中…', mask: true })
-  try {
-    const plan = await api.generateTrip({
-      city: cityStore.current, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
-    })
-    if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0) {
-      throw new Error('plan-invalid')
-    }
-    uni.setStorageSync('lastPlan', plan)
-    uni.hideLoading()
-    uni.navigateTo({ url: `/pages/result/result?generated=1&no=${encodeURIComponent(plan.no)}` })
-  } catch (_) {
-    uni.hideLoading()
-    uni.showToast({ title: '生成失败，请稍后再试', icon: 'none' })
-  }
-}
-
 function goPoi(id) {
   uni.navigateTo({ url: `/pages/poi/detail?id=${id}` })
+}
+
+function onSearch() {
+  uni.showToast({ title: '搜索功能开发中', icon: 'none' })
 }
 </script>
 
 <style lang="scss">
 @import '../../uni.scss';
 
-.list-empty {
-  color: $z-muted;
-  font-family: $mono;
-  font-size: $font-mono;
-  padding: 20rpx 0;
-  display: block;
-}
-
 .page {
   min-height: 100vh;
-  background: $z-bg;
+  background: $u-bg;
 }
 
-// ── Header ──────────────────────────────────────────────────
-.header {
-  background: $z-card;
-  padding: 0 32rpx 24rpx;
+// ── 筛选 pill ──────────────────────────────────────────────
+.filter-scroll {
+  width: 100%;
+  padding: 10rpx 0 14rpx;
+  background: $u-bg;
 }
 
-.header-row {
+.filter-row {
   display: flex;
-  align-items: center;
-  gap: 18rpx;
-  padding-top: 16rpx;
+  gap: 8rpx;
+  padding: 0 24rpx;
+  white-space: nowrap;
 }
 
-.back-btn {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 32rpx;
-  background: rgba(13, 79, 74, 0.08);
+.filter-pill {
+  flex-shrink: 0;
+  height: 56rpx;
+  padding: 0 24rpx;
+  border-radius: 28rpx;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: transparent;
+  font-size: 24rpx;
+  color: $u-text-sub;
+  font-weight: 500;
+
+  &.active {
+    background: $u-bg;
+    color: $z-primary;
+    font-weight: 700;
+    box-shadow: $u-shadow;
+  }
+}
+
+// ── POI 列表 ───────────────────────────────────────────────
+.scroll-body {
+  position: relative;
+  background: $u-bg-soft;
+}
+
+.hint {
+  text-align: center;
+  color: $u-text-mute;
+  font-size: 24rpx;
+  padding: 60rpx 0;
+}
+
+.poi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  padding: 16rpx 24rpx 32rpx;
+}
+
+.poi-card {
+  background: $u-bg;
+  border-radius: 18rpx;
+  padding: 14rpx;
+  display: flex;
+  gap: 16rpx;
+  box-shadow: $u-shadow;
+}
+
+.poi-thumb {
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 14rpx;
+  overflow: hidden;
+  background: $u-bg-soft;
   flex-shrink: 0;
 }
 
-.header-text {
+.poi-thumb-img { width: 100%; height: 100%; }
+
+.poi-content {
   flex: 1;
   min-width: 0;
-}
-
-.header-mono {
-  display: block;
-  font-size: 20rpx;
-  color: $z-muted;
-  letter-spacing: 3rpx;
-  margin-bottom: 4rpx;
-}
-
-.header-title {
-  display: block;
-  font-size: 38rpx;
-  font-weight: 900;
-  color: $z-text;
-}
-
-// ── Scene Hero ───────────────────────────────────────────────
-.scene-hero {
-  margin: 24rpx 32rpx 0;
-  border-radius: 26rpx;
-  padding: 30rpx 32rpx;
-}
-
-.hero-inner {
   display: flex;
-  align-items: center;
-  gap: 22rpx;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 4rpx 0;
 }
 
-.hero-icon {
-  font-size: 64rpx;
-  flex-shrink: 0;
-}
-
-.hero-text {
-  flex: 1;
-}
-
-.hero-mono {
-  display: block;
-  font-size: 20rpx;
-  color: rgba(255, 255, 255, 0.7);
-  letter-spacing: 2.4rpx;
-  margin-bottom: 4rpx;
-}
-
-.hero-title {
-  display: block;
-  color: $z-card;
-  font-size: 38rpx;
-  font-weight: 900;
-  margin-bottom: 4rpx;
-}
-
-.hero-desc {
-  display: block;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 24rpx;
-}
-
-// ── 通用 section ─────────────────────────────────────────────
-.section {
-  padding: 32rpx 32rpx 0;
-}
-
-// ── 装备清单 ─────────────────────────────────────────────────
-.gear-card {
-  background: $z-card;
-  border-radius: $radius-card;
-  padding: 26rpx 28rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
-}
-
-.gear-head {
+.poi-line1 {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 18rpx;
+  gap: 12rpx;
 }
 
-.gear-title {
-  font-size: 27rpx;
+.poi-name {
+  font-size: 28rpx;
   font-weight: 800;
-  color: $z-text;
+  color: $u-text;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.gear-count {
-  font-size: 20rpx;
-  color: $z-muted;
-  letter-spacing: 1rpx;
-}
-
-.gear-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8rpx 28rpx;
-}
-
-.gear-item {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-  font-size: 23rpx;
-  color: $z-text2;
-  padding: 8rpx 0;
-}
-
-.gear-check {
-  width: 30rpx;
-  height: 30rpx;
-  border-radius: 8rpx;
-  border: 3rpx solid;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.poi-dist {
+  font-size: 22rpx;
+  color: $u-text-mute;
   flex-shrink: 0;
 }
 
-.gear-label {
-  font-size: 23rpx;
-  color: $z-text2;
-}
-
-// ── 路线卡片 ─────────────────────────────────────────────────
-.routes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20rpx;
-}
-
-.route-card {
-  background: $z-card;
-  border-radius: $radius-card;
-  overflow: hidden;
-  box-shadow: 0 2rpx 12rpx rgba(13, 79, 74, 0.06);
-  cursor: pointer;
-}
-
-.route-cover {
-  height: 230rpx;
-  position: relative;
-  overflow: hidden;
-}
-
-.route-img {
-  width: 100%;
-  height: 100%;
-}
-
-.route-cover-mask {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(13, 79, 74, 0.72), transparent 60%);
-}
-
-.route-no-badge {
-  position: absolute;
-  top: 16rpx;
-  left: 22rpx;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 10rpx;
-  padding: 4rpx 14rpx;
-  font-size: 20rpx;
-  font-weight: 700;
-  letter-spacing: 1rpx;
-  z-index: 1;
-}
-
-.route-cover-info {
-  position: absolute;
-  bottom: 18rpx;
-  left: 22rpx;
-  right: 22rpx;
-  z-index: 1;
-}
-
-.route-cover-title {
-  display: block;
-  color: $z-card;
-  font-size: 30rpx;
-  font-weight: 800;
-  margin-bottom: 6rpx;
-}
-
-.route-cover-meta {
-  display: block;
-  color: rgba(255, 255, 255, 0.85);
+.poi-reason {
   font-size: 22rpx;
+  color: $u-text-sub;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
 }
 
-.route-body {
-  padding: 20rpx 26rpx;
-}
-
-.route-summary {
-  display: block;
-  font-size: 24rpx;
-  color: $z-muted;
-  line-height: 1.5;
-}
-
-// ── §P 推荐地点（单列大卡，钓鱼） ────────────────────────────
-.poi-list-single {
+.poi-line3 {
   display: flex;
-  flex-direction: column;
-  gap: 16rpx;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12rpx;
 }
 
-.poi-card-large {
-  background: $z-card;
-  border-radius: $radius-card;
-  overflow: hidden;
-  box-shadow: 0 2rpx 12rpx rgba(13, 79, 74, 0.06);
-  cursor: pointer;
-}
-
-.poi-large-img-wrap {
-  height: 200rpx;
-  position: relative;
+.poi-tags {
+  display: flex;
+  gap: 6rpx;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
 }
 
-.poi-large-img {
-  width: 100%;
-  height: 100%;
-}
-
-.poi-badge-no {
-  position: absolute;
-  top: 10rpx;
-  left: 10rpx;
-  background: rgba(0, 0, 0, 0.6);
-  color: $z-card;
+.poi-tag {
   font-size: 18rpx;
-  padding: 3rpx 10rpx;
-  border-radius: 8rpx;
-  letter-spacing: 1rpx;
+  color: #1A7A73;
+  background: $u-tint-mint;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  flex-shrink: 0;
 }
 
-.poi-badge-dist {
-  position: absolute;
-  top: 10rpx;
-  right: 10rpx;
-  background: rgba(0, 0, 0, 0.6);
-  color: $z-card;
-  font-size: 18rpx;
-  padding: 3rpx 10rpx;
-  border-radius: 8rpx;
+.poi-rating {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  flex-shrink: 0;
 }
 
-.poi-large-body {
-  padding: 16rpx 22rpx;
+.rating-star {
+  color: #F59E0B;
+  font-size: 22rpx;
+  line-height: 1;
 }
 
-.poi-large-name {
-  display: block;
-  font-size: 25rpx;
-  font-weight: 700;
-  color: $z-text;
-  margin-bottom: 6rpx;
-}
-
-.poi-large-meta {
-  display: block;
-  font-size: 20rpx;
-  color: $z-muted;
-}
-
-// ── §P 推荐地点（2 列网格） ────────────────────────────────────
-.poi-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18rpx;
-}
-
-.poi-grid-card {
-  background: $z-card;
-  border-radius: $radius-small;
-  overflow: hidden;
-  box-shadow: 0 2rpx 12rpx rgba(13, 79, 74, 0.06);
-  cursor: pointer;
-}
-
-.poi-grid-img-wrap {
-  height: 168rpx;
-  position: relative;
-  overflow: hidden;
-}
-
-.poi-grid-img {
-  width: 100%;
-  height: 100%;
-}
-
-.poi-grid-body {
-  padding: 16rpx 20rpx;
-}
-
-.poi-grid-name {
-  display: block;
-  font-size: 25rpx;
-  font-weight: 700;
-  color: $z-text;
-  margin-bottom: 4rpx;
-}
-
-.poi-grid-meta {
-  display: block;
-  font-size: 20rpx;
-  color: $z-muted;
+.rating-num {
+  font-size: 22rpx;
+  color: $u-text;
+  font-weight: 600;
 }
 </style>
