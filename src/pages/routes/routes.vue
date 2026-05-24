@@ -46,8 +46,8 @@
               </view>
             </view>
             <view class="card-foot">
-              <text class="source">点击后导航到第一站</text>
-              <view class="nav-btn" :class="{ disabled: !route.nav_ready }">路线导航</view>
+              <text class="source">点击查看完整路线 · {{ route.stops?.length || 0 }} 站</text>
+              <view class="nav-btn">查看详情</view>
             </view>
           </view>
         </view>

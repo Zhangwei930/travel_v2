@@ -166,7 +166,7 @@
                 </view>
                 <view class="poi-actions">
                   <text class="source-note">{{ route.budget ? '预算 ' + route.budget : '附近路线' }}</text>
-                  <view class="nav-btn" :class="{ disabled: !route.nav_ready }" @tap.stop="openRoute(route)">路线导航</view>
+                  <view class="nav-btn" @tap.stop="openRoute(route)">查看详情</view>
                 </view>
               </view>
             </view>
