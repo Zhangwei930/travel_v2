@@ -17,7 +17,7 @@
     "usingComponents": true,
     "permission": {
       "scope.userLocation": {
-        "desc": "用于推荐你当前位置附近的出游地点和路线；拒绝授权后可手动浏览推荐内容，但无法获得真正的附近推荐"
+        "desc": "用于推荐你当前位置附近的出游地点和路线"
       }
     },
     "requiredPrivateInfos": [

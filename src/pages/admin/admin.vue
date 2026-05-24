@@ -4,8 +4,14 @@
     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
       <view class="header-inner">
         <text class="back" @tap="goBack">←</text>
-        <text class="title serif">知识库审核</text>
-        <text class="count mono">{{ list.length }} 条待审核</text>
+        <text class="title serif">{{ tab === 'kb' ? '知识库审核' : '装备清单' }}</text>
+        <text class="count mono">
+          {{ tab === 'kb' ? `${list.length} 条待审核` : `${gear.length} 个场景` }}
+        </text>
+      </view>
+      <view v-if="token" class="tabs">
+        <view class="tab" :class="{ active: tab === 'kb' }" @tap="switchTab('kb')">知识审核</view>
+        <view class="tab" :class="{ active: tab === 'gear' }" @tap="switchTab('gear')">装备清单</view>
       </view>
     </view>
 
@@ -16,8 +22,8 @@
       <view class="btn-confirm" @tap="saveToken">确认</view>
     </view>
 
-    <!-- 列表 -->
-    <scroll-view v-else scroll-y class="list-scroll">
+    <!-- 知识库审核列表 -->
+    <scroll-view v-else-if="tab === 'kb'" scroll-y class="list-scroll">
       <view v-if="loading" class="empty-tip mono">加载中…</view>
       <view v-else-if="list.length === 0" class="empty-tip mono">暂无待审核记录</view>
 
@@ -45,6 +51,31 @@
         </view>
       </view>
     </scroll-view>
+
+    <!-- 装备清单编辑 -->
+    <scroll-view v-else scroll-y class="list-scroll">
+      <view v-if="loading" class="empty-tip mono">加载中…</view>
+      <view v-for="g in gear" :key="g.scene_id" class="card gear-card">
+        <view class="gear-head">
+          <text class="gear-icon">{{ g.icon }}</text>
+          <text class="gear-label serif">{{ g.label }}</text>
+          <text class="gear-id mono">{{ g.scene_id }}</text>
+          <text class="gear-count mono">{{ (drafts[g.scene_id] || []).length }} 件</text>
+        </view>
+        <!-- 每行一件装备 -->
+        <textarea
+          class="gear-area"
+          :value="(drafts[g.scene_id] || []).join('\n')"
+          @input="onGearInput(g.scene_id, $event)"
+          placeholder="每行一件装备，留空则该场景无装备"
+          :auto-height="true"
+        />
+        <view class="gear-actions">
+          <view class="btn reject" @tap="resetGear(g.scene_id)">还原</view>
+          <view class="btn approve" @tap="saveGear(g.scene_id)">保存</view>
+        </view>
+      </view>
+    </scroll-view>
   </view>
 </template>
 
@@ -56,7 +87,10 @@ const statusBarHeight = ref(0)
 const token = ref('')
 const tokenInput = ref('')
 const list = ref([])
+const gear = ref([])             // [{scene_id, label, icon, items}, ...]
+const drafts = ref({})           // scene_id -> 编辑中的数组（未保存）
 const loading = ref(false)
+const tab = ref('kb')            // 'kb' | 'gear'
 
 onMounted(() => {
   const info = uni.getSystemInfoSync()
@@ -72,6 +106,13 @@ function saveToken() {
   loadList()
 }
 
+function switchTab(t) {
+  if (tab.value === t) return
+  tab.value = t
+  if (t === 'kb') loadList()
+  else loadGear()
+}
+
 async function loadList() {
   loading.value = true
   try {
@@ -84,6 +125,50 @@ async function loadList() {
     uni.removeStorageSync('admin_token')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadGear() {
+  loading.value = true
+  try {
+    const list = await request('/api/admin/gear', {
+      header: { 'X-Admin-Token': token.value },
+    })
+    gear.value = list
+    drafts.value = Object.fromEntries(list.map(g => [g.scene_id, [...g.items]]))
+  } catch (e) {
+    uni.showToast({ title: 'Token 无效或请求失败', icon: 'none' })
+    token.value = ''
+    uni.removeStorageSync('admin_token')
+  } finally {
+    loading.value = false
+  }
+}
+
+function onGearInput(sceneId, e) {
+  const text = e.detail?.value ?? ''
+  drafts.value[sceneId] = text.split('\n').map(s => s.trim()).filter(Boolean)
+}
+
+function resetGear(sceneId) {
+  const original = gear.value.find(g => g.scene_id === sceneId)
+  if (original) drafts.value[sceneId] = [...original.items]
+}
+
+async function saveGear(sceneId) {
+  const items = drafts.value[sceneId] || []
+  try {
+    await request(`/api/admin/gear/${encodeURIComponent(sceneId)}`, {
+      method: 'PUT',
+      data: { items },
+      header: { 'X-Admin-Token': token.value },
+    })
+    // 更新本地 source of truth
+    const g = gear.value.find(x => x.scene_id === sceneId)
+    if (g) g.items = [...items]
+    uni.showToast({ title: `已保存（${items.length} 件）`, icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: '保存失败', icon: 'none' })
   }
 }
 
@@ -216,4 +301,52 @@ function goBack() {
   &.reject  { background: $z-danger-bg; color: $z-danger; }
   &.update  { background: $z-neutral-bg; color: $z-text; }
 }
+
+/* Tab 切换 */
+.tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 32rpx;
+  margin-top: 16rpx;
+}
+.tab {
+  flex: 1;
+  text-align: center;
+  padding: 16rpx 0;
+  font-size: 26rpx;
+  color: $z-muted;
+  border-bottom: 3rpx solid transparent;
+  &.active {
+    color: $z-accent;
+    border-bottom-color: $z-accent;
+    font-weight: 700;
+  }
+}
+
+/* 装备清单卡片 */
+.gear-card { padding: 24rpx 28rpx; }
+.gear-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+.gear-icon { font-size: 36rpx; }
+.gear-label { font-size: 30rpx; color: $z-text; flex: 1; }
+.gear-id { font-size: 20rpx; color: $z-muted; }
+.gear-count { font-size: 22rpx; color: $z-muted; }
+.gear-area {
+  width: 100%;
+  min-height: 160rpx;
+  padding: 16rpx 20rpx;
+  border: 1rpx solid $z-border;
+  border-radius: $radius-card;
+  background: $z-bg;
+  font-size: 26rpx;
+  color: $z-text;
+  line-height: 1.6;
+  box-sizing: border-box;
+  margin-bottom: 16rpx;
+}
+.gear-actions { display: flex; gap: 16rpx; }
 </style>

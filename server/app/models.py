@@ -171,3 +171,16 @@ class EmbeddingChunk(Base):
     content: Mapped[str | None] = mapped_column(Text)
     embedding: Mapped[list | None] = mapped_column(JSON_VALUE)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class SceneGear(Base):
+    """场景装备清单 — 运营可在 admin 编辑；trip_service 和 /api/gear/list 共用。
+
+    DB 里没有/空时降级回 app.taxonomy.GEAR_BY_SCENE 兜底常量，保证接口永远有响应。
+    """
+
+    __tablename__ = "scene_gear"
+
+    scene_id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    items: Mapped[list] = mapped_column(TEXT_LIST, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)

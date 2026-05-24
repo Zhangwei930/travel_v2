@@ -10,8 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import FaqKnowledge, KbPending
-from app.schemas import KbApproveIn, KbPendingOut, OkOut
+from app.models import FaqKnowledge, KbPending, SceneGear
+from app.schemas import (
+    KbApproveIn,
+    KbPendingOut,
+    OkOut,
+    SceneGearOut,
+    SceneGearUpdateIn,
+)
+from app.taxonomy import GEAR_BY_SCENE, SCENES
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -70,3 +77,41 @@ def approve(payload: KbApproveIn, db: Session = Depends(get_db)):
 
     db.commit()
     return OkOut(message=f"已更新为 {payload.status}", id=pending.id)
+
+
+# ─── 场景装备清单（运营可编辑）─────────────────────────────────────
+
+@router.get("/gear", response_model=list[SceneGearOut], dependencies=[Depends(_check_token)])
+def list_gear(db: Session = Depends(get_db)):
+    """列出所有场景的装备清单，按 SCENES 顺序返回（含 DB 空 → taxonomy 兜底）。"""
+    db_rows = {r.scene_id: r for r in db.query(SceneGear).all()}
+    out: list[SceneGearOut] = []
+    for s in SCENES:
+        row = db_rows.get(s["id"])
+        items = list(row.items) if (row and row.items) else GEAR_BY_SCENE.get(s["id"], [])
+        out.append(SceneGearOut(
+            scene_id=s["id"],
+            label=s["label"],
+            icon=s["icon"],
+            items=items,
+        ))
+    return out
+
+
+@router.put("/gear/{scene_id}", response_model=OkOut, dependencies=[Depends(_check_token)])
+def update_gear(scene_id: str, payload: SceneGearUpdateIn, db: Session = Depends(get_db)):
+    """整组覆盖某场景的装备清单。空列表 = 该场景无特定装备。"""
+    valid_ids = {s["id"] for s in SCENES}
+    if scene_id not in valid_ids:
+        raise HTTPException(status_code=400, detail=f"未知场景 id: {scene_id}")
+
+    items = [str(x).strip() for x in payload.items if str(x).strip()]
+
+    row = db.get(SceneGear, scene_id)
+    if row:
+        row.items = items
+        row.updated_at = datetime.utcnow()
+    else:
+        db.add(SceneGear(scene_id=scene_id, items=items))
+    db.commit()
+    return OkOut(message=f"{scene_id} 装备清单已更新（{len(items)} 件）")

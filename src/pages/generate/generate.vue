@@ -2,6 +2,11 @@
   <view class="page">
     <!-- Header -->
     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="header-back" :style="{ top: (statusBarHeight + 8) + 'px' }" @tap="goBack">
+        <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
+          <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#1A2E2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </view>
       <text class="header-mono mono">§ GENERATE</text>
       <text class="header-title serif">一键生成方案</text>
       <text class="header-sub">告诉我你的偏好 · AI 帮你规划可执行路线</text>
@@ -177,6 +182,18 @@ const steps = computed(() => {
 
 const etaSec = computed(() => Math.max(0, Math.ceil((100 - progress.value) / 22)))
 
+function goBack() {
+  // 加载中禁止返回，避免误退
+  if (loading.value) return
+  const pages = getCurrentPages()
+  if (pages.length > 1) {
+    uni.navigateBack()
+  } else {
+    // 直接从 Tab 中央按钮 switchTab 进入时栈只有 1 页，无法 back，退回首页
+    uni.switchTab({ url: '/pages/index/index' })
+  }
+}
+
 function isSelected(q, opt) {
   if (q.multi) return form.value[q.key].includes(opt)
   return form.value[q.key] === opt
@@ -277,8 +294,23 @@ onUnmounted(() => {
 }
 
 .header {
+  position: relative;
   background: $z-card;
   padding: 0 32rpx 32rpx;
+}
+
+.header-back {
+  position: absolute;
+  left: 20rpx;
+  // top 由模板 inline style 按 statusBarHeight 计算
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 34rpx;
+  background: rgba(26, 46, 44, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
 }
 
 .header-mono {

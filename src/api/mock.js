@@ -45,8 +45,8 @@ export const api = {
     request('/api/trip/plan' + q({ no })),
 
   // ─── 出游助手 ──────────────────────────────────
-  ask: (question, city) =>
-    request('/api/kb/ask', { method: 'POST', data: { question, city } }),
+  ask: (question, city, history) =>
+    request('/api/kb/ask', { method: 'POST', data: { question, city, history: history || [] } }),
 
   // ─── 反馈 ──────────────────────────────────────
   sendFeedback: (payload) =>

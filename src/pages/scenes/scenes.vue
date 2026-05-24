@@ -35,7 +35,7 @@
       :show-scrollbar="false"
     >
       <!-- ── Scene Hero ────────────────────────────────────────── -->
-      <view class="scene-hero" :style="{ background: `linear-gradient(135deg, ${currentScene.color}, ${currentScene.color}DD)` }">
+      <view v-if="currentScene" class="scene-hero" :style="{ background: `linear-gradient(135deg, ${currentScene.color}, ${currentScene.color}DD)` }">
         <view class="hero-inner">
           <text class="hero-icon">{{ currentScene.icon }}</text>
           <view class="hero-text">
@@ -47,11 +47,11 @@
       </view>
 
       <!-- ── 装备清单（仅当后端返回非空时显示）─────────────────── -->
-      <view v-if="gearList.length" class="section gear-section">
+      <view v-if="currentScene && gearList.length" class="section gear-section">
         <view class="gear-card">
           <view class="gear-head">
             <text class="gear-title serif">🎒 装备清单</text>
-            <text class="gear-count mono">{{ gearList.length }} ITEMS</text>
+            <text class="gear-count mono">{{ gearList.length }} 件</text>
           </view>
           <view class="gear-grid">
             <view v-for="item in gearList" :key="item" class="gear-item">
@@ -62,10 +62,6 @@
               </view>
               <text class="gear-label">{{ item }}</text>
             </view>
-          </view>
-          <view class="gear-footer">
-            <text class="gear-footer-label">⏰ 黄金时段</text>
-            <text class="gear-golden" :style="{ color: currentScene.color }">05:30 – 10:00 · 18:00 – 20:00</text>
           </view>
         </view>
       </view>
@@ -490,25 +486,6 @@ function goPoi(id) {
 .gear-label {
   font-size: 23rpx;
   color: $z-text2;
-}
-
-.gear-footer {
-  margin-top: 20rpx;
-  padding-top: 16rpx;
-  border-top: 2rpx dashed $z-border;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.gear-footer-label {
-  font-size: 22rpx;
-  color: $z-muted;
-}
-
-.gear-golden {
-  font-size: 22rpx;
-  font-weight: 700;
 }
 
 // ── 路线卡片 ─────────────────────────────────────────────────

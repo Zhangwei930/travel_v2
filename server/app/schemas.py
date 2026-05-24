@@ -112,9 +112,16 @@ class TripPlanOut(BaseModel):
 
 
 # ---------- 出游助手问答 ----------
+class ChatTurn(BaseModel):
+    role: str = Field(description="user / bot")
+    text: str
+
+
 class AskIn(BaseModel):
     question: str
     city: str | None = None
+    context: str | None = Field(default=None, description="（兼容旧字段）上一条用户问题")
+    history: list[ChatTurn] = Field(default_factory=list, description="最近 N 轮对话，建议传 4-6 条")
 
 
 class AskSource(BaseModel):
@@ -161,3 +168,14 @@ class KbApproveIn(BaseModel):
     id: int
     status: str = Field(default="approved", description="approved/rejected/needs_update")
     review_note: str | None = None
+
+
+class SceneGearOut(BaseModel):
+    scene_id: str
+    label: str       # 场景中文名 from taxonomy
+    icon: str
+    items: list[str]
+
+
+class SceneGearUpdateIn(BaseModel):
+    items: list[str] = Field(default_factory=list, description="完整覆盖该场景的装备清单")

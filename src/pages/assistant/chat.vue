@@ -8,6 +8,7 @@
           <text class="header-title serif">出游助手</text>
           <text class="header-sub mono">本地知识库 · 在线</text>
         </view>
+        <view class="header-clear" @tap="clearHistory">清空</view>
       </view>
     </view>
 
@@ -125,6 +126,21 @@ watch(messages, (val) => {
   try { uni.setStorageSync(HISTORY_KEY, val.slice(-80)) } catch (_) {}
 }, { deep: true })
 
+function clearHistory() {
+  uni.showModal({
+    title: '清空对话',
+    content: '将删除所有聊天记录，仅保留欢迎语。是否继续？',
+    confirmText: '清空',
+    confirmColor: '#E55B45',
+    success: ({ confirm }) => {
+      if (!confirm) return
+      try { uni.removeStorageSync(HISTORY_KEY) } catch (_) {}
+      messages.value = defaultMessages.map(item => ({ ...item }))
+      uni.showToast({ title: '已清空', icon: 'success' })
+    },
+  })
+}
+
 onMounted(() => {
   try {
     const sys = uni.getSystemInfoSync()
@@ -146,6 +162,13 @@ onMounted(() => {
 function sendMsg(text) {
   const q = text?.trim()
   if (!q) return
+
+  // 取本轮发送前的最近 6 条 user/bot 消息作为多轮上下文（不含本次新问题）
+  const history = messages.value
+    .filter(m => m.text && (m.role === 'user' || m.role === 'bot'))
+    .slice(-6)
+    .map(m => ({ role: m.role, text: m.text }))
+
   messages.value.push({ role: 'user', text: q })
   inputText.value = ''
   typing.value = true
@@ -155,7 +178,7 @@ function sendMsg(text) {
   const botMsg = { role: 'bot', text: '', sources: null, chips: null }
   let started = false
 
-  streamAsk({ question: q, city: cityStore.current }, {
+  streamAsk({ question: q, city: cityStore.current, history }, {
     onMeta: (m) => {
       typing.value = false
       messages.value.push(botMsg)
@@ -191,7 +214,7 @@ function sendMsg(text) {
   })
 
   function fallbackNonStream(q) {
-    api.ask(q, cityStore.current)
+    api.ask(q, cityStore.current, history)
       .then((res) => {
         messages.value.push({
           role: 'bot', text: res.text, sources: res.sources, chips: res.chips,
@@ -230,6 +253,17 @@ function scrollToBottom() {
   align-items: center;
   gap: 20rpx;
   padding-top: 16rpx;
+}
+
+.header-text { flex: 1; min-width: 0; }
+.header-clear {
+  padding: 8rpx 20rpx;
+  border: 1rpx solid $z-border;
+  border-radius: 22rpx;
+  font-size: 24rpx;
+  color: $z-muted;
+  background: $z-card;
+  flex-shrink: 0;
 }
 
 .bot-avatar {

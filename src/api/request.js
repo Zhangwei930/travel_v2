@@ -1,27 +1,12 @@
-// 后端接口请求封装 —— BASE_URL 按平台 + 环境读取
-//
-// 优先级（高到低）：
-//   1. import.meta.env.VITE_API_BASE         (Vite，H5 + 小程序 Vite 模式)
-//   2. process.env.VUE_APP_API_BASE          (兼容 vue-cli 模式)
-//   3. 空字符串 ''                            (H5 dev 走 vite.config.js 代理)
+// 后端接口请求封装 —— BASE_URL 通过 vite.config.js 的 `define` 注入为字面量。
+// 不能直接读 import.meta.env：mp-weixin 输出会把 typeof import.meta 编成
+// require("url") 的 polyfill，小程序里 require 不到 url 模块会抛错，导致 BASE_URL 兜底为空。
 //
 // fail-fast：在小程序运行时 BASE_URL 为空（小程序不支持相对 URL）→ 抛错。
 
-function readEnvBase() {
-  try {
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE != null) {
-      return String(import.meta.env.VITE_API_BASE).replace(/\/+$/, '')
-    }
-  } catch (_) {}
-  try {
-    if (typeof process !== 'undefined' && process.env && process.env.VUE_APP_API_BASE != null) {
-      return String(process.env.VUE_APP_API_BASE).replace(/\/+$/, '')
-    }
-  } catch (_) {}
-  return ''
-}
-
-export const BASE_URL = readEnvBase()
+// __ZHOUMI_API_BASE__ 由 vite.config.js define 注入为字符串字面量；这里直接引用即可
+// eslint-disable-next-line no-undef
+export const BASE_URL = String(__ZHOUMI_API_BASE__ || '').replace(/\/+$/, '')
 
 // 小程序场景下 BASE_URL 空 = 配置缺失（小程序没有"相对路径走代理"能力）
 // #ifdef MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ

@@ -6,31 +6,67 @@
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import PoiIndex, TravelKnowledge, TravelRoute, UserRequest
+from app.models import PoiIndex, SceneGear, TravelKnowledge, TravelRoute, UserRequest
 from app.schemas import PlanSource, PlanStop, TripGenerateIn, TripPlanOut
 from app.services import ai_provider, map_provider
 from app.services.weather_provider import get_weather, weather_source_label
+from app.taxonomy import GEAR_BY_SCENE, DEFAULT_GEAR
 
-# 场景对应的出游装备清单
-GEAR_BY_SCENE: dict[str, list[str]] = {
-    "fish": ["钓竿×2", "鱼饵(蚯蚓/玉米)", "折叠椅", "遮阳帽", "防虫液", "保温水壶", "垃圾袋"],
-    "family": ["儿童水壶", "湿巾纸巾", "防晒霜", "小零食", "备用衣物"],
-    "couple": ["相机/手机支架", "充电宝", "外套", "纸巾"],
-    "rainy": ["雨伞", "防滑鞋", "充电宝", "口罩"],
-    "budget": ["交通卡", "保温水壶", "舒适步行鞋", "零钱"],
-}
-DEFAULT_GEAR = ["身份证", "充电宝", "保温水壶", "纸巾", "常用药品"]
+
+def _resolve_gear(scene_id: str, db: Session) -> list[str]:
+    """优先从 scene_gear 表读取（可运营），兜底回 taxonomy 常量。"""
+    if scene_id:
+        row = db.query(SceneGear).filter(SceneGear.scene_id == scene_id).first()
+        if row and row.items:
+            return list(row.items)
+    return GEAR_BY_SCENE.get(scene_id, DEFAULT_GEAR)
 
 # 起始时间段 → 第一站到达时间
 START_TIME = {"上午": "09:00", "下午": "14:00", "傍晚": "17:00", "晚上": "19:00"}
 
+# 站间默认交通时间（分钟）；按 stop.stay 推算游玩时长，再叠加这个交通时长。
+_TRANSIT_MINUTES = 30
+
+
+def _stay_to_minutes(stay: str | None, default: int = 90) -> int:
+    """把 '1-2h' / '2小时' / '30min' / '半日' 等粗粒度时长解析成分钟。"""
+    if not stay:
+        return default
+    s = str(stay).strip().lower()
+    if "半日" in s or "上午" in s or "下午" in s:
+        return 240
+    if "全天" in s or "一日" in s:
+        return 480
+    s2 = (
+        s.replace("h", "")
+         .replace("小时", "")
+         .replace("min", "")
+         .replace("分钟", "")
+         .strip()
+    )
+    try:
+        if "-" in s2:
+            a, b = s2.split("-", 1)
+            mid = (float(a) + float(b)) / 2
+        else:
+            mid = float(s2)
+    except ValueError:
+        return default
+    # 小数字按小时（1-12），大数字按分钟（>12）
+    return int(mid * 60) if mid <= 12 else int(mid)
+
 
 def _pick_route(payload: TripGenerateIn, city: str, db: Session) -> TravelRoute | None:
-    q = db.query(TravelRoute).filter(TravelRoute.review_status == "approved")
-    city_q = q.filter(TravelRoute.city == city)
+    # 只选 poi_ids 非空的路线（早期 seed 留下大量没有 POI 关联的占位 route）
+    # 同时按 id 升序，让结果稳定可复现
+    q = db.query(TravelRoute).filter(
+        TravelRoute.review_status == "approved",
+        TravelRoute.city == city,
+        TravelRoute.poi_ids != [],
+    ).order_by(TravelRoute.id)
     if payload.scene:
-        return city_q.filter(TravelRoute.scene == payload.scene).first()
-    return city_q.first()
+        return q.filter(TravelRoute.scene == payload.scene).first()
+    return q.first()
 
 
 def _add_minutes(hhmm: str, minutes: int) -> str:
@@ -87,7 +123,8 @@ def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
             lat=poi.lat,
             lng=poi.lng,
         ))
-        arrive = _add_minutes(arrive, 150)
+        # 下一站到达时间 = 当前到达 + 本站游玩时长 + 站间交通时间
+        arrive = _add_minutes(arrive, _stay_to_minutes(stay) + _TRANSIT_MINUTES)
 
     if route and route.review_status == "approved":
         sources.append(PlanSource(kind="知识库", t=f"路线模板 {route.display_no or route.id} · 已审核"))
@@ -130,7 +167,7 @@ def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
         people=payload.people_type or "2 人",
         weather=f"{weather.icon} {weather.temp}° {weather.cond}",
         stops=stops,
-        gearList=GEAR_BY_SCENE.get(gear_scene, DEFAULT_GEAR),
+        gearList=_resolve_gear(gear_scene, db),
         backup=backup,
         disclaimer=disclaimer,
         sources=sources,

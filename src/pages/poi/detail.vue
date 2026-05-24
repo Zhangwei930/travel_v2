@@ -73,6 +73,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import { toggleSavedPoi, isSavedPoi, trackVisit } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
@@ -81,11 +82,15 @@ import ZTag from '../../components/ZTag.vue'
 const safeBottom = ref('18px')
 const saved      = ref(false)
 
-// 从路由参数获取 id
-const pages = getCurrentPages()
-const currentPage = pages[pages.length - 1]
-let poiId = 1
-try { poiId = Number(currentPage.$page?.fullPath?.match(/id=(\d+)/)?.[1]) || 1 } catch (_) {}
+// 路由参数：用 onLoad 钩子拿最稳。小程序端 setup() 顶层访问 currentPage.options
+// 时机不可靠（page 实例可能还没填好 options），生产里会得到空值后被兜底为 0。
+const poiId = ref(0)
+onLoad((options) => {
+  const raw = options?.id
+  if (raw != null && raw !== '') {
+    poiId.value = Number(raw) || 0
+  }
+})
 
 const poi = ref({
   no: '', name: '', cat: '', dist: '', time: '', budget: '',
@@ -119,18 +124,23 @@ onMounted(async () => {
     safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
   } catch (_) {}
 
+  if (!poiId.value) {
+    uni.showToast({ title: '地点参数缺失', icon: 'none' })
+    setTimeout(() => uni.navigateBack(), 800)
+    return
+  }
   try {
     // 拿当前定位（如有）一起传给后端，方便计算距离
     let coords = {}
     try {
       coords = await new Promise((res) => uni.getLocation({ type: 'gcj02', success: res, fail: () => res({}) }))
     } catch (_) {}
-    poi.value = await api.getPoiDetail(poiId, coords.latitude, coords.longitude)
+    poi.value = await api.getPoiDetail(poiId.value, coords.latitude, coords.longitude)
     trackVisit({
-      id: poi.value.id ?? poiId, no: poi.value.no, name: poi.value.name,
+      id: poi.value.id ?? poiId.value, no: poi.value.no, name: poi.value.name,
       cat: poi.value.cat, img: poi.value.img, dist: poi.value.dist,
     })
-    saved.value = isSavedPoi(poiId)
+    saved.value = isSavedPoi(poiId.value)
   } catch (_) {
     uni.showToast({ title: '地点信息加载失败', icon: 'none' })
   }

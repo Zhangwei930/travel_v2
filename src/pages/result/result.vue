@@ -31,7 +31,7 @@
 
       <!-- AI 徽章（AI 生成时显示） -->
       <view v-if="isGenerated" class="ai-badge">
-        <text>✨ AI · NEW</text>
+        <text>✨ AI · 新方案</text>
       </view>
 
       <!-- 标题 -->
@@ -53,26 +53,21 @@
         <view class="map-card">
           <view class="map-header">
             <text class="map-label">🗺 路线总览</text>
-            <text class="map-meta mono">{{ plan.stops?.length ?? 0 }} STOPS · ~90 MIN</text>
+            <text class="map-meta mono">{{ mapStops.length }} 站</text>
           </view>
-          <!-- SVG 简化地图 -->
-          <view class="mini-map">
-            <svg :viewBox="'0 0 360 140'" style="width:100%;height:140px;border-radius:11px;background:#E8F0EE;display:block">
-              <defs>
-                <pattern id="grid2" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-                  <path d="M 20 0 L 0 0 0 20" stroke="#D5E3DF" stroke-width="0.5" fill="none"/>
-                </pattern>
-              </defs>
-              <rect width="360" height="140" fill="url(#grid2)"/>
-              <path d="M 0 80 Q 100 50 200 85 T 360 75" stroke="#fff" stroke-width="13" fill="none"/>
-              <path d="M 0 80 Q 100 50 200 85 T 360 75" stroke="#CCD9D5" stroke-width="1.5" fill="none"/>
-              <path d="M 40 90 L 160 35 L 300 70" stroke="#FF6B35" stroke-width="2.5" stroke-dasharray="5 4" fill="none"/>
-              <g v-for="stop in miniMapStops" :key="stop.idx">
-                <circle :cx="stop.x" :cy="stop.y" r="11" fill="#fff" stroke="#FF6B35" stroke-width="2.2"/>
-                <text :x="stop.x" :y="stop.y + 4" text-anchor="middle" font-size="11" font-weight="700" fill="#FF6B35">{{ stop.idx }}</text>
-              </g>
-            </svg>
+          <!-- 真实地图：渲染带坐标的 stop 为 marker -->
+          <view v-if="mapStops.length" class="mini-map">
+            <map
+              :latitude="mapCenter.lat"
+              :longitude="mapCenter.lng"
+              :markers="mapMarkers"
+              :include-points="mapPoints"
+              :scale="13"
+              class="real-map"
+              show-location
+            />
           </view>
+          <view v-else class="mini-map-empty mono">暂无站点坐标</view>
         </view>
       </view>
 
@@ -108,12 +103,12 @@
               <text class="stop-stay">⏱ 停留 {{ stop.stay }}</text>
 
               <view class="why-block">
-                <text class="why-label">💡 WHY HERE</text>
+                <text class="why-label">💡 为什么选这里</text>
                 <text class="why-text">{{ stop.reason }}</text>
               </view>
 
               <view class="headsup-block">
-                <text class="headsup-label">⚠️ HEADS UP</text>
+                <text class="headsup-label">⚠️ 注意事项</text>
                 <text class="headsup-text">{{ stop.tip }}</text>
               </view>
 
@@ -176,6 +171,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import { addPlanHistory, toggleSavedPlan, isSavedPlan } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
@@ -191,11 +187,13 @@ const feedbackOpen = ref(false)
 const feedbackText = ref('')
 const submitting   = ref(false)
 
-const pages = getCurrentPages()
-const currentPage = pages[pages.length - 1]
-const fullPath = (() => { try { return currentPage.$page?.fullPath || '' } catch (_) { return '' } })()
-const isGenerated = computed(() => fullPath.includes('generated=1'))
-const planNoFromUrl = (() => { const m = fullPath.match(/[?&]no=([^&]+)/); return m ? decodeURIComponent(m[1]) : '' })()
+// 路由参数：用 onLoad 钩子拿最稳。setup() 顶层 currentPage.options 在小程序里时机不可靠。
+const routeQuery = ref({})
+onLoad((options) => {
+  if (options && typeof options === 'object') routeQuery.value = { ...options }
+})
+const isGenerated   = computed(() => String(routeQuery.value.generated || '') === '1')
+const planNoFromUrl = computed(() => String(routeQuery.value.no || ''))
 
 const planMeta = computed(() => plan.value ? [
   { icon: '⏱', val: plan.value.totalTime },
@@ -203,12 +201,45 @@ const planMeta = computed(() => plan.value ? [
   { icon: '👥', val: plan.value.people },
   { icon: '🌤', val: plan.value.weather },
 ] : [])
-const miniMapStops = computed(() => {
-  const points = [{ x: 40, y: 90 }, { x: 160, y: 35 }, { x: 300, y: 70 }]
-  return (plan.value?.stops || []).slice(0, points.length).map((stop, i) => ({
-    idx: stop.idx || i + 1,
-    ...points[i],
-  }))
+// 真实地图：从 plan.stops 中取出有坐标的 stop，转成 marker
+const mapStops = computed(() =>
+  (plan.value?.stops || []).filter(s => s.lat != null && s.lng != null)
+)
+const mapMarkers = computed(() => mapStops.value.map((s, i) => ({
+  id: i + 1,
+  latitude: Number(s.lat),
+  longitude: Number(s.lng),
+  title: s.name,
+  // 微信小程序 marker 强制要求 width/height；不指定 iconPath 时使用默认气泡
+  width: 32,
+  height: 32,
+  label: {
+    content: String(i + 1),
+    fontSize: 12,
+    color: '#FFFFFF',
+    bgColor: '#FF6B35',
+    padding: 6,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    anchorX: -10,
+    anchorY: -36,
+  },
+  callout: {
+    content: `${i + 1}. ${s.name || ''}`,
+    fontSize: 12, padding: 6, borderRadius: 6,
+    color: '#1A2E2C', bgColor: '#FFFFFF',
+    display: 'BYCLICK',
+  },
+})))
+const mapPoints = computed(() => mapStops.value.map(s => ({
+  latitude: Number(s.lat), longitude: Number(s.lng),
+})))
+const mapCenter = computed(() => {
+  const arr = mapStops.value
+  if (!arr.length) return { lat: 30.6586, lng: 104.0648 }  // 成都市中心兜底
+  const avg = (k) => arr.reduce((a, b) => a + Number(b[k]), 0) / arr.length
+  return { lat: avg('lat'), lng: avg('lng') }
 })
 
 onMounted(async () => {
@@ -222,17 +253,18 @@ onMounted(async () => {
   // 兜底：lastPlan 本地缓存（用户上一次生成的方案，离线可看）
   const isValid = (p) => p && p.no && p.title && Array.isArray(p.stops) && p.stops.length > 0
 
+  const no = planNoFromUrl.value
   let loaded = null
-  if (planNoFromUrl) {
+  if (no) {
     try {
-      const r = await api.getPlan(planNoFromUrl)
+      const r = await api.getPlan(no)
       if (isValid(r)) loaded = r
     } catch (_) {}
   }
   if (!loaded) {
     try {
       const cached = uni.getStorageSync('lastPlan')
-      if (isValid(cached) && (!planNoFromUrl || cached.no === planNoFromUrl)) {
+      if (isValid(cached) && (!no || cached.no === no)) {
         loaded = cached
       }
     } catch (_) {}
@@ -243,7 +275,7 @@ onMounted(async () => {
     try { addPlanHistory(loaded) } catch (e) { console.warn('addPlanHistory failed', e) }
     try { saved.value = isSavedPlan(loaded.no) } catch (e) { console.warn('isSavedPlan failed', e) }
   } else {
-    console.warn('plan load failed: no URL param matched and no valid cache', { planNoFromUrl })
+    console.warn('plan load failed: no URL param matched and no valid cache', { no })
     uni.showToast({ title: '攻略不存在或已过期，请重新生成', icon: 'none' })
     setTimeout(() => uni.navigateBack(), 1500)
   }
@@ -308,12 +340,25 @@ async function submitFeedback() {
   }
 }
 function onStart() {
-  const first = plan.value?.stops?.[0]
-  if (first?.lat && first?.lng) {
-    uni.openLocation({ latitude: first.lat, longitude: first.lng, name: first.name, address: first.cat })
-  } else {
+  const all = (plan.value?.stops || []).filter(s => s.lat && s.lng)
+  if (!all.length) {
     uni.showToast({ title: '暂无坐标，请手动导航', icon: 'none' })
+    return
   }
+  if (all.length === 1) {
+    const s = all[0]
+    uni.openLocation({ latitude: s.lat, longitude: s.lng, name: s.name, address: s.cat })
+    return
+  }
+  // showActionSheet 最多 6 项；超过则截断（剩下的请用时间线里每个 stop 的导航按钮）
+  const candidates = all.slice(0, 6)
+  uni.showActionSheet({
+    itemList: candidates.map((s, i) => `${i + 1}. ${s.name || ''}`),
+    success: ({ tapIndex }) => {
+      const s = candidates[tapIndex]
+      if (s) uni.openLocation({ latitude: s.lat, longitude: s.lng, name: s.name, address: s.cat })
+    },
+  })
 }
 </script>
 
@@ -325,6 +370,12 @@ function onStart() {
   background: $z-bg;
   display: flex;
   flex-direction: column;
+}
+
+// scroll-view 必须显式撑满剩余空间，否则 sticky bottom-bar 会浮在内容流里
+.scroll-body {
+  flex: 1;
+  min-height: 0;
 }
 
 // 反馈弹层
@@ -495,6 +546,20 @@ function onStart() {
 
 .mini-map {
   padding: 0 24rpx 24rpx;
+}
+
+.real-map {
+  width: 100%;
+  height: 300rpx;
+  border-radius: 11px;
+  display: block;
+}
+
+.mini-map-empty {
+  padding: 28rpx 24rpx 32rpx;
+  color: $z-muted;
+  font-size: 22rpx;
+  text-align: center;
 }
 
 // 数据源
