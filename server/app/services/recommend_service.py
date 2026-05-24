@@ -160,8 +160,8 @@ def recommend_pois(
 
 
 def _distance_value(distance: str) -> float:
-    if distance.endswith("m"):
-        return float(distance[:-1] or 0) / 1000
     if distance.endswith("km"):
         return float(distance[:-2] or 0)
+    if distance.endswith("m"):
+        return float(distance[:-1] or 0) / 1000
     return 999.0

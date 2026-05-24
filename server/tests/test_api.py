@@ -322,6 +322,25 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertTrue(data["from_kb"])
         self.assertEqual(data["sources"][0]["k"], "知识库")
 
+    def test_location_aware_assistant_handles_kilometer_distances(self):
+        response = self.client.post(
+            "/api/kb/ask",
+            json={
+                "question": "带孩子 2 小时内去哪？",
+                "city": "乌鲁木齐",
+                "lat": 30.5728,
+                "lng": 104.0668,
+                "scene": "family",
+                "intent": "assistant",
+                "history": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("destinations", data)
+        self.assertGreaterEqual(len(data["destinations"]), 1)
+        self.assertTrue(data["destinations"][0]["distance"].endswith("km"))
+
     def test_kb_answer_stays_inside_requested_city(self):
         response = self.client.post(
             "/api/kb/ask",
