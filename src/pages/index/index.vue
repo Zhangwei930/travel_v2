@@ -68,9 +68,9 @@
               <text class="summary-value">{{ radiusText }}</text>
             </view>
           </view>
-          <text class="assistant-home-kicker mono">TRAVEL ASSISTANT HOME</text>
-          <text class="assistant-home-title serif">出游助手首页</text>
-          <text class="assistant-home-sub">选择一个入口，再进入推荐结果、路线页或聊天定制。</text>
+          <text class="assistant-home-kicker mono">TRAVEL ASSISTANT</text>
+          <text class="assistant-home-title serif">出游助手</text>
+          <text class="assistant-home-sub">选择一个入口，进入推荐结果、路线或咨询。</text>
           <text class="intent-title serif">你现在想怎么出去玩？</text>
           <view class="intent-grid">
             <view

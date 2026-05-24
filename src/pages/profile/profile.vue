@@ -173,7 +173,7 @@ function onMenuContent(i) {
 function onMenuSetting(i) {
   if (i === 0) {
     // 位置与城市 — 当前定位驱动，不可手动切换；显示提示
-    uni.showToast({ title: `当前定位：${currentCity.value}\n回首页点城市可刷新`, icon: 'none', duration: 2500 })
+    uni.showToast({ title: `当前定位：${currentCity.value}\n回「出游」Tab 点城市可刷新`, icon: 'none', duration: 2500 })
   } else if (i === 1) {
     // 通知设置 — 跳到微信设置页（小程序），H5 兜底提示
     // #ifdef MP-WEIXIN

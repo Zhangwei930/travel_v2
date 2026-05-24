@@ -9,7 +9,7 @@
     </view>
 
     <scroll-view scroll-y class="list-scroll">
-      <view v-if="list.length === 0" class="empty mono">还没有生成过方案，去首页试试吧</view>
+      <view v-if="list.length === 0" class="empty mono">还没有生成过方案，去出游 Tab 试试吧</view>
 
       <view v-for="item in list" :key="item.no" class="card" @tap="viewPlan(item)">
         <view class="card-meta">
