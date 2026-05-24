@@ -1,43 +1,33 @@
 <template>
   <view class="page">
-    <!-- ══ HEADER ══════════════════════════════════════════════ -->
-    <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
-      <text class="header-mono mono">§ SCENES · INDEX</text>
-      <text class="header-title serif">按场所索引</text>
-      <text class="header-sub">选一个场景，系统按定位 + 天气推荐路线与地点</text>
-    </view>
+    <u-nav-bar title="按场所索引" />
 
-    <!-- ══ 滚动内容区：3×3 场景网格 ═════════════════════════════ -->
+    <text class="page-subtitle">选择您感兴趣的类型</text>
+
     <scroll-view
       scroll-y
       class="scroll-body"
       :style="{ paddingBottom: tabBarHeight }"
       :show-scrollbar="false"
     >
-      <view v-if="!scenes.length" class="list-empty mono">场景列表加载中…</view>
+      <view v-if="!scenes.length" class="hint">场景加载中…</view>
       <view class="scenes-grid">
         <view
           v-for="s in scenes"
           :key="s.id"
           class="scene-card"
+          :class="tintClass(s.id)"
           @tap="goScene(s)"
         >
-          <text class="scene-no mono">NO.{{ s.no }}</text>
-          <view class="scene-icon-bg" :style="{ background: s.color + '22' }">
-            <text class="scene-icon">{{ s.icon }}</text>
+          <view class="scene-icon-wrap">
+            <text class="scene-icon" :style="{ color: iconColor(s.id) }">{{ iconChar(s.id) }}</text>
           </view>
-          <text class="scene-label serif">{{ s.label }}</text>
+          <text class="scene-label">{{ s.label }}</text>
           <text class="scene-desc">{{ s.desc }}</text>
         </view>
       </view>
-
-      <view class="hint-card">
-        <text class="hint-title serif">如何选场景？</text>
-        <text class="hint-text">每个场景对应一套筛选规则（适合人群、天气、时段、避坑提醒）。系统会基于当前定位推荐 2~3 条已策划的路线和附近 POI。</text>
-      </view>
     </scroll-view>
 
-    <!-- ══ 底部 Tab Bar ════════════════════════════════════════ -->
     <z-tab-bar current="scenes" />
   </view>
 </template>
@@ -49,18 +39,57 @@ import { api } from '../../api/mock.js'
 import { useCityStore } from '../../store/city.js'
 import { consumePendingScene } from '../../api/storage.js'
 import ZTabBar from '../../components/ZTabBar.vue'
+import UNavBar from '../../components/UNavBar.vue'
 
 const cityStore = useCityStore()
+const tabBarHeight = ref('80px')
+const scenes = ref([])
 
-const statusBarHeight = ref(44)
-const tabBarHeight    = ref('80px')
-const scenes          = ref([])
+const TINTS = {
+  family: 'tint-mint',
+  couple: 'tint-pink',
+  rainy:  'tint-blue',
+  budget: 'tint-peach',
+  fish:   'tint-leaf',
+  photo:  'tint-rose',
+  night:  'tint-lilac',
+  walk:   'tint-mint',
+  old:    'tint-sun',
+}
+
+const ICON_COLORS = {
+  family: '#2D9D6E',
+  couple: '#E83E8C',
+  rainy:  '#4F6FE0',
+  budget: '#E07A2D',
+  fish:   '#3E8C3A',
+  photo:  '#D63384',
+  night:  '#7C3AED',
+  walk:   '#2D9D6E',
+  old:    '#D97706',
+}
+
+// 用 emoji 太花，统一用更"教科书"的简笔 unicode 字符给图标位置；
+// 真正小程序里建议替换成 SVG icon set
+const ICONS = {
+  family: '👨‍👩‍👧',
+  couple: '💖',
+  rainy:  '☂️',
+  budget: '🪙',
+  fish:   '🎣',
+  photo:  '📸',
+  night:  '🌙',
+  walk:   '📍',
+  old:    '🧓',
+}
+
+function tintClass(id) { return TINTS[id] || 'tint-mint' }
+function iconColor(id) { return ICON_COLORS[id] || '#1A7A73' }
+function iconChar(id)  { return ICONS[id] || '•' }
 
 function navigateToResult(sceneId) {
   if (!sceneId) return
-  uni.navigateTo({
-    url: `/pages/scenes/result?scene=${encodeURIComponent(sceneId)}`,
-  })
+  uni.navigateTo({ url: `/pages/scenes/result?scene=${encodeURIComponent(sceneId)}` })
 }
 
 function goScene(s) {
@@ -77,7 +106,6 @@ function applyHomeLocationContext(context = {}) {
 onMounted(async () => {
   try {
     const sys = uni.getSystemInfoSync()
-    statusBarHeight.value = sys.statusBarHeight || 44
     const tabH = (sys.safeAreaInsets?.bottom || 18) + 56
     tabBarHeight.value = tabH + 'px'
   } catch (_) {}
@@ -85,10 +113,9 @@ onMounted(async () => {
   try {
     scenes.value = await api.getScenes()
   } catch (_) {
-    uni.showToast({ title: '场景列表加载失败', icon: 'none' })
+    uni.showToast({ title: '场景加载失败', icon: 'none' })
   }
 
-  // 从首页带入的预选场景，直接打开结果子页
   const pendingScene = consumePendingScene()
   if (pendingScene) navigateToResult(pendingScene)
 
@@ -110,133 +137,86 @@ onUnmounted(() => {
 <style lang="scss">
 @import '../../uni.scss';
 
-.list-empty {
-  color: $z-muted;
-  font-family: $mono;
-  font-size: $font-mono;
-  padding: 28rpx 32rpx;
-  display: block;
-}
-
 .page {
   min-height: 100vh;
-  background: $z-bg;
+  background: $u-bg;
 }
 
-.header {
-  background: $z-card;
-  padding: 0 32rpx 28rpx;
-}
-
-.header-mono {
+.page-subtitle {
   display: block;
-  font-size: 20rpx;
-  color: $z-muted;
-  letter-spacing: 3rpx;
-  padding-top: 16rpx;
-  margin-bottom: 8rpx;
-}
-
-.header-title {
-  display: block;
-  font-size: 42rpx;
-  font-weight: 900;
-  color: $z-text;
-  margin-bottom: 6rpx;
-}
-
-.header-sub {
-  display: block;
-  font-size: 24rpx;
-  color: $z-muted;
+  text-align: center;
+  font-size: 22rpx;
+  color: $u-text-mute;
+  padding: 6rpx 0 18rpx;
 }
 
 .scroll-body {
   position: relative;
 }
 
-// ── 3×3 场景网格 ───────────────────────────────────────────────
+.hint {
+  text-align: center;
+  color: $u-text-mute;
+  font-size: 24rpx;
+  padding: 40rpx 0;
+}
+
+// ── 3×3 场景网格 ───────────────────────────────────────────
 .scenes-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18rpx;
-  padding: 24rpx 28rpx 8rpx;
+  gap: 16rpx;
+  padding: 0 24rpx 32rpx;
 }
 
 .scene-card {
-  background: $z-card;
   border-radius: 22rpx;
-  padding: 22rpx 18rpx 20rpx;
+  padding: 24rpx 16rpx 22rpx;
+  min-height: 230rpx;
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
+  align-items: flex-start;
+  gap: 14rpx;
   cursor: pointer;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.06);
-  position: relative;
-  min-height: 230rpx;
+
+  &.tint-mint  { background: $u-tint-mint; }
+  &.tint-pink  { background: $u-tint-pink; }
+  &.tint-blue  { background: $u-tint-blue; }
+  &.tint-peach { background: $u-tint-peach; }
+  &.tint-lilac { background: $u-tint-lilac; }
+  &.tint-rose  { background: $u-tint-rose; }
+  &.tint-leaf  { background: $u-tint-leaf; }
+  &.tint-sun   { background: $u-tint-sun; }
 }
 
-.scene-no {
-  position: absolute;
-  top: 14rpx;
-  right: 18rpx;
-  font-size: 18rpx;
-  color: $z-muted;
-  letter-spacing: 1rpx;
-}
-
-.scene-icon-bg {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 18rpx;
+.scene-icon-wrap {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 32rpx;
+  background: rgba(255, 255, 255, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 8rpx;
 }
 
 .scene-icon {
-  font-size: 36rpx;
+  font-size: 32rpx;
   line-height: 1;
 }
 
 .scene-label {
   display: block;
-  font-size: 26rpx;
+  font-size: 28rpx;
   font-weight: 800;
-  color: $z-text;
-  line-height: 1.2;
+  color: $u-text;
+  line-height: 1.15;
   margin-top: auto;
 }
 
 .scene-desc {
   display: block;
   font-size: 20rpx;
-  color: $z-muted;
+  color: $u-text-sub;
   line-height: 1.3;
-}
-
-// ── 底部说明卡 ────────────────────────────────────────────────
-.hint-card {
-  margin: 28rpx 28rpx 0;
-  background: $z-card;
-  border-radius: 18rpx;
-  padding: 22rpx 26rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.04);
-}
-
-.hint-title {
-  display: block;
-  font-size: 26rpx;
-  font-weight: 800;
-  color: $z-text;
-  margin-bottom: 8rpx;
-}
-
-.hint-text {
-  display: block;
-  font-size: 22rpx;
-  color: $z-muted;
-  line-height: 1.55;
 }
 </style>
