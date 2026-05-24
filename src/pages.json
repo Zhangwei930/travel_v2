@@ -19,6 +19,13 @@
       }
     },
     {
+      "path": "pages/scenes/result",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "场景结果"
+      }
+    },
+    {
       "path": "pages/generate/generate",
       "style": {
         "navigationStyle": "custom",
