@@ -34,6 +34,7 @@ def get_weather(city: str | None = None) -> WeatherOut:
         icon=_ICONS.get(cond, "☀️"),
         advice=_advice(temp, cond),
         wind="东北风 2 级",
+        source="realtime" if settings.weather_api_key else "stub",
     )
 
 

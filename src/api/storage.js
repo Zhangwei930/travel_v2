@@ -5,6 +5,8 @@ const KEY_PLANS       = 'zhoumi_plan_history'
 const KEY_POIS        = 'zhoumi_saved_pois'
 const KEY_VISITED     = 'zhoumi_visited_pois'   // 升级：从 id[] → POI[]
 const KEY_SAVED_PLANS = 'zhoumi_saved_plans_fav'
+const KEY_PENDING_SCENE = 'zhoumi_pending_scene'
+const KEY_COORDS = 'zhoumi_current_coords'
 
 function get(key) {
   try { return uni.getStorageSync(key) || [] } catch (e) {
@@ -71,4 +73,26 @@ export function getProfileStats() {
     saved:   get(KEY_POIS).length,
     visited: get(KEY_VISITED).length,
   }
+}
+
+export function setPendingScene(sceneId) {
+  if (!sceneId) return
+  try { uni.setStorageSync(KEY_PENDING_SCENE, sceneId) } catch (e) {
+    console.warn('[storage] set pending scene failed', e)
+  }
+}
+
+export function consumePendingScene() {
+  try {
+    const sceneId = uni.getStorageSync(KEY_PENDING_SCENE)
+    if (sceneId) uni.removeStorageSync(KEY_PENDING_SCENE)
+    return sceneId || ''
+  } catch (e) {
+    console.warn('[storage] consume pending scene failed', e)
+    return ''
+  }
+}
+
+export function getCoords() {
+  try { return uni.getStorageSync(KEY_COORDS) || null } catch (_) { return null }
 }

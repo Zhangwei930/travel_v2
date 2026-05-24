@@ -1,16 +1,13 @@
 <template>
   <view class="page">
-    <!-- ══ HEADER 深墨青渐变 ══════════════════════════════════ -->
     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
-      <!-- 顶行：城市 + 天气胶囊 -->
       <view class="header-top">
         <view class="city-btn" @tap="onCityTap">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
             <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" stroke="#fff" stroke-width="2"/>
             <circle cx="12" cy="9" r="3" stroke="#fff" stroke-width="2"/>
           </svg>
-          <text class="city-name">{{ cityStore.locating ? '定位中…' : city }}</text>
-          <!-- 刷新箭头：暗示"重新定位"而非"切换城市" -->
+          <text class="city-name">{{ cityLabel }}</text>
           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none">
             <path d="M3 12a9 9 0 0115.5-6.4M21 12a9 9 0 01-15.5 6.4M21 3v6h-6M3 21v-6h6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
@@ -21,198 +18,198 @@
         </view>
       </view>
 
-      <!-- ISSUE 标注 -->
-      <text class="issue-label mono">ISSUE NO.05 · LOCAL FIELD GUIDE</text>
-
-      <!-- 大标题 -->
-      <text class="main-title serif">今天想去哪玩？</text>
-      <text class="main-sub">{{ weather?.advice ?? '加载中…' }} · 已为你准备 {{ routes.length }} 条本地路线</text>
+      <text class="issue-label mono">LOCATION FIRST · NEARBY GUIDE</text>
+      <text class="main-title serif">附近现在去哪？</text>
+      <text class="main-sub">{{ headerSub }}</text>
     </view>
 
-    <!-- 滚动区域（Tab Bar 高度留白） -->
     <scroll-view
       scroll-y
       class="scroll-body"
       :style="{ paddingBottom: tabBarHeight }"
       :show-scrollbar="false"
     >
-      <!-- ══ AI 输入卡（悬浮 -18px）════════════════════════════ -->
-      <view class="ai-card-wrap">
-        <view class="ai-card" @tap="goGenerate">
-          <view class="ai-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 26 26" fill="none">
-              <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
-            </svg>
-          </view>
-          <view class="ai-content">
-            <text class="ai-title serif">告诉我你的想法 · AI 帮你规划</text>
-            <text class="ai-hint">例如：周末想去钓鱼，自驾 2 小时内</text>
-          </view>
-          <view class="ai-btn">
-            <text class="ai-btn-text">开始</text>
-          </view>
+      <view v-if="locationError" class="location-gate">
+        <text class="gate-title serif">需要开启定位后，才能推荐附近目的地</text>
+        <text class="gate-sub">系统不会在未定位时展示假附近数据。</text>
+        <view class="gate-actions">
+          <view class="primary-btn" @tap="loadFeed">重新定位</view>
+          <view class="secondary-btn" @tap="goScene()">手动选择城市</view>
         </view>
       </view>
 
-      <!-- ══ §01 按场景索引（9 宫格）═══════════════════════════ -->
-      <view class="section">
-        <z-section-header
-          no="01"
-          title="按场景索引"
-          sub="9 类常见出游场景"
-        />
-        <view v-if="!scenes.length" class="list-empty mono">加载中…</view>
-        <view class="scenes-grid">
-          <view
-            v-for="scene in scenes"
-            :key="scene.id"
-            class="scene-card"
-            @tap="goScene(scene.id)"
-          >
-            <!-- 右上角编号 -->
-            <text class="scene-no mono">{{ scene.no }}</text>
-            <!-- 图标 -->
+      <template v-else>
+        <view class="intent-wrap">
+          <text class="intent-title serif">你现在想怎么出去玩？</text>
+          <view class="intent-grid">
             <view
-              class="scene-icon-bg"
-              :style="{ background: scene.color + '18' }"
+              v-for="entry in entries"
+              :key="entry.id"
+              class="intent-card"
+              @tap="goEntry(entry.id)"
             >
-              <text class="scene-icon-emoji">{{ scene.icon }}</text>
-            </view>
-            <!-- 文字 -->
-            <view class="scene-info">
-              <text class="scene-label serif">{{ scene.label }}</text>
-              <text class="scene-desc">{{ scene.desc }}</text>
+              <text class="intent-icon">{{ entryIcon(entry.id) }}</text>
+              <text class="intent-label">{{ entry.title }}</text>
             </view>
           </view>
         </view>
-      </view>
 
-      <!-- ══ §02 附近现在适合去 ══════════════════════════════════ -->
-      <view class="section">
-        <z-section-header
-          no="02"
-          title="附近现在适合去"
-          sub="基于定位 + 天气 + 时段"
-          action="换一批"
-          @action="refreshNearby"
-        />
-        <view v-if="!nearbyVisible.length" class="list-empty mono">定位中，加载附近地点…</view>
-        <view class="poi-list">
-          <view
-            v-for="poi in nearbyVisible"
-            :key="poi.id"
-            class="poi-card"
-            @tap="goPoi(poi.id)"
-          >
-            <!-- 缩略图 -->
-            <view class="poi-img-wrap">
-              <image :src="poi.img" class="poi-img" mode="aspectFill" lazy-load />
-              <view class="poi-dist-badge">
-                <text>📍 {{ poi.dist }}</text>
+        <view class="section">
+          <z-section-header
+            no="01"
+            title="附近现在适合去"
+            sub="基于定位、天气、时段和知识库"
+            action="换一批"
+            @action="refreshNearby"
+          />
+          <view v-if="!nearbyVisible.length" class="list-empty mono">定位中，加载附近地点…</view>
+          <view class="poi-list">
+            <view
+              v-for="poi in nearbyVisible"
+              :key="poi.id"
+              class="poi-card"
+              @tap="goPoi(poi.id)"
+            >
+              <view class="poi-score">
+                <text class="score-num">{{ poi.score }}</text>
+                <text class="score-label">推荐</text>
               </view>
-            </view>
-            <!-- 内容 -->
-            <view class="poi-content">
-              <view class="poi-header-row">
-                <view>
-                  <text class="poi-no mono">{{ poi.no }}</text>
-                  <text class="poi-name serif">{{ poi.name }}</text>
+              <view class="poi-content">
+                <view class="poi-header-row">
+                  <view class="poi-title-wrap">
+                    <text class="poi-name serif">{{ poi.name }}</text>
+                    <text class="poi-cat">{{ poi.category || '地点' }} · {{ poi.distance }}</text>
+                  </view>
+                  <text class="poi-time">{{ poi.drive_time || '可导航' }}</text>
                 </view>
-                <text class="poi-time">🕐 {{ poi.time }}</text>
-              </view>
-              <text class="poi-cat">{{ poi.cat }}</text>
-              <text class="poi-reason" :numberOfLines="1">💡 {{ poi.reason }}</text>
-              <view class="poi-tags">
-                <z-tag
-                  v-for="tag in poi.tags.slice(0, 3)"
-                  :key="tag"
-                  :label="tag"
-                  color="#0D4F4A"
-                  :small="true"
-                />
+                <text class="poi-reason" :numberOfLines="2">{{ poi.reason }}</text>
+                <view class="poi-tags">
+                  <z-tag
+                    v-for="tag in poi.tags.slice(0, 4)"
+                    :key="tag"
+                    :label="tag"
+                    color="#0D4F4A"
+                    :small="true"
+                  />
+                  <text class="kb-badge mono">{{ poi.kb_status }}</text>
+                </view>
+                <view class="poi-actions">
+                  <text class="source-note">{{ poi.source === 'kb' ? '知识库推荐' : '地图数据推荐' }}</text>
+                  <view class="nav-btn" :class="{ disabled: !poi.nav_ready }" @tap.stop="openNav(poi)">导航</view>
+                </view>
               </view>
             </view>
           </view>
         </view>
-      </view>
 
-      <!-- ══ §03 精选路线（横滑）════════════════════════════════ -->
-      <view class="section">
-        <z-section-header
-          no="03"
-          title="精选路线"
-          sub="人工策划 · 已审核"
-          action="全部"
-        />
-        <view v-if="!routes.length" class="list-empty mono">加载中…</view>
-        <scroll-view scroll-x class="routes-scroll" :show-scrollbar="false">
-          <view class="routes-row">
+        <view class="section">
+          <z-section-header
+            no="02"
+            title="场所索引"
+            sub="按亲子、雨天、夜游等场景筛附近地点"
+          />
+          <view v-if="!scenes.length" class="list-empty mono">加载中…</view>
+          <view class="scenes-grid">
+            <view
+              v-for="scene in scenes"
+              :key="scene.id"
+              class="scene-card"
+              @tap="goScene(scene.id)"
+            >
+              <text class="scene-no mono">{{ scene.no }}</text>
+              <view
+                class="scene-icon-bg"
+                :style="{ background: scene.color + '18' }"
+              >
+                <text class="scene-icon-emoji">{{ scene.icon }}</text>
+              </view>
+              <view class="scene-info">
+                <text class="scene-label serif">{{ scene.label }}</text>
+                <text class="scene-desc">{{ scene.desc }}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view class="section">
+          <z-section-header
+            no="03"
+            title="精选路线"
+            sub="2小时、半日、一日动态组合"
+          />
+          <view v-if="!routes.length" class="list-empty mono">暂无可导航路线</view>
+          <view class="routes-list">
             <view
               v-for="route in routes"
               :key="route.id"
-              class="route-card"
-              @tap="goResult(route)"
+              class="route-card location-route"
+              @tap="openRoute(route)"
             >
-              <!-- 封面 -->
-              <view class="route-cover">
-                <image :src="route.img" class="route-img" mode="aspectFill" lazy-load />
-                <!-- R-01 编号 -->
-                <view class="route-no-badge" :style="{ color: route.color }">
-                  <text class="mono">{{ route.no }}</text>
-                </view>
-                <!-- 标题叠加 -->
-                <view class="route-cover-title">
-                  <text class="serif">{{ route.title }}</text>
-                </view>
-              </view>
-              <!-- 卡片内容 -->
               <view class="route-body">
-                <text class="route-summary" :numberOfLines="2">{{ route.summary }}</text>
-                <view class="route-meta">
-                  <text class="route-meta-text">🕐 {{ route.duration }} · 💰 {{ route.budget }} · 📍 {{ route.poi }}站</text>
-                  <z-tag :label="route.tag" :color="route.color" :small="true" />
+                <view class="route-head">
+                  <view>
+                    <text class="route-title serif">{{ route.title }}</text>
+                    <text class="route-summary" :numberOfLines="2">{{ route.summary }}</text>
+                  </view>
+                  <text class="route-duration">{{ route.duration }}</text>
+                </view>
+                <view class="route-stops">
+                  <view v-for="stop in route.stops.slice(0, 3)" :key="stop.name" class="route-stop">
+                    <text class="stop-dot" />
+                    <text class="stop-name">{{ stop.name }}</text>
+                    <text class="stop-dist">{{ stop.distance }}</text>
+                  </view>
+                </view>
+                <view class="poi-actions">
+                  <text class="source-note">{{ route.budget ? '预算 ' + route.budget : '附近路线' }}</text>
+                  <view class="nav-btn" :class="{ disabled: !route.nav_ready }" @tap.stop="openRoute(route)">路线导航</view>
                 </view>
               </view>
             </view>
           </view>
-        </scroll-view>
-      </view>
-
-      <!-- ══ 越用越准横幅 ════════════════════════════════════════ -->
-      <view class="tip-banner">
-        <text class="tip-icon">🌱</text>
-        <view class="tip-content">
-          <text class="tip-title serif">越用越准</text>
-          <text class="tip-sub">你的真实反馈让推荐更懂你</text>
         </view>
-      </view>
+
+        <view class="tip-banner">
+          <text class="tip-icon">🌱</text>
+          <view class="tip-content">
+            <text class="tip-title serif">越用越准</text>
+            <text class="tip-sub">地点知识库命中优先，缺失内容进入待补充流程</text>
+          </view>
+        </view>
+      </template>
     </scroll-view>
 
-    <!-- ══ 底部 Tab Bar ════════════════════════════════════════ -->
     <z-tab-bar current="home" />
   </view>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTag from '../../components/ZTag.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 import { useCityStore } from '../../store/city.js'
-import { storeToRefs } from 'pinia'
+import { setPendingScene } from '../../api/storage.js'
 
 const cityStore = useCityStore()
-const { current: city } = storeToRefs(cityStore)
 
 const statusBarHeight = ref(44)
 const tabBarHeight = ref('80px')
 const weather = ref(null)
+const entries = ref([
+  { id: 'place_index', title: '按场所索引' },
+  { id: 'nearby_now', title: '附近现在适合去' },
+  { id: 'hot_routes', title: '精选路线' },
+  { id: 'assistant', title: '问出游助手' },
+])
 const scenes  = ref([])
 const nearby  = ref([])
 const routes  = ref([])
+const loaded = ref(false)
+const locationError = ref(false)
 
-// 每次显示 3 条，换一批轮换
 const nearbyPage = ref(0)
 const nearbyVisible = computed(() => {
   if (!nearby.value.length) return []
@@ -222,50 +219,53 @@ const nearbyVisible = computed(() => {
   ).slice(0, 3)
 })
 
-async function loadFeed() {
-  // 纯定位驱动：高德定位 → 反查城市 → 所有 API 走当前坐标 + 城市
-  cityStore.locating = true
-  let coords = {}
-  try {
-    coords = await new Promise((resolve) => {
-      uni.getLocation({ type: 'gcj02', success: resolve, fail: () => resolve({}) })
-    })
-  } catch (_) {}
+const cityLabel = computed(() => {
+  if (cityStore.locating) return '定位中…'
+  if (locationError.value) return '需要定位'
+  return cityStore.current
+})
 
-  const gotLocation = coords.latitude != null && coords.longitude != null
-  if (gotLocation) {
+const headerSub = computed(() => {
+  if (locationError.value) return '开启定位后推荐附近目的地'
+  const routeText = routes.value.length ? `已准备 ${routes.value.length} 条附近路线` : '正在加载附近路线'
+  return `${weather.value?.advice ?? '获取定位中…'} · ${routeText}`
+})
+
+async function loadFeed() {
+  if (cityStore.locating) return
+  cityStore.locating = true
+  locationError.value = false
+  try {
+    const coords = await new Promise((resolve, reject) => {
+      uni.getLocation({ type: 'gcj02', success: resolve, fail: reject })
+    })
     cityStore.locationDenied = false
     cityStore.setCoords(coords.latitude, coords.longitude)
-    try {
-      const r = await api.geoCity(coords.latitude, coords.longitude)
-      if (r?.city) cityStore.setFromLocation(r.city)
-    } catch (_) {}
-  } else if (!cityStore.locationDenied) {
-    // 首次定位失败时温和提示一次（后端会用 city 中心兜底，所以不阻断功能）
-    cityStore.locationDenied = true
-    uni.showToast({
-      title: `未授权定位，将显示「${cityStore.current}」默认推荐；点击顶部城市可重试`,
-      icon: 'none',
-      duration: 3000,
+
+    const feed = await api.getHomeFeed({
+      lat: coords.latitude,
+      lng: coords.longitude,
+      city: cityStore.current,
+      intent: 'nearby_now',
     })
-  }
-
-  const city = cityStore.current
-  cityStore.locating = false
-
-  try {
-    const [w, s, n, r] = await Promise.all([
-      api.getWeather(city),
-      api.getScenes(),
-      api.getNearby(coords.latitude, coords.longitude, city),
-      api.getRoutes(city),
-    ])
-    weather.value = w
-    scenes.value  = s
-    nearby.value  = n
-    routes.value  = r
-  } catch (e) {
-    uni.showToast({ title: '数据加载失败，请检查网络', icon: 'none' })
+    if (feed?.location?.city) cityStore.setFromLocation(feed.location.city)
+    weather.value = feed.weather || null
+    entries.value = feed.entries || entries.value
+    scenes.value = feed.scene_index || []
+    nearby.value = (feed.nearby_now || []).filter(p => p.nav_ready && p.lat != null && p.lng != null)
+    routes.value = feed.routes || []
+    nearbyPage.value = 0
+    loaded.value = true
+  } catch (_) {
+    cityStore.locationDenied = true
+    locationError.value = true
+    nearby.value = []
+    routes.value = []
+    weather.value = null
+    loaded.value = false
+    uni.showToast({ title: '需要开启定位后推荐附近目的地', icon: 'none' })
+  } finally {
+    cityStore.locating = false
   }
 }
 
@@ -277,11 +277,10 @@ onMounted(async () => {
     tabBarHeight.value = tabH + 'px'
   } catch (_) {}
   await loadFeed()
-  uni.$on('cityChanged', loadFeed)
 })
 
-onUnmounted(() => {
-  uni.$off('cityChanged', loadFeed)
+onShow(() => {
+  if (!loaded.value && !cityStore.locating) loadFeed()
 })
 
 function refreshNearby() {
@@ -290,47 +289,73 @@ function refreshNearby() {
 }
 
 function onCityTap() {
-  // 城市完全由定位决定 — 点击 = 重新定位
   uni.showLoading({ title: '重新定位中…' })
   loadFeed().finally(() => {
     uni.hideLoading()
-    uni.showToast({ title: `当前定位：${cityStore.current}`, icon: 'none' })
+    if (!locationError.value) {
+      uni.showToast({ title: `当前定位：${cityStore.current}`, icon: 'none' })
+    }
   })
 }
 
-function goGenerate() {
-  uni.navigateTo({ url: '/pages/generate/generate' })
+function entryIcon(id) {
+  return {
+    place_index: '▦',
+    nearby_now: '⌖',
+    hot_routes: '↬',
+    assistant: '✦',
+  }[id] || '•'
 }
 
-function goScene(sceneId) {
-  try { uni.setStorageSync('zhoumi_pending_scene', sceneId) } catch (_) {}
+function goEntry(id) {
+  if (id === 'place_index') {
+    goScene()
+  } else if (id === 'assistant') {
+    uni.switchTab({ url: '/pages/assistant/chat' })
+  } else if (id === 'nearby_now') {
+    refreshNearby()
+  }
+}
+
+function goScene(sceneId = '') {
+  if (sceneId) {
+    setPendingScene(sceneId)
+  }
   uni.switchTab({ url: '/pages/scenes/scenes' })
-  // 通过全局事件传递选中 scene（switchTab 不支持参数）
-  uni.$emit('switchScene', sceneId)
+  if (sceneId) uni.$emit('switchScene', sceneId)
 }
 
 function goPoi(id) {
-  uni.navigateTo({ url: `/pages/poi/detail?id=${id}` })
+  const lat = cityStore.coords?.lat
+  const lng = cityStore.coords?.lng
+  uni.navigateTo({ url: `/pages/poi/detail?id=${id}&lat=${lat || ''}&lng=${lng || ''}` })
 }
 
-const TAG_SCENE = { '亲子': 'family', '情侣': 'couple', '雨天': 'rainy', '低预算': 'budget', '钓鱼': 'fish', '拍照': 'photo', '夜游': 'night', 'Citywalk': 'walk', '适老': 'old' }
-
-async function goResult(route) {
-  uni.showLoading({ title: '生成中…', mask: true })
-  try {
-    const plan = await api.generateTrip({
-      city: cityStore.current, scene: TAG_SCENE[route.tag] || '', preferences: [route.tag],
-    })
-    if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0) {
-      throw new Error('plan-invalid')
-    }
-    uni.setStorageSync('lastPlan', plan)
-    uni.hideLoading()
-    uni.navigateTo({ url: `/pages/result/result?generated=1&no=${encodeURIComponent(plan.no)}` })
-  } catch (_) {
-    uni.hideLoading()
-    uni.switchTab({ url: '/pages/generate/generate' })
+function openNav(poi) {
+  if (!poi?.nav_ready || poi.lat == null || poi.lng == null) {
+    uni.showToast({ title: '该地点暂无可用坐标', icon: 'none' })
+    return
   }
+  uni.openLocation({
+    latitude: Number(poi.lat),
+    longitude: Number(poi.lng),
+    name: poi.name,
+    address: poi.address || poi.category || '',
+  })
+}
+
+function openRoute(route) {
+  const stop = (route?.stops || []).find(s => s.lat != null && s.lng != null)
+  if (!stop) {
+    uni.showToast({ title: '该路线暂无可导航站点', icon: 'none' })
+    return
+  }
+  uni.openLocation({
+    latitude: Number(stop.lat),
+    longitude: Number(stop.lng),
+    name: stop.name,
+    address: stop.reason || '',
+  })
 }
 </script>
 
@@ -769,5 +794,261 @@ async function goResult(route) {
   display: block;
   font-size: 22rpx;
   color: $z-muted;
+}
+
+// ── 定位兜底 ────────────────────────────────────────────────
+.location-gate {
+  margin: -28rpx 32rpx 0;
+  background: $z-card;
+  border-radius: $radius-card;
+  padding: 34rpx 32rpx;
+  box-shadow: 0 12rpx 36rpx rgba(13, 79, 74, 0.12);
+}
+
+.gate-title {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 900;
+  color: $z-text;
+  line-height: 1.25;
+  margin-bottom: 10rpx;
+}
+
+.gate-sub {
+  display: block;
+  font-size: 24rpx;
+  color: $z-muted;
+  line-height: 1.45;
+  margin-bottom: 26rpx;
+}
+
+.gate-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.primary-btn,
+.secondary-btn,
+.nav-btn {
+  height: 64rpx;
+  padding: 0 24rpx;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.primary-btn,
+.nav-btn {
+  color: $z-card;
+  background: $z-primary;
+}
+
+.secondary-btn {
+  color: $z-primary;
+  background: rgba(13, 79, 74, 0.08);
+}
+
+.nav-btn.disabled {
+  background: $z-muted;
+}
+
+// ── 四入口 ─────────────────────────────────────────────────
+.intent-wrap {
+  margin: -36rpx 28rpx 0;
+  position: relative;
+  z-index: 2;
+  background: $z-card;
+  border-radius: $radius-card;
+  padding: 26rpx;
+  box-shadow: 0 16rpx 48rpx rgba(13, 79, 74, 0.12);
+}
+
+.intent-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 900;
+  color: $z-text;
+  margin-bottom: 18rpx;
+}
+
+.intent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.intent-card {
+  min-height: 104rpx;
+  border-radius: 16rpx;
+  background: $z-bg;
+  border: 1rpx solid $z-border;
+  padding: 18rpx;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.intent-icon {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 14rpx;
+  background: $z-primary;
+  color: $z-card;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.intent-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  font-weight: 800;
+  color: $z-text;
+  line-height: 1.25;
+}
+
+// ── 定位推荐卡 ─────────────────────────────────────────────
+.poi-score {
+  width: 92rpx;
+  height: 92rpx;
+  border-radius: 18rpx;
+  background: rgba(13, 79, 74, 0.08);
+  color: $z-primary;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.score-num {
+  font-size: 30rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.score-label {
+  font-size: 18rpx;
+  margin-top: 4rpx;
+}
+
+.poi-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.poi-reason {
+  white-space: normal;
+}
+
+.kb-badge {
+  padding: 4rpx 10rpx;
+  border-radius: 8rpx;
+  background: rgba(13, 79, 74, 0.08);
+  color: $z-primary;
+  font-size: 18rpx;
+}
+
+.poi-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.source-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 21rpx;
+  color: $z-muted;
+}
+
+// ── 路线列表 ────────────────────────────────────────────────
+.routes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.routes-list .route-card {
+  min-width: 0;
+  width: 100%;
+  display: block;
+}
+
+.location-route {
+  white-space: normal;
+}
+
+.route-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-bottom: 16rpx;
+}
+
+.route-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 900;
+  color: $z-text;
+  margin-bottom: 8rpx;
+}
+
+.route-duration {
+  height: 46rpx;
+  padding: 0 16rpx;
+  border-radius: 10rpx;
+  background: rgba(255, 107, 53, 0.12);
+  color: $z-accent;
+  display: flex;
+  align-items: center;
+  font-size: 22rpx;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.route-stops {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.route-stop {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-height: 36rpx;
+}
+
+.stop-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 6rpx;
+  background: $z-primary;
+  flex-shrink: 0;
+}
+
+.stop-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: $z-text2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stop-dist {
+  font-size: 21rpx;
+  color: $z-muted;
+  flex-shrink: 0;
 }
 </style>

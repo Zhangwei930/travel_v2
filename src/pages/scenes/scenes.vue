@@ -160,8 +160,10 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import { useCityStore } from '../../store/city.js'
+import { consumePendingScene } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 
@@ -224,6 +226,17 @@ async function ensureLocation() {
 
 watch(active, loadScene)
 
+function applyPendingScene() {
+  const pendingScene = consumePendingScene()
+  if (!pendingScene) return false
+  if (pendingScene !== active.value) {
+    active.value = pendingScene
+  } else {
+    loadScene(active.value)
+  }
+  return true
+}
+
 onMounted(async () => {
   try {
     const sys = uni.getSystemInfoSync()
@@ -239,17 +252,7 @@ onMounted(async () => {
   } catch (e) {
     uni.showToast({ title: '场景列表加载失败', icon: 'none' })
   }
-  let loadedByPendingScene = false
-  try {
-    const pendingScene = uni.getStorageSync('zhoumi_pending_scene')
-    if (pendingScene) {
-      if (pendingScene !== active.value) {
-        active.value = pendingScene
-        loadedByPendingScene = true
-      }
-      uni.removeStorageSync('zhoumi_pending_scene')
-    }
-  } catch (_) {}
+  const loadedByPendingScene = applyPendingScene()
   if (!loadedByPendingScene) loadScene(active.value)
 
   // 监听从首页传过来的场景切换事件
@@ -258,6 +261,10 @@ onMounted(async () => {
   })
   // 城市切换时重新加载场景数据
   uni.$on('cityChanged', () => loadScene(active.value))
+})
+
+onShow(() => {
+  applyPendingScene()
 })
 
 onUnmounted(() => {

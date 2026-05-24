@@ -39,6 +39,32 @@
                 <text class="source-v">{{ s.v }}</text>
               </view>
             </view>
+            <view v-if="msg.destinations?.length" class="assistant-cards">
+              <view
+                v-for="poi in msg.destinations"
+                :key="poi.id"
+                class="assistant-poi"
+                @tap="openNav(poi)"
+              >
+                <view class="assistant-poi-main">
+                  <text class="assistant-poi-name serif">{{ poi.name }}</text>
+                  <text class="assistant-poi-meta">{{ poi.category || '地点' }} · {{ poi.distance }}</text>
+                  <text class="assistant-poi-reason">{{ poi.reason }}</text>
+                </view>
+                <view class="assistant-nav">导航</view>
+              </view>
+            </view>
+            <view v-if="msg.routes?.length" class="assistant-cards">
+              <view
+                v-for="route in msg.routes"
+                :key="route.id"
+                class="assistant-route"
+                @tap="openRoute(route)"
+              >
+                <text class="assistant-poi-name serif">{{ route.title }}</text>
+                <text class="assistant-poi-meta">{{ route.duration }} · {{ route.stops?.length || 0 }}站</text>
+              </view>
+            </view>
           </view>
         </view>
 
@@ -175,15 +201,25 @@ function sendMsg(text) {
   scrollToBottom()
 
   // 占位 bot 消息（流式期间逐字追加）
-  const botMsg = { role: 'bot', text: '', sources: null, chips: null }
+  const botMsg = { role: 'bot', text: '', sources: null, chips: null, destinations: null, routes: null }
   let started = false
+  const payload = {
+    question: q,
+    city: cityStore.current,
+    lat: cityStore.coords?.lat,
+    lng: cityStore.coords?.lng,
+    intent: 'assistant',
+    history,
+  }
 
-  streamAsk({ question: q, city: cityStore.current, history }, {
+  streamAsk(payload, {
     onMeta: (m) => {
       typing.value = false
       messages.value.push(botMsg)
       botMsg.sources = m.sources
       botMsg.chips = m.chips
+      botMsg.destinations = m.destinations
+      botMsg.routes = m.routes
       started = true
       scrollToBottom()
     },
@@ -214,10 +250,15 @@ function sendMsg(text) {
   })
 
   function fallbackNonStream(q) {
-    api.ask(q, cityStore.current, history)
+    api.ask(payload)
       .then((res) => {
         messages.value.push({
-          role: 'bot', text: res.text, sources: res.sources, chips: res.chips,
+          role: 'bot',
+          text: res.text,
+          sources: res.sources,
+          chips: res.chips,
+          destinations: res.destinations,
+          routes: res.routes,
         })
         scrollToBottom()
       })
@@ -230,6 +271,33 @@ function sendMsg(text) {
 
 function scrollToBottom() {
   nextTick(() => { scrollTop.value = 99999 })
+}
+
+function openNav(poi) {
+  if (!poi?.nav_ready || poi.lat == null || poi.lng == null) {
+    uni.showToast({ title: '该地点暂无可用坐标', icon: 'none' })
+    return
+  }
+  uni.openLocation({
+    latitude: Number(poi.lat),
+    longitude: Number(poi.lng),
+    name: poi.name,
+    address: poi.address || poi.category || '',
+  })
+}
+
+function openRoute(route) {
+  const stop = (route?.stops || []).find(s => s.lat != null && s.lng != null)
+  if (!stop) {
+    uni.showToast({ title: '该路线暂无可导航站点', icon: 'none' })
+    return
+  }
+  uni.openLocation({
+    latitude: Number(stop.lat),
+    longitude: Number(stop.lng),
+    name: stop.name,
+    address: stop.reason || '',
+  })
 }
 </script>
 
@@ -509,5 +577,66 @@ function scrollToBottom() {
   &.active {
     background: $z-primary;
   }
+}
+
+.assistant-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.assistant-poi,
+.assistant-route {
+  background: $z-card;
+  border: 1rpx solid $z-border;
+  border-radius: 16rpx;
+  padding: 18rpx;
+  box-shadow: 0 2rpx 8rpx rgba(13, 79, 74, 0.06);
+}
+
+.assistant-poi {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.assistant-poi-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.assistant-poi-name {
+  display: block;
+  font-size: 25rpx;
+  font-weight: 800;
+  color: $z-text;
+  margin-bottom: 4rpx;
+}
+
+.assistant-poi-meta,
+.assistant-poi-reason {
+  display: block;
+  font-size: 21rpx;
+  color: $z-muted;
+  line-height: 1.4;
+}
+
+.assistant-poi-reason {
+  color: $z-text2;
+  margin-top: 6rpx;
+}
+
+.assistant-nav {
+  height: 54rpx;
+  padding: 0 18rpx;
+  border-radius: 12rpx;
+  background: $z-primary;
+  color: $z-card;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  font-weight: 800;
+  flex-shrink: 0;
 }
 </style>

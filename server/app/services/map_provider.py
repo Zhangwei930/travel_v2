@@ -13,6 +13,17 @@ from app.config import settings
 AMAP_BASE = "https://restapi.amap.com"
 # 高德 POI 类型码：风景名胜大类(含公园/动植物园) / 博物馆 / 展览馆 / 美术馆 / 科技馆
 AMAP_DEFAULT_TYPES = "110000|140100|140200|140400|140600"
+AMAP_TYPES_BY_SCENE: dict[str, str] = {
+    "family": "110000|140100|140600|080500",
+    "couple": "050500|110000|060100|080600",
+    "rainy": "060100|140100|140400|140600",
+    "budget": "110000|140100|061000",
+    "fish": "110000|110200",
+    "photo": "110000|140000|061000|080600",
+    "night": "050000|060100|061000|080600",
+    "walk": "061000|110000|140000",
+    "old": "110000|140100|060100",
+}
 
 # 各城市中心点（请求未带定位时的兜底原点）
 CITY_CENTER: dict[str, tuple[float, float]] = {
@@ -105,6 +116,10 @@ def provider_name() -> str:
     if settings.map_provider == "tencent" and settings.tencent_map_key:
         return "tencent"
     return "stub"
+
+
+def amap_types_for_scene(scene: str | None) -> str:
+    return AMAP_TYPES_BY_SCENE.get(scene or "", AMAP_DEFAULT_TYPES)
 
 
 def amap_search_around(lat: float, lng: float, radius_km: float = 5.0,

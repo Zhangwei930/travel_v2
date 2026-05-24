@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import SessionLocal, init_db
-from app.routers import admin, catalog, feedback, kb, trip
+from app.routers import admin, catalog, feedback, home, kb, trip
 from app.seed import seed_if_empty
 
 app = FastAPI(title="周密出游 API", version="1.0", description="智能本地出游规划系统后端")
@@ -18,6 +18,7 @@ app.add_middleware(
 )
 
 app.include_router(catalog.router)
+app.include_router(home.router)
 app.include_router(trip.router)
 app.include_router(kb.router)
 app.include_router(feedback.router)

@@ -9,6 +9,7 @@ class WeatherOut(BaseModel):
     icon: str
     advice: str
     wind: str
+    source: str = "stub"
 
 
 class SceneOut(BaseModel):
@@ -48,6 +49,65 @@ class PoiDetailOut(PoiOut):
     avoid_tips: list[str] = []
     lat: float | None = None
     lng: float | None = None
+
+
+# ---------- 定位首页 ----------
+class LocationOut(BaseModel):
+    city: str
+    lat: float
+    lng: float
+
+
+class HomeEntryOut(BaseModel):
+    id: str
+    title: str
+
+
+class RecommendPoiOut(BaseModel):
+    id: int | str
+    name: str
+    category: str | None = None
+    address: str | None = None
+    distance: str
+    drive_time: str | None = None
+    score: int = 0
+    reason: str = ""
+    tags: list[str] = Field(default_factory=list)
+    kb_status: str = "miss"
+    source: str = "amap"
+    lat: float | None = None
+    lng: float | None = None
+    nav_ready: bool = False
+
+
+class RouteStopOut(BaseModel):
+    id: int | str | None = None
+    name: str
+    distance: str | None = None
+    reason: str = ""
+    lat: float | None = None
+    lng: float | None = None
+
+
+class RouteCardOut(BaseModel):
+    id: str | int
+    title: str
+    duration: str
+    budget: str | None = None
+    scene: str | None = None
+    summary: str = ""
+    stops: list[RouteStopOut] = Field(default_factory=list)
+    nav_ready: bool = False
+
+
+class HomeFeedOut(BaseModel):
+    location: LocationOut
+    weather: WeatherOut | None = None
+    entries: list[HomeEntryOut]
+    scene_index: list[SceneOut]
+    nearby_now: list[RecommendPoiOut]
+    routes: list[RouteCardOut]
+    assistant_chips: list[str]
 
 
 # ---------- 路线 ----------
@@ -120,6 +180,11 @@ class ChatTurn(BaseModel):
 class AskIn(BaseModel):
     question: str
     city: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+    scene: str | None = None
+    intent: str | None = None
+    weather: str | None = None
     context: str | None = Field(default=None, description="（兼容旧字段）上一条用户问题")
     history: list[ChatTurn] = Field(default_factory=list, description="最近 N 轮对话，建议传 4-6 条")
 
@@ -134,6 +199,9 @@ class AskOut(BaseModel):
     sources: list[AskSource]
     chips: list[str] = []
     from_kb: bool = True
+    destinations: list[RecommendPoiOut] = Field(default_factory=list)
+    routes: list[RouteCardOut] = Field(default_factory=list)
+    kb_status: str = "hit"
 
 
 # ---------- 反馈 ----------

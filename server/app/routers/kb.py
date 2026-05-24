@@ -30,6 +30,9 @@ def ask_stream(payload: AskIn, db: Session = Depends(get_db)):
             "sources": [s.model_dump() for s in result.sources],
             "chips": result.chips,
             "from_kb": result.from_kb,
+            "destinations": [d.model_dump() for d in result.destinations],
+            "routes": [r.model_dump() for r in result.routes],
+            "kb_status": result.kb_status,
         })
         yield line({"event": "text", "text": result.text})
         yield line({"event": "done"})

@@ -19,6 +19,8 @@ export const api = {
   // ─── 目录（天气 / 场景 / POI / 路线）─────────────
   getWeather: (city) =>
     request('/api/weather' + q({ city })),
+  getHomeFeed: (payload) =>
+    request('/api/home/feed' + q(payload || {})),
   getScenes: () =>
     request('/api/scene/list'),
   getNearby: (lat, lng, city) =>
@@ -45,8 +47,12 @@ export const api = {
     request('/api/trip/plan' + q({ no })),
 
   // ─── 出游助手 ──────────────────────────────────
-  ask: (question, city, history) =>
-    request('/api/kb/ask', { method: 'POST', data: { question, city, history: history || [] } }),
+  ask: (payload, city, history) => {
+    const data = typeof payload === 'string'
+      ? { question: payload, city, history: history || [] }
+      : (payload || {})
+    return request('/api/kb/ask', { method: 'POST', data })
+  },
 
   // ─── 反馈 ──────────────────────────────────────
   sendFeedback: (payload) =>

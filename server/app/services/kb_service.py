@@ -5,9 +5,12 @@
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import FaqKnowledge
+from app.models import FaqKnowledge, PoiIndex, TravelKnowledge
 from app.schemas import AskIn, AskOut, AskSource, ChatTurn
 from app.services import ai_provider, map_provider, websearch
+from app.services.recommend_service import recommend_pois
+from app.services.route_builder import build_home_routes
+from app.services.weather_provider import get_weather
 
 SUGGESTED_CHIPS = ["停车方便吗？", "下雨改去哪？", "适合带孩子吗？", "傍晚还能玩什么？"]
 
@@ -31,9 +34,46 @@ def _score(question: str, faq: FaqKnowledge) -> float:
     return hit / len(keywords)
 
 
+def _location_cards(payload: AskIn, city: str, db: Session):
+    if payload.lat is None or payload.lng is None:
+        return [], []
+
+    kn_rows = db.query(TravelKnowledge).filter(TravelKnowledge.review_status == "approved").all()
+    kn_by_id = {kn.poi_id: kn for kn in kn_rows if kn.poi_id}
+    rows = []
+    for poi in db.query(PoiIndex).filter(PoiIndex.provider != "amap").all():
+        if poi.lat is None or poi.lng is None:
+            continue
+        if map_provider.normalize_city(poi.city) != map_provider.normalize_city(city):
+            continue
+        kn = kn_by_id.get(poi.id)
+        if payload.scene and not (kn and payload.scene in (kn.scene_ids or [])):
+            continue
+        rows.append((poi, kn))
+
+    weather = get_weather(city)
+    destinations = recommend_pois(
+        rows,
+        origin=(payload.lat, payload.lng),
+        scene=payload.scene,
+        weather=weather,
+        limit=3,
+    )
+    routes = build_home_routes(
+        db,
+        city=city,
+        scene=payload.scene,
+        origin=(payload.lat, payload.lng),
+        recommended=destinations,
+        limit=2,
+    )
+    return destinations, routes
+
+
 def ask(payload: AskIn, db: Session) -> AskOut:
     question = payload.question.strip()
     city = payload.city or settings.default_city
+    destinations, routes = _location_cards(payload, city, db)
 
     # 上下文：优先取 history（多轮），fallback 到旧 context 字段（单条）
     history = [t for t in (payload.history or []) if (t.text or "").strip()]
@@ -64,6 +104,21 @@ def ask(payload: AskIn, db: Session) -> AskOut:
             sources=[AskSource(k="知识库", v=f"FAQ · {best.category or '常见问题'}")],
             chips=SUGGESTED_CHIPS,
             from_kb=True,
+            destinations=destinations,
+            routes=routes,
+            kb_status="hit",
+        )
+
+    if destinations:
+        top_names = "、".join(item.name for item in destinations[:3])
+        return AskOut(
+            text=f"根据你当前位置，建议优先看这几个地方：{top_names}。都带坐标，可直接导航过去。",
+            sources=[AskSource(k="地图", v="附近 POI"), AskSource(k="知识库", v="地点标签与推荐理由")],
+            chips=SUGGESTED_CHIPS,
+            from_kb=True,
+            destinations=destinations,
+            routes=routes,
+            kb_status=destinations[0].kb_status,
         )
 
     # 未命中：触发 WebSearch + AI 总结，结果进入待审核
@@ -108,4 +163,12 @@ def ask(payload: AskIn, db: Session) -> AskOut:
     if ai_provider.is_live() and answer != fallback:
         sources.append(AskSource(k="AI", v="候选答案生成"))
 
-    return AskOut(text=answer, sources=sources, chips=SUGGESTED_CHIPS, from_kb=False)
+    return AskOut(
+        text=answer,
+        sources=sources,
+        chips=SUGGESTED_CHIPS,
+        from_kb=False,
+        destinations=destinations,
+        routes=routes,
+        kb_status="miss",
+    )

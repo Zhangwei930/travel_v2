@@ -106,6 +106,113 @@ class ApiSmokeTest(unittest.TestCase):
         titles = [item["title"] for item in response.json()]
         self.assertIn("成都测试路线", titles)
 
+    def test_home_feed_requires_user_location(self):
+        response = self.client.get("/api/home/feed", params={"city": "成都"})
+        self.assertEqual(response.status_code, 422)
+
+    def test_home_feed_returns_navigable_recommendations(self):
+        db = SessionLocal()
+        try:
+            nav_poi = PoiIndex(
+                provider="stub",
+                name="成都可导航亲子公园",
+                city="成都",
+                category="公园",
+                address="成都市测试路 1 号",
+                lat=30.5730,
+                lng=104.0670,
+                source="test",
+            )
+            missing_coord_poi = PoiIndex(
+                provider="stub",
+                name="成都缺坐标室内馆",
+                city="成都",
+                category="室内馆",
+                address="成都市测试路 2 号",
+                source="test",
+            )
+            db.add(nav_poi)
+            db.add(missing_coord_poi)
+            db.flush()
+            db.add(TravelKnowledge(
+                poi_id=nav_poi.id,
+                scene_ids=["family", "budget"],
+                scene_tags=["亲子", "免费"],
+                recommend_reason="距离近，适合带孩子短时散步",
+                play_duration="1h",
+                budget_level="免费",
+                best_time="下午",
+                review_status="approved",
+            ))
+            db.add(TravelKnowledge(
+                poi_id=missing_coord_poi.id,
+                scene_ids=["family"],
+                scene_tags=["亲子"],
+                recommend_reason="这条没有坐标，不能进入导航推荐",
+                play_duration="1h",
+                budget_level="免费",
+                review_status="approved",
+            ))
+            db.add(TravelRoute(
+                title="成都亲子短线",
+                city="成都",
+                scene="family",
+                scene_label="亲子",
+                duration="2小时",
+                budget_level="低",
+                poi_ids=[nav_poi.id],
+                route_text="近距离低强度亲子路线",
+                review_status="approved",
+            ))
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.get(
+            "/api/home/feed",
+            params={
+                "lat": 30.5728,
+                "lng": 104.0668,
+                "city": "成都市",
+                "intent": "nearby_now",
+                "scene": "family",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertEqual(data["location"]["city"], "成都")
+        self.assertEqual(
+            [entry["id"] for entry in data["entries"]],
+            ["place_index", "nearby_now", "hot_routes", "assistant"],
+        )
+        self.assertIn("weather", data)
+        self.assertGreaterEqual(len(data["scene_index"]), 1)
+        self.assertGreaterEqual(len(data["assistant_chips"]), 1)
+
+        names = [item["name"] for item in data["nearby_now"]]
+        self.assertIn("成都可导航亲子公园", names)
+        self.assertNotIn("成都缺坐标室内馆", names)
+
+        target = next(item for item in data["nearby_now"] if item["name"] == "成都可导航亲子公园")
+        self.assertEqual(target["category"], "公园")
+        self.assertEqual(target["kb_status"], "hit")
+        self.assertTrue(target["nav_ready"])
+        self.assertIsInstance(target["score"], int)
+        self.assertTrue(target["reason"])
+        self.assertIn("亲子", target["tags"])
+        self.assertIsNotNone(target["lat"])
+        self.assertIsNotNone(target["lng"])
+
+        self.assertGreaterEqual(len(data["routes"]), 1)
+        self.assertTrue(any(route["nav_ready"] for route in data["routes"]))
+        route_stop_names = [
+            stop["name"]
+            for route in data["routes"]
+            for stop in route["stops"]
+        ]
+        self.assertIn("成都可导航亲子公园", route_stop_names)
+
     def test_generate_plan_does_not_claim_realtime_weather_without_provider(self):
         response = self.client.post(
             "/api/trip/generate",

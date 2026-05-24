@@ -97,8 +97,7 @@
     "borderStyle": "white",
     "list": [
       { "pagePath": "pages/index/index",      "text": "首页" },
-      { "pagePath": "pages/scenes/scenes",    "text": "场景" },
-      { "pagePath": "pages/generate/generate","text": "生成" },
+      { "pagePath": "pages/scenes/scenes",    "text": "发现" },
       { "pagePath": "pages/assistant/chat",   "text": "助手" },
       { "pagePath": "pages/profile/profile",  "text": "我的" }
     ]
