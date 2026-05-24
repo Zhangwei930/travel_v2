@@ -47,6 +47,13 @@
       }
     },
     {
+      "path": "pages/routes/detail",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "路线详情"
+      }
+    },
+    {
       "path": "pages/generate/generate",
       "style": {
         "navigationStyle": "custom",

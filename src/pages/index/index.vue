@@ -404,17 +404,9 @@ function openNav(poi) {
 }
 
 function openRoute(route) {
-  const stop = (route?.stops || []).find(s => s.lat != null && s.lng != null)
-  if (!stop) {
-    uni.showToast({ title: '该路线暂无可导航站点', icon: 'none' })
-    return
-  }
-  uni.openLocation({
-    latitude: Number(stop.lat),
-    longitude: Number(stop.lng),
-    name: stop.name,
-    address: stop.reason || '',
-  })
+  if (!route) return
+  try { uni.setStorageSync('currentRoute', route) } catch (_) {}
+  uni.navigateTo({ url: '/pages/routes/detail' })
 }
 </script>
 
