@@ -11,7 +11,7 @@
 //   })
 import { BASE_URL } from './request.js'
 
-const URL_PATH = '/api/consult/ask_stream'
+const URL_PATH = '/api/kb/ask_stream'
 
 function dispatchLine(line, handlers) {
   if (!line) return
