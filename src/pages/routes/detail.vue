@@ -2,7 +2,35 @@
   <view class="page">
     <u-nav-bar :title="route?.title || '路线详情'" />
 
+    <!-- 标签行 -->
+    <scroll-view scroll-x class="tags-scroll" :show-scrollbar="false" v-if="routeTags.length">
+      <view class="tags-row">
+        <view class="route-tag" v-for="tag in routeTags" :key="tag">{{ tag }}</view>
+      </view>
+    </scroll-view>
+
     <scroll-view scroll-y class="scroll-body" :style="{ paddingBottom: safeBottom }" :show-scrollbar="false">
+      <!-- 描述文字 -->
+      <view class="route-summary" v-if="route?.summary">
+        <text>{{ route.summary }}</text>
+      </view>
+
+      <!-- meta信息行 -->
+      <view class="meta-row">
+        <view class="meta-chip">
+          <text class="meta-icon">⏱</text>
+          <text class="meta-text">约{{ route?.duration || '半日' }}</text>
+        </view>
+        <view class="meta-chip">
+          <text class="meta-icon">🚩</text>
+          <text class="meta-text">{{ stopCount }}个地点</text>
+        </view>
+        <view class="meta-chip" v-if="totalDistText">
+          <text class="meta-icon">📍</text>
+          <text class="meta-text">约{{ totalDistText }}</text>
+        </view>
+      </view>
+
       <!-- 地图预览 -->
       <view class="map-card">
         <map
@@ -21,34 +49,10 @@
         </view>
       </view>
 
-      <!-- 路线信息卡 -->
-      <view class="info-card">
-        <view class="info-row">
-          <view class="info-item">
-            <text class="info-label">预估耗时</text>
-            <text class="info-val">{{ route?.duration || '半日' }}</text>
-          </view>
-          <view class="info-divider" />
-          <view class="info-item">
-            <text class="info-label">游玩站点</text>
-            <text class="info-val">{{ stopCount }} 站</text>
-          </view>
-          <view v-if="route?.budget" class="info-divider" />
-          <view v-if="route?.budget" class="info-item">
-            <text class="info-label">预估开支</text>
-            <text class="info-val">{{ route.budget }}</text>
-          </view>
-        </view>
-        <view v-if="route?.summary" class="info-summary">
-          <text>{{ route.summary }}</text>
-        </view>
-      </view>
-
-      <!-- 路线节点 -->
+      <!-- 路线地点 -->
       <view class="section">
         <view class="section-head">
-          <text class="section-title">路线节点</text>
-          <text class="section-sub">{{ stopCount }} 站 · 顺序推荐</text>
+          <text class="section-title">路线地点</text>
         </view>
 
         <view class="timeline">
@@ -58,7 +62,7 @@
             class="timeline-item"
           >
             <view class="timeline-marker">
-              <view class="marker-dot" />
+              <view class="marker-num">{{ idx + 1 }}</view>
               <view v-if="idx < stops.length - 1" class="marker-line" />
             </view>
             <view class="timeline-content" @tap="goPoi(stop)">
@@ -67,39 +71,16 @@
                 <text v-if="stop.distance" class="stop-dist">{{ stop.distance }}</text>
               </view>
               <text v-if="stop.reason" class="stop-reason">{{ stop.reason }}</text>
-              <view class="stop-foot">
-                <text v-if="stop.stay_duration" class="stop-stay">建议停留 {{ stop.stay_duration }}</text>
-                <view
-                  class="nav-tag"
-                  :class="{ disabled: stop.lat == null || stop.lng == null }"
-                  @tap.stop="navTo(stop)"
-                >
-                  <text>导航</text>
-                </view>
-              </view>
             </view>
           </view>
         </view>
       </view>
-
-      <!-- 提示 -->
-      <view class="section tips-section">
-        <view class="section-head">
-          <text class="section-title">出行提示</text>
-        </view>
-        <view class="tips-card">
-          <text v-if="route?.tips">{{ route.tips }}</text>
-          <template v-else>
-            <text v-for="(t, i) in defaultTips" :key="i" class="tip-line">· {{ t }}</text>
-          </template>
-        </view>
-      </view>
     </scroll-view>
 
-    <!-- 底部导航 -->
+    <!-- 底部导航按钮 -->
     <view class="action-bar" :style="{ paddingBottom: safeBottomPadding }">
       <view class="nav-all-btn" :class="{ disabled: !mappableStops.length }" @tap="chooseNavStop">
-        <text>选择站点导航</text>
+        <text>跟着路线导航</text>
       </view>
     </view>
   </view>
@@ -116,6 +97,28 @@ const route = ref(null)
 
 const stops = computed(() => Array.isArray(route.value?.stops) ? route.value.stops : [])
 const stopCount = computed(() => stops.value.length)
+
+const routeTags = computed(() => {
+  const tags = route.value?.tags || []
+  if (tags.length) return tags
+  const t = []
+  if (route.value?.duration?.includes('2小时')) t.push('轻松')
+  if (route.value?.summary?.includes('亲子') || route.value?.title?.includes('亲子')) t.push('亲子')
+  return t
+})
+
+const totalDistText = computed(() => {
+  const stops = route.value?.stops || []
+  let total = 0
+  stops.forEach(s => {
+    const m = String(s.distance || '').match(/([0-9.]+)\s*(km|m|公里|米)?/i)
+    if (m) {
+      const n = parseFloat(m[1])
+      total += /^m|米$/i.test(m[2] || '') ? n / 1000 : n
+    }
+  })
+  return total > 0 ? total.toFixed(1) + 'km' : (route.value?.distance || '')
+})
 
 const mappableStops = computed(() =>
   stops.value.filter(s => s.lat != null && s.lng != null).map((s, idx) => ({ ...s, _idx: idx }))
@@ -231,10 +234,59 @@ onMounted(() => {
   position: relative;
 }
 
+// ── 标签行 ──────────────────────────────────────────────────
+.tags-scroll { background: #FFFFFF; }
+
+.tags-row {
+  display: flex;
+  gap: 12rpx;
+  padding: 16rpx 32rpx 16rpx;
+  white-space: nowrap;
+}
+
+.route-tag {
+  padding: 8rpx 24rpx;
+  background: $u-tint-mint;
+  border-radius: 30rpx;
+  font-size: 24rpx;
+  color: $z-primary;
+  font-weight: 600;
+}
+
+// ── 描述 + meta ──────────────────────────────────────────────
+.route-summary {
+  padding: 24rpx 32rpx 0;
+  font-size: 26rpx;
+  color: $u-text-sub;
+  line-height: 1.6;
+}
+
+.meta-row {
+  display: flex;
+  gap: 16rpx;
+  padding: 20rpx 32rpx;
+  flex-wrap: wrap;
+}
+
+.meta-chip {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  background: $u-bg-soft;
+  border-radius: 8rpx;
+  padding: 8rpx 16rpx;
+}
+
+.meta-icon { font-size: 22rpx; }
+.meta-text { font-size: 24rpx; color: $u-text-sub; }
+
 // ── 地图 ────────────────────────────────────────────────────
 .map-card {
-  height: 400rpx;
+  margin: 0 32rpx 24rpx;
+  height: 380rpx;
   background: $u-bg-soft;
+  border-radius: 20rpx;
+  overflow: hidden;
 }
 
 .route-map {
@@ -337,15 +389,30 @@ onMounted(() => {
 
 .timeline-item {
   display: flex;
-  gap: 24rpx;
+  gap: 20rpx;
 }
 
 .timeline-marker {
-  width: 24rpx;
+  width: 44rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
+}
+
+.marker-num {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 22rpx;
+  background: $z-primary;
+  color: #FFFFFF;
+  font-size: 22rpx;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  z-index: 1;
 }
 
 .marker-dot {

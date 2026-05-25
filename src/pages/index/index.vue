@@ -31,7 +31,7 @@
       <!-- 出游助手 mascot pill -->
       <view class="mascot-card">
         <view class="mascot-avatar">
-          <text class="mascot-avatar-text">助</text>
+          <text class="mascot-avatar-emoji">🤖</text>
         </view>
         <view class="mascot-text">
           <text class="mascot-title">出游助手</text>
@@ -229,11 +229,11 @@ function entryDesc(id) {
 
 function entryIcon(id) {
   return {
-    place_index: '址',
-    nearby_now:  '近',
-    hot_routes:  '线',
-    assistant:   '问',
-  }[id] || '游'
+    place_index: '🗺️',
+    nearby_now:  '🧭',
+    hot_routes:  '🛣️',
+    assistant:   '💬',
+  }[id] || '🎯'
 }
 
 function kbLabel(status) {
@@ -479,20 +479,18 @@ function onSearch() {
 }
 
 .mascot-avatar {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 24rpx;
-  background: $z-primary;
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
 
-.mascot-avatar-text {
-  color: #fff;
-  font-size: 34rpx;
-  font-weight: 900;
+.mascot-avatar-emoji {
+  font-size: 40rpx;
   line-height: 1;
 }
 

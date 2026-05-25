@@ -1,6 +1,15 @@
 <template>
   <view class="page">
-    <u-nav-bar title="咨询助手" />
+    <u-nav-bar title="出游助手" right-icon="search" />
+
+    <!-- 位置栏 -->
+    <view class="loc-bar">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
+        <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" fill="#0D4F4A"/>
+        <circle cx="12" cy="9" r="3" fill="#FFFFFF"/>
+      </svg>
+      <text class="loc-bar-text">{{ locLabel }}</text>
+    </view>
 
     <!-- 消息区 -->
     <scroll-view
@@ -22,9 +31,15 @@
               <text>{{ msg.text }}</text>
             </view>
 
-            <!-- Bot 快捷回复 -->
-            <view v-if="msg.chips && msg.role === 'bot'" class="chips-row">
-              <view v-for="c in msg.chips" :key="c" class="quick-chip" @tap="sendMsg(c)">{{ c }}</view>
+            <!-- Bot 快捷回复 - 2列网格 -->
+            <view v-if="msg.chips && msg.role === 'bot'" class="chips-grid">
+              <view
+                v-for="(c, ci) in msg.chips"
+                :key="c"
+                class="quick-chip"
+                :class="{ 'chip-full': msg.chips.length % 2 !== 0 && ci === msg.chips.length - 1 }"
+                @tap="sendMsg(c)"
+              >{{ c }}</view>
             </view>
 
             <!-- 数据源 -->
@@ -105,30 +120,26 @@
 
     <!-- 底部输入区 -->
     <view class="composer" :style="{ bottom: tabBarHeight + 'px' }">
-      <!-- FAQ 快捷条 -->
-      <scroll-view scroll-x class="faq-scroll" :show-scrollbar="false">
-        <view class="faq-row">
-          <view v-for="faq in faqs" :key="faq" class="faq-chip" @tap="sendMsg(faq)">{{ faq }}</view>
-        </view>
-      </scroll-view>
-
       <!-- 输入栏 -->
       <view class="input-bar">
         <view class="input-wrap">
           <input
             class="msg-input"
             v-model="inputText"
-            placeholder="问问助手，比如：附近停车方便吗？"
-            placeholder-style="color: #94A3B8;"
+            placeholder="问问附近适合去哪..."
+            placeholder-style="color: #9CA3AF;"
             :adjust-position="true"
             confirm-type="send"
             @confirm="sendMsg(inputText)"
           />
-          <view class="send-btn" :class="{ active: inputText.length > 0 }" @tap="sendMsg(inputText)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
+          <view class="input-actions">
+            <text class="input-emoji">😊</text>
+            <view class="send-btn" :class="{ active: inputText.length > 0 }" @tap="sendMsg(inputText)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="#0D4F4A" stroke-width="2"/>
+                <text x="12" y="17" text-anchor="middle" font-size="14" fill="#0D4F4A">+</text>
+              </svg>
+            </view>
           </view>
         </view>
       </view>
@@ -139,7 +150,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import ZTabBar from '../../components/ZTabBar.vue'
 import UNavBar from '../../components/UNavBar.vue'
@@ -160,6 +171,11 @@ const typing          = ref(false)
 const brokenDestinationImages = ref({})
 const brokenRouteImages = ref({})
 const HISTORY_KEY     = 'zhoumi_assistant_messages'
+const locLabel = computed(() => {
+  const city = cityStore.current || chatContext.value.city || ''
+  return city ? `${city}·附近` : '当前位置附近'
+})
+
 const chatContext     = ref({
   city: cityStore.current,
   lat: cityStore.coords?.lat ?? null,
@@ -170,11 +186,9 @@ const chatContext     = ref({
   intent: '',
 })
 
-const faqs = ['钓点限钓吗？', '需要钓鱼证吗？', '停车方便吗？', '下雨改去哪？', '适合带孩子吗？']
-
 const defaultMessages = [
-  { role: 'bot', text: '你好👋 我是周密出游助手，可以帮你规划路线、查询地点、解决出游疑问。' },
-  { role: 'bot', chips: ['附近有哪些好玩的？', '推荐一条 Citywalk 路线', '现在天气适合钓鱼吗？'] },
+  { role: 'bot', text: '你好呀！我是出游助手，有什么可以帮你的吗？' },
+  { role: 'bot', chips: ['带孩子2小时内去哪玩？', '雨天室内去哪？', '夜晚适合去哪里？', '低预算去哪？', '附近适合约会吗？'] },
 ]
 
 function loadMessages() {
@@ -367,6 +381,21 @@ function onAssistantRouteImageError(route) {
   background: $u-bg;
 }
 
+// ── 位置栏 ──────────────────────────────────────────────────
+.loc-bar {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 32rpx;
+  background: #FFFFFF;
+  border-bottom: 1rpx solid $u-line;
+}
+
+.loc-bar-text {
+  font-size: 24rpx;
+  color: $u-text-sub;
+}
+
 .msg-scroll {
   background: $u-bg;
 }
@@ -454,20 +483,28 @@ function onAssistantRouteImageError(route) {
   40% { transform: scale(1.3); opacity: 1; }
 }
 
-// Chips
-.chips-row {
+// Chips 网格
+.chips-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 12rpx;
 }
 
 .quick-chip {
-  padding: 12rpx 24rpx;
+  flex: 1 1 calc(50% - 6rpx);
+  max-width: calc(50% - 6rpx);
+  padding: 18rpx 24rpx;
   background: $u-bg;
-  border: 1rpx solid $u-line;
-  border-radius: 32rpx;
-  font-size: 24rpx;
+  border: 1rpx solid rgba(0,0,0,0.08);
+  border-radius: 16rpx;
+  font-size: 26rpx;
   color: $u-text-sub;
+  box-sizing: border-box;
+
+  &.chip-full {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
 }
 
 // Sources
@@ -568,37 +605,17 @@ function onAssistantRouteImageError(route) {
   z-index: 100;
 }
 
-.faq-scroll {
-  padding: 16rpx 0;
-  border-bottom: 1rpx solid $u-line;
-}
-
-.faq-row {
-  display: flex;
-  gap: 16rpx;
-  padding: 0 28rpx;
-  white-space: nowrap;
-}
-
-.faq-chip {
-  padding: 10rpx 24rpx;
-  background: $u-bg-soft;
-  border-radius: 30rpx;
-  font-size: 24rpx;
-  color: $u-text-sub;
-}
-
 .input-bar {
-  padding: 20rpx 28rpx 28rpx;
+  padding: 16rpx 28rpx 28rpx;
 }
 
 .input-wrap {
   display: flex;
   align-items: center;
-  gap: 20rpx;
+  gap: 16rpx;
   background: $u-bg-soft;
   border-radius: 48rpx;
-  padding: 12rpx 12rpx 12rpx 32rpx;
+  padding: 14rpx 16rpx 14rpx 32rpx;
 }
 
 .msg-input {
@@ -607,17 +624,27 @@ function onAssistantRouteImageError(route) {
   color: $u-text;
 }
 
+.input-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.input-emoji {
+  font-size: 40rpx;
+  line-height: 1;
+}
+
 .send-btn {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 36rpx;
-  background: $u-text-mute;
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 30rpx;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  transition: all 0.2s;
-  
+  color: $z-primary;
+
   &.active {
     background: $z-primary;
     box-shadow: 0 4rpx 12rpx rgba(13, 79, 74, 0.2);

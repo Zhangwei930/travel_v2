@@ -4,7 +4,7 @@
 //
 // fail-fast：在小程序运行时 BASE_URL 为空（小程序不支持相对 URL）→ 抛错。
 
-// __ZHOUMI_API_BASE__ 由 vite.config.js define 注入为字符串字面量；这里直接引用即可
+// __ZHOUMI_API_BASE__ 由 vite.config.js define 注入为字符串字面量
 // eslint-disable-next-line no-undef
 export const BASE_URL = String(__ZHOUMI_API_BASE__ || '').replace(/\/+$/, '')
 

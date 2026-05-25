@@ -161,18 +161,18 @@ onUnmounted(() => {
   padding: 40rpx 0;
 }
 
-// ── 3×3 场景网格 ───────────────────────────────────────────
+// ── 2×N 场景网格 ───────────────────────────────────────────
 .scenes-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16rpx;
   padding: 0 24rpx 32rpx;
 }
 
 .scene-card {
   border-radius: 22rpx;
-  padding: 24rpx 16rpx 22rpx;
-  min-height: 230rpx;
+  padding: 28rpx 24rpx 26rpx;
+  min-height: 200rpx;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -190,32 +190,32 @@ onUnmounted(() => {
 }
 
 .scene-icon-wrap {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 32rpx;
-  background: rgba(255, 255, 255, 0.7);
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 40rpx;
+  background: rgba(255, 255, 255, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 8rpx;
 }
 
 .scene-icon {
-  font-size: 32rpx;
+  font-size: 42rpx;
   line-height: 1;
 }
 
 .scene-label {
   display: block;
-  font-size: 28rpx;
+  font-size: 30rpx;
   font-weight: 800;
   color: $u-text;
   line-height: 1.15;
-  margin-top: auto;
 }
 
 .scene-desc {
   display: block;
-  font-size: 20rpx;
+  font-size: 22rpx;
   color: $u-text-sub;
   line-height: 1.3;
 }
