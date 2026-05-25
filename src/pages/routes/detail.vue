@@ -1,6 +1,6 @@
 <template>
   <view class="page">
-    <u-nav-bar :title="route?.title || '路线详情'" />
+    <u-nav-bar :title="route?.title || '路线详情'" right-icon="share" @right="onShare" />
 
     <!-- 标签行 -->
     <scroll-view scroll-x class="tags-scroll" :show-scrollbar="false" v-if="routeTags.length">
@@ -88,6 +88,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import UNavBar from '../../components/UNavBar.vue'
 
 const safeBottom = ref('120rpx')
@@ -210,6 +211,30 @@ function chooseNavStop() {
     },
   })
 }
+
+function onShare() {
+  uni.showShareMenu({ withShareTicket: false, menus: ['shareAppMessage', 'shareTimeline'] })
+}
+
+onShareAppMessage(() => {
+  const r = route.value
+  const cover = r?.stops?.find(s => s.img)?.img || r?.img || ''
+  return {
+    title: r ? `${r.title}｜${r.duration || '半日'}路线推荐` : '发现一条好路线',
+    path: r?.id ? `/pages/routes/detail?id=${r.id}` : '/pages/index/index',
+    imageUrl: cover,
+  }
+})
+
+onShareTimeline(() => {
+  const r = route.value
+  const cover = r?.stops?.find(s => s.img)?.img || r?.img || ''
+  return {
+    title: r ? `${r.title}，${r.duration || '半日'}·${stopCount.value}个地点` : '今天的出游路线',
+    query: r?.id ? `id=${r.id}` : '',
+    imageUrl: cover,
+  }
+})
 
 onMounted(() => {
   try {

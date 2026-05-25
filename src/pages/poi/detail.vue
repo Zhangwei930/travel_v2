@@ -71,7 +71,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import { poiImage } from '../../api/assets.js'
 import { toggleSavedPoi, isSavedPoi, trackVisit } from '../../api/storage.js'
@@ -171,8 +171,26 @@ function toggleFav() {
 }
 
 function onShare() {
-  uni.showToast({ title: '分享功能开发中', icon: 'none' })
+  uni.showShareMenu({ withShareTicket: false, menus: ['shareAppMessage', 'shareTimeline'] })
 }
+
+onShareAppMessage(() => {
+  const p = poi.value
+  return {
+    title: p ? `${p.name}｜${p.cat || '出游地'}推荐` : '发现一个好去处',
+    path: p?.id ? `/pages/poi/detail?id=${p.id}` : '/pages/index/index',
+    imageUrl: heroImage.value || '',
+  }
+})
+
+onShareTimeline(() => {
+  const p = poi.value
+  return {
+    title: p ? `${p.name}${p.dist ? '·' + p.dist + '外' : ''}` : '发现一个好去处',
+    query: p?.id ? `id=${p.id}` : '',
+    imageUrl: heroImage.value || '',
+  }
+})
 function goNav() {
   if (poi.value.lat && poi.value.lng) {
     uni.openLocation({

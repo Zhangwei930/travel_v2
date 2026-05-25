@@ -251,7 +251,7 @@ function sendMsg(text) {
 
   const history = messages.value
     .filter(m => m.text && (m.role === 'user' || m.role === 'bot'))
-    .slice(-4)
+    .slice(-12)
     .map(m => ({ role: m.role, text: m.text }))
 
   messages.value.push({ role: 'user', text: q })

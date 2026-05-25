@@ -171,7 +171,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import { api } from '../../api/mock.js'
 import { addPlanHistory, toggleSavedPlan, isSavedPlan } from '../../api/storage.js'
 import ZSectionHeader from '../../components/ZSectionHeader.vue'
@@ -290,6 +290,26 @@ function toggleFav() {
 function onShare() {
   uni.showShareMenu({ withShareTicket: false, menus: ['shareAppMessage', 'shareTimeline'] })
 }
+
+onShareAppMessage(() => {
+  const p = plan.value
+  const cover = p?.stops?.find(s => s.img)?.img || ''
+  return {
+    title: p ? `${p.title}｜周密出游为你定制` : '周密出游帮我规划了一条路线',
+    path: p?.no ? `/pages/result/result?no=${p.no}` : '/pages/index/index',
+    imageUrl: cover,
+  }
+})
+
+onShareTimeline(() => {
+  const p = plan.value
+  const cover = p?.stops?.find(s => s.img)?.img || ''
+  return {
+    title: p ? `${p.title}，${p.totalTime}·${p.totalBudget}` : '今天的出游路线来了',
+    query: p?.no ? `no=${p.no}` : '',
+    imageUrl: cover,
+  }
+})
 function onNav(stop) {
   if (stop.lat && stop.lng) {
     uni.openLocation({ latitude: stop.lat, longitude: stop.lng, name: stop.name, address: stop.cat })

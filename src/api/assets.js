@@ -73,6 +73,11 @@ function imageIndex(item, size) {
 
 export function poiImage(item, forceFallback = false) {
   if (!forceFallback && item?.img) return item.img
+  // 无照片但有坐标 → 用后端代理的 AMap 静态地图作为缩略图
+  if (!forceFallback && item?.lat && item?.lng) {
+    const { BASE_URL } = require('./request.js')
+    if (BASE_URL) return `${BASE_URL}/api/poi/map-thumb?lat=${item.lat}&lng=${item.lng}`
+  }
   const text = textOf(item)
   const known = KNOWN_POI_IMAGES.find(entry => entry.pattern.test(text))
   if (known) return known.image

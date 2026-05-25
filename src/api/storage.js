@@ -9,6 +9,7 @@ const KEY_PENDING_SCENE = 'zhoumi_pending_scene'
 const KEY_COORDS = 'zhoumi_current_coords'
 const KEY_HOME_FEED = 'zhoumi_home_feed'
 const KEY_ASSISTANT_CONTEXT = 'zhoumi_assistant_context'
+const KEY_USER = 'zhoumi_user_profile'
 
 function get(key) {
   try { return uni.getStorageSync(key) || [] } catch (e) {
@@ -75,6 +76,24 @@ export function getProfileStats() {
     saved:   get(KEY_POIS).length,
     visited: get(KEY_VISITED).length,
   }
+}
+
+// 用户资料（微信授权头像 + 昵称，本地持久化）
+export function getUserProfile() {
+  try { return uni.getStorageSync(KEY_USER) || null } catch (_) { return null }
+}
+export function setUserProfile(p) {
+  try { uni.setStorageSync(KEY_USER, p) } catch (_) {}
+}
+export function clearUserProfile() {
+  try { uni.removeStorageSync(KEY_USER) } catch (_) {}
+}
+
+// 清除临时缓存（首页 feed + 助手上下文），不清除用户数据
+export function clearTempCache() {
+  ;[KEY_HOME_FEED, KEY_ASSISTANT_CONTEXT].forEach(k => {
+    try { uni.removeStorageSync(k) } catch (_) {}
+  })
 }
 
 export function setPendingScene(sceneId) {
