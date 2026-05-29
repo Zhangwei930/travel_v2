@@ -12,16 +12,14 @@
       <!-- 操作行 -->
       <view class="header-actions">
         <view class="back-btn" @tap="goBack">
-          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
-            <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          </svg>
+          <CyIcon name="back-white" :size="32" />
         </view>
         <view class="header-right-btns">
           <view class="icon-btn" @tap="toggleFav">
-            <text>{{ saved ? '❤️' : '🤍' }}</text>
+            <CyIcon :name="saved ? 'heart-fill-white' : 'heart-line-white'" :size="42" />
           </view>
           <view class="icon-btn" @tap="onShare">
-            <text>📤</text>
+            <CyIcon name="share-white" :size="42" />
           </view>
         </view>
       </view>
@@ -31,7 +29,7 @@
 
       <!-- AI 徽章（AI 生成时显示） -->
       <view v-if="isGenerated" class="ai-badge">
-        <text>✨ AI · 新方案</text>
+        <text>AI · 新方案</text>
       </view>
 
       <!-- 标题 -->
@@ -41,7 +39,7 @@
       <!-- 4 个数据胶囊 -->
       <view class="meta-pills">
         <view class="meta-pill" v-for="m in planMeta" :key="m.label">
-          <text class="meta-icon">{{ m.icon }}</text>
+          <text class="meta-icon">{{ m.label }}</text>
           <text class="meta-val">{{ m.val }}</text>
         </view>
       </view>
@@ -52,7 +50,7 @@
       <view class="section">
         <view class="map-card">
           <view class="map-header">
-            <text class="map-label">🗺 路线总览</text>
+            <text class="map-label">路线总览</text>
             <text class="map-meta mono">{{ mapStops.length }} 站</text>
           </view>
           <!-- 真实地图：渲染带坐标的 stop 为 marker -->
@@ -85,7 +83,11 @@
 
       <!-- §ITN 路线时间线 -->
       <view class="section">
-        <z-section-header no="ITN" title="详细路线" sub="行程时间线" />
+        <view class="cy-section-title">
+          <text class="cy-section-no">ITN</text>
+          <text class="cy-section-text">详细路线</text>
+          <text class="cy-section-sub">行程时间线</text>
+        </view>
         <view class="timeline">
           <view v-for="(stop, i) in plan.stops" :key="stop.idx" class="stop-row">
             <!-- 左：编号 + 时间线 -->
@@ -100,20 +102,20 @@
             <view class="stop-card">
               <text class="stop-name serif">{{ stop.name }}</text>
               <text class="stop-meta">{{ stop.cat }} · {{ stop.transport }}</text>
-              <text class="stop-stay">⏱ 停留 {{ stop.stay }}</text>
+              <text class="stop-stay">停留 {{ stop.stay }}</text>
 
               <view class="why-block">
-                <text class="why-label">💡 为什么选这里</text>
+                <text class="why-label">为什么选这里</text>
                 <text class="why-text">{{ stop.reason }}</text>
               </view>
 
               <view class="headsup-block">
-                <text class="headsup-label">⚠️ 注意事项</text>
+                <text class="headsup-label">注意事项</text>
                 <text class="headsup-text">{{ stop.tip }}</text>
               </view>
 
               <view class="stop-footer">
-                <text class="stop-budget">💰 {{ stop.budget }}</text>
+                <text class="stop-budget">{{ stop.budget }}</text>
                 <text class="nav-btn" @tap="onNav(stop)">导航 →</text>
               </view>
             </view>
@@ -124,7 +126,7 @@
       <!-- 备用方案 -->
       <view class="section">
         <view class="backup-card">
-          <text class="backup-title">🔄 备用方案</text>
+          <text class="backup-title">备用方案</text>
           <text class="backup-text">{{ plan.backup }}</text>
         </view>
       </view>
@@ -132,7 +134,7 @@
       <!-- 免责声明 -->
       <view class="section">
         <view class="disclaimer">
-          <text class="disclaimer-text">ℹ️ {{ plan.disclaimer }}</text>
+          <text class="disclaimer-text">{{ plan.disclaimer }}</text>
         </view>
       </view>
     </scroll-view>
@@ -140,7 +142,7 @@
     <!-- 反馈输入弹层 -->
     <view v-if="feedbackOpen" class="feedback-mask" @tap="closeFeedback">
       <view class="feedback-card" @tap.stop>
-        <text class="feedback-title serif">💬 具体哪里不准确？</text>
+        <text class="feedback-title serif">具体哪里不准确？</text>
         <text class="feedback-sub">告诉我们问题，会进入审核队列改进知识库</text>
         <textarea
           class="feedback-textarea"
@@ -161,9 +163,9 @@
 
     <!-- 底部操作栏 -->
     <view class="bottom-bar" :style="{ paddingBottom: safeBottom }">
-      <view class="bottom-btn outline" @tap="onFeedback(true)">👍 有用</view>
-      <view class="bottom-btn outline" @tap="openFeedback">💬 反馈</view>
-      <view class="bottom-btn primary flex2" @tap="onStart">🧭 开始出发</view>
+      <view class="bottom-btn outline" @tap="onFeedback(true)">有用</view>
+      <view class="bottom-btn outline" @tap="openFeedback">反馈</view>
+      <view class="bottom-btn primary flex2" @tap="onStart">开始出发</view>
     </view>
     </template>
   </view>
@@ -172,9 +174,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { onLoad, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
-import { api } from '../../api/mock.js'
+import { api } from '../../api/index.js'
 import { addPlanHistory, toggleSavedPlan, isSavedPlan } from '../../api/storage.js'
-import ZSectionHeader from '../../components/ZSectionHeader.vue'
+import CyIcon from '../../components/cy/cy-icon.vue'
 
 const statusBarHeight = ref(44)
 const safeBottom      = ref('18px')
@@ -196,10 +198,10 @@ const isGenerated   = computed(() => String(routeQuery.value.generated || '') ==
 const planNoFromUrl = computed(() => String(routeQuery.value.no || ''))
 
 const planMeta = computed(() => plan.value ? [
-  { icon: '⏱', val: plan.value.totalTime },
-  { icon: '💰', val: plan.value.totalBudget },
-  { icon: '👥', val: plan.value.people },
-  { icon: '🌤', val: plan.value.weather },
+  { label: '用时', val: plan.value.totalTime },
+  { label: '预算', val: plan.value.totalBudget },
+  { label: '人群', val: plan.value.people },
+  { label: '天气', val: plan.value.weather },
 ] : [])
 // 真实地图：从 plan.stops 中取出有坐标的 stop，转成 marker
 const mapStops = computed(() =>
@@ -387,12 +389,12 @@ function onStart() {
 
 .page {
   min-height: 100vh;
-  background: $z-bg;
+  background: $cy-bg;
   display: flex;
   flex-direction: column;
+  font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
 }
 
-// scroll-view 必须显式撑满剩余空间，否则 sticky bottom-bar 会浮在内容流里
 .scroll-body {
   flex: 1;
   min-height: 0;
@@ -408,41 +410,41 @@ function onStart() {
 }
 .feedback-card {
   width: 100%;
-  background: $z-card;
-  border-radius: $radius-card;
+  background: $cy-card;
+  border-radius: 24rpx;
   padding: 36rpx 32rpx;
   box-shadow: 0 12rpx 48rpx rgba(0, 0, 0, 0.2);
 }
-.feedback-title { display: block; font-size: 34rpx; font-weight: 800; color: $z-text; margin-bottom: 8rpx; }
-.feedback-sub   { display: block; font-size: 23rpx; color: $z-muted; margin-bottom: 20rpx; }
+.feedback-title { display: block; font-size: 34rpx; font-weight: 800; color: $cy-text; margin-bottom: 8rpx; }
+.feedback-sub   { display: block; font-size: 23rpx; color: $cy-muted; margin-bottom: 20rpx; }
 .feedback-textarea {
   width: 100%; min-height: 180rpx; max-height: 320rpx;
-  background: $z-bg; border-radius: 16rpx;
-  padding: 20rpx 22rpx; font-size: 26rpx; color: $z-text;
+  background: $cy-bg; border-radius: 16rpx;
+  padding: 20rpx 22rpx; font-size: 26rpx; color: $cy-text;
   box-sizing: border-box;
 }
 .feedback-actions { display: flex; gap: 18rpx; margin-top: 24rpx; }
 .feedback-btn {
-  flex: 1; height: 84rpx; border-radius: $radius-pill;
+  flex: 1; height: 84rpx; border-radius: 9999rpx;
   display: flex; align-items: center; justify-content: center;
   font-size: 28rpx; font-weight: 700;
-  &.cancel { background: $z-bg; color: $z-text2; }
-  &.submit { background: $z-primary; color: $z-card;
+  &.cancel { background: $cy-bg; color: $cy-text-sub; }
+  &.submit { background: $cy-green; color: #fff;
     &.disabled { opacity: 0.5; }
   }
 }
 
 .loading-state {
   padding: 16rpx 32rpx;
-  background: $z-primary;
+  background: $cy-green;
   min-height: 100vh;
 }
-.back-btn-plain { color: $z-card; font-size: 36rpx; padding: 8rpx; }
-.loading-tip { display: block; color: rgba(255,255,255,0.6); font-family: $mono; font-size: $font-mono; margin-top: 40rpx; text-align: center; }
+.back-btn-plain { color: #fff; font-size: 36rpx; padding: 8rpx; }
+.loading-tip { display: block; color: rgba(255,255,255,0.6); font-size: 20rpx; letter-spacing: 1rpx; margin-top: 40rpx; text-align: center; }
 
 // Header
 .header {
-  background: linear-gradient(180deg, $z-primary 0%, $z-primary-d 85%, $z-bg 100%);
+  background: linear-gradient(180deg, $cy-green 0%, $cy-green-d 85%, $cy-bg 100%);
   padding: 0 32rpx 48rpx;
 }
 
@@ -492,18 +494,18 @@ function onStart() {
 
 .ai-badge {
   display: inline-block;
-  background: $z-accent;
-  border-radius: $radius-pill;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 9999rpx;
   padding: 6rpx 18rpx;
   margin-bottom: 10rpx;
   font-size: 22rpx;
-  color: $z-card;
+  color: #fff;
   font-weight: 700;
 }
 
 .plan-title {
   display: block;
-  color: $z-card;
+  color: #fff;
   font-size: 38rpx;
   font-weight: 900;
   margin-bottom: 10rpx;
@@ -528,21 +530,21 @@ function onStart() {
   align-items: center;
   gap: 8rpx;
   background: rgba(255, 255, 255, 0.15);
-  border-radius: $radius-pill;
+  border-radius: 9999rpx;
   padding: 8rpx 18rpx;
 }
 
 .meta-icon { font-size: 22rpx; }
-.meta-val  { font-size: 22rpx; color: $z-card; font-weight: 600; }
+.meta-val  { font-size: 22rpx; color: #fff; font-weight: 600; }
 
 // 地图
 .section { padding: 28rpx 32rpx 0; }
 
 .map-card {
-  background: $z-card;
-  border-radius: $radius-card;
+  background: $cy-card;
+  border-radius: 24rpx;
   overflow: hidden;
-  box-shadow: 0 2rpx 12rpx rgba(13, 79, 74, 0.06);
+  box-shadow: $cy-shadow;
 }
 
 .map-header {
@@ -555,12 +557,12 @@ function onStart() {
 .map-label {
   font-size: 26rpx;
   font-weight: 700;
-  color: $z-text;
+  color: $cy-text;
 }
 
 .map-meta {
   font-size: 20rpx;
-  color: $z-muted;
+  color: $cy-muted;
   letter-spacing: 1rpx;
 }
 
@@ -577,7 +579,7 @@ function onStart() {
 
 .mini-map-empty {
   padding: 28rpx 24rpx 32rpx;
-  color: $z-muted;
+  color: $cy-muted;
   font-size: 22rpx;
   text-align: center;
 }
@@ -594,23 +596,34 @@ function onStart() {
   display: inline-flex;
   align-items: center;
   gap: 8rpx;
-  background: $z-card;
-  border-radius: $radius-small;
+  background: $cy-card;
+  border-radius: 16rpx;
   padding: 10rpx 18rpx;
-  box-shadow: 0 2rpx 8rpx rgba(13, 79, 74, 0.06);
+  box-shadow: $cy-shadow;
   flex-shrink: 0;
 }
 
 .source-kind {
   font-size: 19rpx;
-  color: $z-primary;
+  color: $cy-green;
   font-weight: 700;
 }
 
 .source-t {
   font-size: 22rpx;
-  color: $z-muted;
+  color: $cy-muted;
 }
+
+// 章节标题
+.cy-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  margin-bottom: 20rpx;
+}
+.cy-section-no   { font-size: 20rpx; color: $cy-green; font-weight: 700; letter-spacing: 2rpx; }
+.cy-section-text { font-size: 30rpx; font-weight: 800; color: $cy-text; }
+.cy-section-sub  { font-size: 22rpx; color: $cy-muted; }
 
 // 时间线
 .timeline {
@@ -635,11 +648,11 @@ function onStart() {
   width: 72rpx;
   height: 72rpx;
   border-radius: 36rpx;
-  background: $z-accent;
+  background: $cy-green-d;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: $z-card;
+  color: #fff;
   font-size: 26rpx;
   font-weight: 800;
   flex-shrink: 0;
@@ -648,24 +661,24 @@ function onStart() {
 .timeline-line {
   flex: 1;
   width: 2rpx;
-  background: linear-gradient(to bottom, $z-accent, $z-accent + '44');
+  background: linear-gradient(to bottom, $cy-green, rgba(26, 136, 112, 0.15));
   margin: 8rpx 0;
   min-height: 40rpx;
 }
 
 .arrive-time {
   font-size: 18rpx;
-  color: $z-muted;
+  color: $cy-muted;
   letter-spacing: 0.5rpx;
   margin-top: 8rpx;
 }
 
 .stop-card {
   flex: 1;
-  background: $z-card;
-  border-radius: $radius-card;
+  background: $cy-card;
+  border-radius: 24rpx;
   padding: 22rpx 24rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.06);
+  box-shadow: $cy-shadow;
   margin-bottom: 20rpx;
 }
 
@@ -673,26 +686,26 @@ function onStart() {
   display: block;
   font-size: 28rpx;
   font-weight: 800;
-  color: $z-text;
+  color: $cy-text;
   margin-bottom: 6rpx;
 }
 
 .stop-meta {
   display: block;
   font-size: 21rpx;
-  color: $z-muted;
+  color: $cy-muted;
   margin-bottom: 4rpx;
 }
 
 .stop-stay {
   display: block;
   font-size: 21rpx;
-  color: $z-muted;
+  color: $cy-muted;
   margin-bottom: 14rpx;
 }
 
 .why-block {
-  background: rgba(13, 79, 74, 0.06);
+  background: $cy-green-ls;
   border-radius: 12rpx;
   padding: 14rpx 18rpx;
   margin-bottom: 10rpx;
@@ -702,14 +715,14 @@ function onStart() {
   display: block;
   font-size: 20rpx;
   font-weight: 700;
-  color: $z-primary;
+  color: $cy-green;
   margin-bottom: 4rpx;
 }
 
 .why-text {
   display: block;
   font-size: 22rpx;
-  color: $z-text2;
+  color: $cy-text-sub;
   line-height: 1.5;
 }
 
@@ -724,14 +737,14 @@ function onStart() {
   display: block;
   font-size: 20rpx;
   font-weight: 700;
-  color: $z-amber-d;
+  color: #D97706;
   margin-bottom: 4rpx;
 }
 
 .headsup-text {
   display: block;
   font-size: 22rpx;
-  color: $z-text2;
+  color: $cy-text-sub;
   line-height: 1.5;
 }
 
@@ -743,49 +756,49 @@ function onStart() {
 
 .stop-budget {
   font-size: 22rpx;
-  color: $z-muted;
+  color: $cy-muted;
 }
 
 .nav-btn {
   font-size: 24rpx;
-  color: $z-primary;
+  color: $cy-green;
   font-weight: 700;
   cursor: pointer;
 }
 
 // 备用 & 免责
 .backup-card {
-  background: $z-card;
-  border-radius: $radius-card;
+  background: $cy-card;
+  border-radius: 24rpx;
   padding: 24rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.06);
+  box-shadow: $cy-shadow;
 }
 
 .backup-title {
   display: block;
   font-size: 26rpx;
   font-weight: 700;
-  color: $z-text;
+  color: $cy-text;
   margin-bottom: 10rpx;
 }
 
 .backup-text {
   display: block;
   font-size: 23rpx;
-  color: $z-text2;
+  color: $cy-text-sub;
   line-height: 1.6;
 }
 
 .disclaimer {
-  border: 2rpx dashed $z-border;
-  border-radius: $radius-card;
+  border: 2rpx dashed $cy-border;
+  border-radius: 24rpx;
   padding: 20rpx 24rpx;
   margin-bottom: 28rpx;
 }
 
 .disclaimer-text {
   font-size: 22rpx;
-  color: $z-muted;
+  color: $cy-muted;
   line-height: 1.6;
 }
 
@@ -793,8 +806,8 @@ function onStart() {
 .bottom-bar {
   position: sticky;
   bottom: 0;
-  background: $z-card;
-  border-top: 1rpx solid $z-border;
+  background: $cy-card;
+  border-top: 1rpx solid $cy-border;
   padding: 16rpx 32rpx;
   display: flex;
   gap: 16rpx;
@@ -813,14 +826,14 @@ function onStart() {
 
   &.outline {
     flex: 1;
-    border: 2rpx solid $z-border;
-    color: $z-text;
+    border: 2rpx solid $cy-border;
+    color: $cy-text;
   }
 
   &.primary {
-    background: linear-gradient(135deg, $z-primary 0%, $z-primary-m 100%);
-    color: $z-card;
-    box-shadow: 0 6rpx 20rpx rgba(13, 79, 74, 0.33);
+    background: $cy-green;
+    color: #fff;
+    box-shadow: 0 6rpx 20rpx rgba(26, 136, 112, 0.33);
   }
 
   &.flex2 {

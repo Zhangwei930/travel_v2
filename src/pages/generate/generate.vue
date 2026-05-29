@@ -3,9 +3,7 @@
     <!-- Header -->
     <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
       <view class="header-back" :style="{ top: (statusBarHeight + 8) + 'px' }" @tap="goBack">
-        <svg xmlns="http://www.w3.org/2000/svg" width="9" height="16" viewBox="0 0 9 16">
-          <path d="M7.5 1.5L2 8l5.5 6.5" stroke="#1A2E2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
+        <CyIcon name="back-dark" :size="32" />
       </view>
       <text class="header-mono mono">§ GENERATE</text>
       <text class="header-title serif">一键生成方案</text>
@@ -16,9 +14,7 @@
     <view v-if="loading" class="loading-screen">
       <view class="loading-compass">
         <view class="compass-spin">
-          <svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 26 26" fill="none">
-            <path d="M3 13l8 4 4 8 7-19-19 7z" fill="#fff"/>
-          </svg>
+          <CyIcon name="send-white" :size="76" />
         </view>
       </view>
       <text class="loading-title serif">规划中…</text>
@@ -33,10 +29,7 @@
           :style="{ opacity: i > currentStep ? 0.4 : 1 }"
         >
           <view class="step-dot" :class="{ done: i < currentStep, doing: i === currentStep }">
-            <!-- done -->
-            <svg v-if="i < currentStep" width="10" height="10" viewBox="0 0 10 10">
-              <path d="M2 5l2 2 4-4" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+            <CyIcon v-if="i < currentStep" name="check-white" :size="20" />
             <!-- doing -->
             <view v-else-if="i === currentStep" class="dot-pulse" />
             <!-- pending -->
@@ -104,7 +97,10 @@
 
         <!-- 主 CTA -->
         <view class="cta-btn" @tap="startGenerate">
-          <text class="cta-text serif">🧭 开始规划出游方案</text>
+          <view class="cta-icon">
+            <CyIcon name="send-white" :size="38" />
+          </view>
+          <text class="cta-text serif">开始规划出游方案</text>
         </view>
       </view>
     </scroll-view>
@@ -113,8 +109,9 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { api } from '../../api/mock.js'
+import { api } from '../../api/index.js'
 import { useCityStore } from '../../store/city.js'
+import CyIcon from '../../components/cy/cy-icon.vue'
 
 const cityStore = useCityStore()
 
@@ -290,23 +287,23 @@ onUnmounted(() => {
 
 .page {
   min-height: 100vh;
-  background: $z-bg;
+  background: $cy-bg;
+  font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
 }
 
 .header {
   position: relative;
-  background: $z-card;
+  background: $cy-card;
   padding: 0 32rpx 32rpx;
 }
 
 .header-back {
   position: absolute;
   left: 20rpx;
-  // top 由模板 inline style 按 statusBarHeight 计算
   width: 68rpx;
   height: 68rpx;
   border-radius: 34rpx;
-  background: rgba(26, 46, 44, 0.06);
+  background: $cy-green-ls;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -316,7 +313,7 @@ onUnmounted(() => {
 .header-mono {
   display: block;
   font-size: 20rpx;
-  color: $z-muted;
+  color: $cy-muted;
   letter-spacing: 3rpx;
   margin-bottom: 8rpx;
   padding-top: 16rpx;
@@ -326,14 +323,14 @@ onUnmounted(() => {
   display: block;
   font-size: 42rpx;
   font-weight: 900;
-  color: $z-text;
+  color: $cy-text;
   margin-bottom: 6rpx;
 }
 
 .header-sub {
   display: block;
   font-size: 24rpx;
-  color: $z-muted;
+  color: $cy-muted;
 }
 
 // ── 加载态 ───────────────────────────────────────────────────
@@ -348,11 +345,11 @@ onUnmounted(() => {
   width: 168rpx;
   height: 168rpx;
   border-radius: 84rpx;
-  background: linear-gradient(135deg, $z-primary 0%, $z-primary-l 100%);
+  background: linear-gradient(135deg, $cy-green 0%, $cy-green-l 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 16rpx 56rpx rgba(13, 79, 74, 0.33);
+  box-shadow: 0 16rpx 56rpx rgba(26, 136, 112, 0.33);
   margin-bottom: 32rpx;
 }
 
@@ -371,30 +368,30 @@ onUnmounted(() => {
 .loading-title {
   font-size: 38rpx;
   font-weight: 900;
-  color: $z-text;
+  color: $cy-text;
   margin-bottom: 8rpx;
 }
 
 .loading-progress {
   font-size: 22rpx;
-  color: $z-muted;
+  color: $cy-muted;
   letter-spacing: 1rpx;
   margin-bottom: 16rpx;
 }
 
 .loading-slow-tip {
   font-size: 22rpx;
-  color: $z-muted;
+  color: $cy-muted;
   margin-bottom: 24rpx;
   opacity: 0.7;
 }
 
 .steps-card {
   width: 100%;
-  background: $z-card;
-  border-radius: $radius-card;
+  background: $cy-card;
+  border-radius: 24rpx;
   padding: 28rpx;
-  box-shadow: 0 4rpx 20rpx rgba(13, 79, 74, 0.06);
+  box-shadow: $cy-shadow-lg;
   margin-bottom: 32rpx;
 }
 
@@ -414,14 +411,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: $z-border;
+  background: $cy-border;
 
   &.done {
-    background: $z-primary;
+    background: $cy-green;
   }
 
   &.doing {
-    background: rgba(255, 107, 53, 0.13);
+    background: $cy-green-ls;
   }
 }
 
@@ -429,7 +426,7 @@ onUnmounted(() => {
   width: 16rpx;
   height: 16rpx;
   border-radius: 8rpx;
-  background: $z-accent;
+  background: $cy-green;
   animation: pulse 0.9s ease-in-out infinite;
 }
 
@@ -440,27 +437,27 @@ onUnmounted(() => {
 
 .step-no {
   font-size: 19rpx;
-  color: $z-muted;
+  color: $cy-muted;
   font-weight: 700;
 }
 
 .step-label {
   font-size: 25rpx;
-  color: $z-text;
+  color: $cy-text;
 }
 
 .progress-bar-wrap {
   width: 100%;
-  background: $z-border;
-  border-radius: $radius-pill;
+  background: $cy-border;
+  border-radius: 9999rpx;
   height: 10rpx;
   overflow: hidden;
 }
 
 .progress-bar-fill {
   height: 10rpx;
-  border-radius: $radius-pill;
-  background: linear-gradient(90deg, $z-primary 0%, $z-mint 100%);
+  border-radius: 9999rpx;
+  background: linear-gradient(90deg, $cy-green 0%, $cy-green-l 100%);
   transition: width 0.4s ease;
 }
 
@@ -477,10 +474,10 @@ onUnmounted(() => {
 }
 
 .form-card {
-  background: $z-card;
-  border-radius: $radius-card;
+  background: $cy-card;
+  border-radius: 24rpx;
   padding: 28rpx;
-  box-shadow: 0 2rpx 10rpx rgba(13, 79, 74, 0.05);
+  box-shadow: $cy-shadow;
 }
 
 .q-group {
@@ -500,7 +497,7 @@ onUnmounted(() => {
 
 .q-no {
   font-size: 20rpx;
-  color: $z-accent;
+  color: $cy-green;
   font-weight: 700;
   letter-spacing: 1rpx;
 }
@@ -508,12 +505,12 @@ onUnmounted(() => {
 .q-label {
   font-size: 26rpx;
   font-weight: 800;
-  color: $z-text;
+  color: $cy-text;
 }
 
 .q-hint {
   font-size: 21rpx;
-  color: $z-muted;
+  color: $cy-muted;
 }
 
 .chips-wrap {
@@ -524,19 +521,19 @@ onUnmounted(() => {
 
 .form-chip {
   padding: 12rpx 24rpx;
-  border-radius: $radius-pill;
-  background: $z-card;
-  color: $z-text;
+  border-radius: 9999rpx;
+  background: $cy-card;
+  color: $cy-text;
   font-size: 24rpx;
   font-weight: 600;
   cursor: pointer;
-  border: 2rpx solid $z-border;
+  border: 2rpx solid $cy-border;
   transition: all 0.2s;
 
   &.on {
-    background: $z-primary;
-    color: $z-card;
-    border-color: $z-primary;
+    background: $cy-green;
+    color: #fff;
+    border-color: $cy-green;
   }
 }
 
@@ -546,18 +543,18 @@ onUnmounted(() => {
   width: 100%;
   min-height: 116rpx;
   border: none;
-  background: $z-bg;
+  background: $cy-bg;
   border-radius: 18rpx;
   padding: 18rpx 22rpx;
   font-size: 25rpx;
-  color: $z-text;
-  font-family: -apple-system, 'PingFang SC', sans-serif;
+  color: $cy-text;
+  font-family: "PingFang SC", -apple-system, sans-serif;
   box-sizing: border-box;
 }
 
 .summary-bar {
-  background: rgba(13, 79, 74, 0.055);
-  border-left: 6rpx solid $z-primary;
+  background: $cy-green-ls;
+  border-left: 6rpx solid $cy-green;
   border-radius: 8rpx 22rpx 22rpx 8rpx;
   padding: 20rpx 24rpx;
 }
@@ -565,25 +562,25 @@ onUnmounted(() => {
 .summary-mono {
   display: block;
   font-size: 20rpx;
-  color: $z-muted;
+  color: $cy-muted;
   letter-spacing: 1rpx;
   margin-bottom: 6rpx;
 }
 
 .summary-content {
   font-size: 24rpx;
-  color: $z-text;
+  color: $cy-text;
   line-height: 1.65;
 }
 
 .summary-prefs {
-  color: $z-primary;
+  color: $cy-green;
   font-weight: 700;
 }
 
 .cta-btn {
-  background: linear-gradient(135deg, $z-accent 0%, $z-accent-l 100%);
-  box-shadow: 0 12rpx 36rpx rgba(255, 107, 53, 0.44);
+  background: $cy-green;
+  box-shadow: 0 12rpx 36rpx rgba(26, 136, 112, 0.35);
   border-radius: 22rpx;
   height: 100rpx;
   display: flex;
@@ -593,7 +590,7 @@ onUnmounted(() => {
 }
 
 .cta-text {
-  color: $z-card;
+  color: #fff;
   font-size: 30rpx;
   font-weight: 800;
 }

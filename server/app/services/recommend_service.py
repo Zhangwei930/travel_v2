@@ -161,7 +161,7 @@ def recommend_pois(
         )
         if card and card.nav_ready
     ]
-    scored.sort(key=lambda item: (item.score, -_distance_value(item.distance)), reverse=True)
+    scored.sort(key=lambda item: (-item.score, _distance_value(item.distance)))
     return scored[:limit]
 
 

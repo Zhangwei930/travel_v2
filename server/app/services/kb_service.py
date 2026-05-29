@@ -2,6 +2,7 @@
 
 命中 FAQ/知识库 → 直接回答；未命中 → WebSearch + AI 总结 → 写入 kb_pending 待审核。
 """
+import datetime
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -12,7 +13,16 @@ from app.services.recommend_service import recommend_pois
 from app.services.route_builder import build_home_routes
 from app.services.weather_provider import get_weather
 
-SUGGESTED_CHIPS = ["停车方便吗？", "下雨改去哪？", "适合带孩子吗？", "傍晚还能玩什么？"]
+
+def _time_slot() -> str:
+    h = (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).hour
+    if h < 11:
+        return "上午"
+    if h < 14:
+        return "中午"
+    if h < 18:
+        return "下午"
+    return "夜晚"
 
 
 def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
@@ -73,7 +83,7 @@ def _location_cards(payload: AskIn, city: str, db: Session):
 def ask(payload: AskIn, db: Session) -> AskOut:
     question = payload.question.strip()
     city = payload.city or settings.default_city
-    destinations, routes = _location_cards(payload, city, db)
+    time_now = _time_slot()
 
     # 上下文：优先取 history（多轮），fallback 到旧 context 字段（单条）
     history = [t for t in (payload.history or []) if (t.text or "").strip()]
@@ -101,54 +111,46 @@ def ask(payload: AskIn, db: Session) -> AskOut:
     if best and best_score >= settings.kb_similarity_threshold:
         return AskOut(
             text=best.answer,
-            sources=[AskSource(k="知识库", v=f"FAQ · {best.category or '常见问题'}")],
-            chips=SUGGESTED_CHIPS,
+            sources=[],
+            chips=[],
             from_kb=True,
-            destinations=destinations,
-            routes=routes,
+            destinations=[],
+            routes=[],
             kb_status="hit",
         )
 
-    if destinations:
-        top_names = "、".join(item.name for item in destinations[:3])
-        return AskOut(
-            text=f"根据你当前位置，建议优先看这几个地方：{top_names}。都带坐标，可直接导航过去。",
-            sources=[AskSource(k="地图", v="附近 POI"), AskSource(k="知识库", v="地点标签与推荐理由")],
-            chips=SUGGESTED_CHIPS,
-            from_kb=True,
-            destinations=destinations,
-            routes=routes,
-            kb_status=destinations[0].kb_status,
-        )
-
-    # 未命中：触发 WebSearch + AI 总结，结果进入待审核
+    # 未命中：WebSearch + AI 总结（结合位置和时间），结果写入待审核
     results = websearch.search(f"{city} {merged_query}", db)
     snippets = "\n".join(f"- {r['title']}：{r['snippet']}" for r in results[:5])
-    fallback = (
-        "这个问题本地知识库暂未收录，已记录并转入补充流程。"
-        "涉及营业时间、票价等实时信息，请以官方或地图实时查询为准。"
-    )
-    # 渲染历史对话块，让 AI 看到完整多轮上下文
+    fallback = "抱歉，暂时找不到相关信息，请换个说法再试试。"
+
+    location_ctx = ""
+    if payload.lat and payload.lng:
+        location_ctx = f"用户当前位于{city}（坐标 {payload.lat:.4f}, {payload.lng:.4f}）。"
+    elif city:
+        location_ctx = f"用户当前在{city}。"
+
+    weather_ctx = f"当前天气：{payload.weather}。" if payload.weather else ""
+
     if history:
-        lines = []
-        for t in history:
-            tag = "用户" if t.role == "user" else "助手"
-            lines.append(f"  {tag}：{t.text.strip()}")
-        context_block = "对话历史：\n" + "\n".join(lines) + "\n"
+        lines = [f"  {'用户' if t.role == 'user' else '助手'}：{t.text.strip()}" for t in history]
+        context_block = "对话历史：\n" + "\n".join(lines) + "\n\n"
     else:
         context_block = ""
+
     prompt = (
-        f"你是出游助手。根据以下搜索结果直接回答用户问题。\n"
-        f"要求：\n"
-        f"- 优先提炼搜索结果中的具体信息（地址、特色、建议游玩时间等）\n"
-        f"- 营业时间、票价等实时数据，给出搜索结果中的参考值，并注明「以实时查询为准」\n"
-        f"- 只有搜索结果与问题完全无关时，才说「暂未收录」\n"
-        f"- 不得编造搜索结果中没有的具体数字或事实\n"
-        f"- 回答控制在 150 字以内，简洁直接\n"
-        f"- 若提供了上文，本次回答必须紧扣上文话题（地点、场景、人群），不要跳到无关推荐\n\n"
+        f"你是本地出游助手，专注于帮用户找到合适的本地出游目的地。\n"
+        f"背景信息：{location_ctx}{weather_ctx}当前时段：{time_now}。\n\n"
+        f"回答要求：\n"
+        f"- 直接推荐 2-3 个具体地点，说明为何适合（人群、距离、当前时段）\n"
+        f"- 若问题提到时间限制（如2小时内），要评估路程+游玩是否合理\n"
+        f"- 营业时间、票价注明「以实时查询为准」\n"
+        f"- 不得编造搜索结果中没有的数字或地点\n"
+        f"- 回答控制在 200 字以内，口语化、直接\n"
+        f"- 不要输出知识库、数据来源等内部术语\n\n"
         f"{context_block}"
-        f"用户当前问题：{question}\n"
-        f"联网搜索摘要：\n{snippets or '（无搜索结果）'}"
+        f"用户问题：{question}\n"
+        f"参考资料：\n{snippets or '（无搜索结果）'}"
     )
     answer = ai_provider.generate_text(prompt, fallback=fallback)
 
@@ -157,18 +159,12 @@ def ask(payload: AskIn, db: Session) -> AskOut:
         city=city, category="出游助手", db=db,
     )
 
-    sources = [AskSource(k="知识库", v="未命中 · 已转待审核")]
-    if results:
-        sources.append(AskSource(k="WebSearch", v="联网补充结果"))
-    if ai_provider.is_live() and answer != fallback:
-        sources.append(AskSource(k="AI", v="候选答案生成"))
-
     return AskOut(
         text=answer,
-        sources=sources,
-        chips=SUGGESTED_CHIPS,
+        sources=[],
+        chips=[],
         from_kb=False,
-        destinations=destinations,
-        routes=routes,
+        destinations=[],
+        routes=[],
         kb_status="miss",
     )

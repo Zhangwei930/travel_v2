@@ -1,4 +1,4 @@
-"""种子数据 — 与前端 src/api/mock.js 对齐，空库时自动灌入，方便联调。"""
+"""种子数据 — 与前端 API 客户端契约保持一致，空库时自动灌入，方便联调。"""
 from sqlalchemy.orm import Session
 
 from app.models import FaqKnowledge, PoiIndex, TravelKnowledge, TravelRoute

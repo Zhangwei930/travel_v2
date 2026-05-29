@@ -242,11 +242,15 @@ function goBack() {
 <style lang="scss" scoped>
 @import '@/uni.scss';
 
-.page { min-height: 100vh; background: $z-bg; }
+.page {
+  min-height: 100vh;
+  background: $cy-bg;
+  font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
+}
 
 .header {
-  background: $z-card;
-  border-bottom: 1rpx solid $z-border;
+  background: $cy-card;
+  border-bottom: 1rpx solid $cy-border;
   padding-bottom: 24rpx;
 
   &-inner {
@@ -257,72 +261,73 @@ function goBack() {
   }
 }
 
-.back { font-size: 36rpx; color: $z-accent; padding: 8rpx; }
-.title { font-size: 36rpx; font-family: $serif; color: $z-text; flex: 1; }
-.count { font-size: $font-mono; color: $z-muted; font-family: $mono; }
+.back { font-size: 36rpx; color: $cy-green; padding: 8rpx; }
+.title { font-size: 36rpx; color: $cy-text; font-weight: 700; flex: 1; }
+.count { font-size: 20rpx; color: $cy-muted; letter-spacing: 1rpx; }
 
 /* token gate */
 .token-gate {
   margin: 80rpx 40rpx 0;
   display: flex; flex-direction: column; gap: 24rpx;
 }
-.gate-label { font-size: 28rpx; color: $z-text; }
+.gate-label { font-size: 28rpx; color: $cy-text; }
 .token-input {
-  border: 1rpx solid $z-border;
-  border-radius: $radius-card;
+  border: 1rpx solid $cy-border;
+  border-radius: 24rpx;
   padding: 20rpx 24rpx;
   font-size: 28rpx;
-  background: $z-card;
+  background: $cy-card;
 }
 .btn-confirm {
-  background: $z-accent;
-  color: $z-card;
+  background: $cy-green;
+  color: #fff;
   text-align: center;
   padding: 24rpx;
-  border-radius: $radius-card;
+  border-radius: 24rpx;
   font-size: 30rpx;
 }
 
 /* list */
 .list-scroll { height: calc(100vh - 120rpx); padding: 24rpx 24rpx 40rpx; box-sizing: border-box; }
-.empty-tip { color: $z-muted; font-family: $mono; font-size: $font-mono; text-align: center; margin-top: 80rpx; }
+.empty-tip { color: $cy-muted; font-size: 20rpx; letter-spacing: 1rpx; text-align: center; margin-top: 80rpx; }
 
 .card {
-  background: $z-card;
-  border-radius: $radius-card;
+  background: $cy-card;
+  border-radius: 24rpx;
   padding: 28rpx;
   margin-bottom: 24rpx;
+  box-shadow: $cy-shadow;
 }
 
 .card-meta {
   display: flex; align-items: center; gap: 16rpx;
-  font-family: $mono; font-size: $font-mono;
+  font-size: 20rpx;
   margin-bottom: 16rpx;
 }
 .risk { padding: 4rpx 12rpx; border-radius: 8rpx; font-size: 20rpx; }
-.risk-high { background: $z-danger-bg; color: $z-danger; }
-.risk-mid  { background: $z-warning-bg; color: $z-warning; }
-.risk-low  { background: $z-success-bg; color: $z-success-d; }
-.cat, .time { color: $z-muted; }
+.risk-high { background: #FEE2E2; color: #EF4444; }
+.risk-mid  { background: #FEF3C7; color: #D97706; }
+.risk-low  { background: $cy-green-ls; color: $cy-green-d; }
+.cat, .time { color: $cy-muted; }
 
 .question {
   display: block;
-  font-family: $serif;
   font-size: 32rpx;
-  color: $z-text;
+  font-weight: 700;
+  color: $cy-text;
   margin-bottom: 16rpx;
 }
 .answer {
   display: block;
   font-size: 28rpx;
-  color: $z-text2;
+  color: $cy-text-sub;
   line-height: 1.6;
   margin-bottom: 20rpx;
 }
 
 .ai-box {
-  background: $z-neutral-bg;
-  border-radius: $radius-card;
+  background: $cy-green-ls;
+  border-radius: 24rpx;
   padding: 20rpx;
   margin-bottom: 20rpx;
 }
@@ -333,28 +338,28 @@ function goBack() {
   gap: 16rpx;
   margin-bottom: 10rpx;
 }
-.ai-title { font-size: 24rpx; font-weight: 800; color: $z-accent; }
-.ai-status { font-size: 22rpx; color: $z-muted; }
+.ai-title { font-size: 24rpx; font-weight: 800; color: $cy-green; }
+.ai-status { font-size: 22rpx; color: $cy-muted; }
 .ai-issue {
   display: block;
   font-size: 24rpx;
-  color: $z-text2;
+  color: $cy-text-sub;
   line-height: 1.45;
 }
 .ai-answer {
   display: block;
   margin-top: 12rpx;
   font-size: 24rpx;
-  color: $z-text;
+  color: $cy-text;
   line-height: 1.5;
 }
 
 .urls { margin-bottom: 20rpx; }
-.url-label { font-family: $mono; font-size: $font-mono; color: $z-muted; }
+.url-label { font-size: 20rpx; color: $cy-muted; letter-spacing: 1rpx; }
 .url {
   display: block;
   font-size: 22rpx;
-  color: $z-accent;
+  color: $cy-green;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -364,11 +369,11 @@ function goBack() {
 .actions { display: flex; gap: 16rpx; }
 .btn {
   flex: 1; text-align: center; padding: 16rpx 0;
-  border-radius: $radius-card; font-size: 26rpx;
-  &.ai      { background: $z-success-bg; color: $z-success-d; }
-  &.approve { background: $z-accent; color: $z-card; }
-  &.reject  { background: $z-danger-bg; color: $z-danger; }
-  &.update  { background: $z-neutral-bg; color: $z-text; }
+  border-radius: 24rpx; font-size: 26rpx;
+  &.ai      { background: $cy-green-ls; color: $cy-green-d; }
+  &.approve { background: $cy-green; color: #fff; }
+  &.reject  { background: #FEE2E2; color: #EF4444; }
+  &.update  { background: $cy-bg; color: $cy-text; }
 }
 
 /* Tab 切换 */
@@ -383,11 +388,11 @@ function goBack() {
   text-align: center;
   padding: 16rpx 0;
   font-size: 26rpx;
-  color: $z-muted;
+  color: $cy-muted;
   border-bottom: 3rpx solid transparent;
   &.active {
-    color: $z-accent;
-    border-bottom-color: $z-accent;
+    color: $cy-green;
+    border-bottom-color: $cy-green;
     font-weight: 700;
   }
 }
@@ -401,18 +406,18 @@ function goBack() {
   margin-bottom: 16rpx;
 }
 .gear-icon { font-size: 36rpx; }
-.gear-label { font-size: 30rpx; color: $z-text; flex: 1; }
-.gear-id { font-size: 20rpx; color: $z-muted; }
-.gear-count { font-size: 22rpx; color: $z-muted; }
+.gear-label { font-size: 30rpx; color: $cy-text; flex: 1; }
+.gear-id { font-size: 20rpx; color: $cy-muted; }
+.gear-count { font-size: 22rpx; color: $cy-muted; }
 .gear-area {
   width: 100%;
   min-height: 160rpx;
   padding: 16rpx 20rpx;
-  border: 1rpx solid $z-border;
-  border-radius: $radius-card;
-  background: $z-bg;
+  border: 1rpx solid $cy-border;
+  border-radius: 24rpx;
+  background: $cy-bg;
   font-size: 26rpx;
-  color: $z-text;
+  color: $cy-text;
   line-height: 1.6;
   box-sizing: border-box;
   margin-bottom: 16rpx;

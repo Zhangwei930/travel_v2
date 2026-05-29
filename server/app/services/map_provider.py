@@ -15,10 +15,10 @@ AMAP_BASE = "https://restapi.amap.com"
 AMAP_DEFAULT_TYPES = "110000|140100|140200|140400|140600"
 AMAP_TYPES_BY_SCENE: dict[str, str] = {
     "family": "110000|140100|140600|080500",
-    "couple": "050500|110000|060100|080600",
+    "couple": "110000|110200|110100|140400|140200",
     "rainy": "060100|140100|140400|140600",
     "budget": "110000|140100|061000",
-    "fish": "110000|110200",
+    "fish": "110200|110100|140600",
     "photo": "110000|140000|061000|080600",
     "night": "050000|060100|061000|080600",
     "walk": "061000|110000|140000",
@@ -75,27 +75,37 @@ def nearest_city(lat: float, lng: float) -> str:
     return min(CITY_CENTER, key=lambda city: haversine_km(lat, lng, CITY_CENTER[city][0], CITY_CENTER[city][1]))
 
 
-def amap_reverse_city(lat: float, lng: float) -> str | None:
-    """高德逆地理编码；未配置高德时返回 None，由调用方兜底。"""
+def amap_reverse_geocode(lat: float, lng: float) -> dict:
+    """高德逆地理编码，返回 {"city": str|None, "landmark": str|None}。"""
     if provider_name() != "amap":
-        return None
+        return {"city": None, "landmark": None}
     try:
         resp = httpx.get(
             f"{AMAP_BASE}/v3/geocode/regeo",
-            params={"key": settings.amap_key, "location": f"{lng},{lat}", "extensions": "base"},
+            params={"key": settings.amap_key, "location": f"{lng},{lat}", "extensions": "all", "radius": 500},
             timeout=5.0,
         )
         resp.raise_for_status()
         data = resp.json()
         if str(data.get("status")) != "1":
-            return None
-        comp = data.get("regeocode", {}).get("addressComponent", {})
+            return {"city": None, "landmark": None}
+        regeo = data.get("regeocode", {})
+        comp = regeo.get("addressComponent", {})
         city = comp.get("city") or comp.get("province") or None
         if isinstance(city, list):
             city = None
-        return str(city).replace("市", "").strip() if city else None
+        city = str(city).replace("市", "").strip() if city else None
+        # 取最近 POI 名称作为地标
+        pois = regeo.get("pois") or []
+        landmark = pois[0].get("name") if pois and isinstance(pois, list) else None
+        return {"city": city, "landmark": landmark}
     except (httpx.HTTPError, ValueError):
-        return None
+        return {"city": None, "landmark": None}
+
+
+def amap_reverse_city(lat: float, lng: float) -> str | None:
+    """高德逆地理编码，只返回城市名；内部复用 amap_reverse_geocode。"""
+    return amap_reverse_geocode(lat, lng)["city"]
 
 
 def transport_hint(transport: str | None) -> str:
@@ -122,25 +132,35 @@ def amap_types_for_scene(scene: str | None) -> str:
     return AMAP_TYPES_BY_SCENE.get(scene or "", AMAP_DEFAULT_TYPES)
 
 
-def amap_search_around(lat: float, lng: float, radius_km: float = 5.0,
-                       types: str = AMAP_DEFAULT_TYPES) -> list[dict]:
+SCENE_RADIUS_KM: dict[str, float] = {
+    "fish": 30.0,   # 钓鱼场/湿地公园多在郊区，需更大半径
+}
+
+# 部分场景用关键词补充精确搜索（优先于类型码搜索）
+SCENE_KEYWORDS: dict[str, str] = {
+    "fish": "垂钓|钓鱼|鱼塘|湿地公园|水库",
+}
+
+
+def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
+                       types: str = AMAP_DEFAULT_TYPES,
+                       keyword: str = "") -> list[dict]:
     """高德周边搜索，返回原始 POI 列表（方案 4.1 附近搜索）。失败返回 []。"""
     if provider_name() != "amap":
         return []
     try:
-        resp = httpx.get(
-            f"{AMAP_BASE}/v3/place/around",
-            params={
-                "key": settings.amap_key,
-                "location": f"{lng},{lat}",
-                "radius": int(radius_km * 1000),
-                "types": types,
-                "offset": 25,
-                "page": 1,
-                "extensions": "all",
-            },
-            timeout=8.0,
-        )
+        params = {
+            "key": settings.amap_key,
+            "location": f"{lng},{lat}",
+            "radius": int(radius_km * 1000),
+            "types": types,
+            "offset": 25,
+            "page": 1,
+            "extensions": "all",
+        }
+        if keyword:
+            params["keywords"] = keyword
+        resp = httpx.get(f"{AMAP_BASE}/v3/place/around", params=params, timeout=8.0)
         resp.raise_for_status()
         data = resp.json()
         if str(data.get("status")) != "1":

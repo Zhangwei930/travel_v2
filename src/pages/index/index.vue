@@ -1,314 +1,217 @@
 <template>
-  <view class="page">
-    <u-nav-bar title="出游助手" :show-back="false" right-icon="search" @right="onSearch" />
-
-    <scroll-view
-      scroll-y
-      class="scroll-body"
-      :style="{ paddingBottom: tabBarHeight }"
-      :show-scrollbar="false"
-    >
-      <!-- 位置 + 天气 -->
-      <view class="loc-row">
-        <view class="loc-left">
-          <view class="loc-pin">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" stroke="#1A7A73" stroke-width="2"/>
-              <circle cx="12" cy="9" r="3" stroke="#1A7A73" stroke-width="2"/>
-            </svg>
+  <view class="cy-page">
+    <!-- Header -->
+    <view class="cy-home-header" :style="{ paddingTop: statusBarH + 'px' }">
+      <view class="cy-hh-left">
+        <view class="cy-hh-weather">
+          <view class="cy-weather-icon">
+            <CyIcon name="sun" :size="36" />
           </view>
-          <text class="loc-text">{{ locText }}</text>
+          <text class="cy-weather-text">{{ weatherText }}</text>
+          <text class="cy-hh-range">· 15公里内推荐</text>
         </view>
-        <view class="loc-right">
-          <view class="weather-line">
-            <text class="weather-icon">{{ weatherIcon }}</text>
-            <text class="weather-text">{{ weatherText }}</text>
-          </view>
-          <text class="radius-text">默认推荐距离 3-5km</text>
+        <view class="cy-hh-loc" @tap="onSearch">
+          <CyIcon name="pin-outline-green" :size="26" />
+          <text class="cy-hh-loc-text">{{ locText }}</text>
         </view>
       </view>
+    </view>
 
-      <!-- 出游助手 mascot pill -->
-      <view class="mascot-card">
-        <view class="mascot-avatar">
-          <text class="mascot-avatar-emoji">🤖</text>
-        </view>
-        <view class="mascot-text">
-          <text class="mascot-title">出游助手</text>
-          <text class="mascot-sub">{{ mascotSub }}</text>
-        </view>
+    <scroll-view scroll-y class="cy-scroll" :style="{ paddingBottom: tabBarH }" :show-scrollbar="false">
+
+      <!-- 大卡块：出游助手 → 你的位置 → 4入口 -->
+      <view class="cy-section-head cy-entry-section-head">
+        <text class="cy-section-title">出游助手</text>
       </view>
-
-      <!-- 4 入口 -->
-      <view class="entry-grid">
-        <view
-          v-for="entry in entries"
-          :key="entry.id"
-          class="entry-card"
-          :class="'tint-' + entry.id"
-          @tap="goEntry(entry.id)"
-        >
-          <view class="entry-icon-wrap">
-            <text class="entry-icon">{{ entryIcon(entry.id) }}</text>
-          </view>
-          <text class="entry-label">{{ entryLabel(entry.id) }}</text>
-          <text class="entry-desc">{{ entryDesc(entry.id) }}</text>
+      <view class="cy-entry-block">
+        <text class="cy-et-subtitle">已根据你的位置，为你准备了4种出游方式</text>
+        <view class="cy-entry-grid">
+          <cy-entry-card icon-type="place"  title="按场所索引"   desc="景点 / 周边 / 趣游"   @tap="goEntry('place_index')" />
+          <cy-entry-card icon-type="nearby" title="附近现在适合去" desc="短距离 / 即刻推荐"  @tap="goEntry('nearby_now')" />
+          <cy-entry-card icon-type="routes" title="精选路线"     desc="2小时 / 半日 / 一日" @tap="goEntry('hot_routes')" />
+          <cy-entry-card icon-type="chat"   title="直接咨询"     desc="告诉我你的需求"       @tap="goEntry('assistant')" />
         </view>
       </view>
 
       <!-- 附近现在适合去 -->
-      <view class="section">
-        <view class="section-head">
-          <text class="section-title">附近现在适合去</text>
-          <text class="section-more" @tap="goNearby">更多 ›</text>
+      <view class="cy-section">
+        <view class="cy-section-head">
+          <text class="cy-section-title">附近现在适合去</text>
+          <text class="cy-section-more" @tap="goNearby">更多 ›</text>
         </view>
-        <view v-if="fallbackLocationUsed" class="hint-card">
-          <text>未获取到定位，当前展示{{ cityStore.current || DEFAULT_CITY }}默认推荐</text>
-          <view class="hint-btn" @tap="loadFeed()">重新定位</view>
+        <view v-if="locationError" class="cy-hint-card">
+          <text>未获取到定位，请开启位置权限后获取附近真实推荐</text>
+          <view class="cy-hint-actions">
+            <view class="cy-hint-btn" @tap="retryLocation">重新定位</view>
+            <view class="cy-hint-btn cy-hint-btn--ghost" @tap="useDefaultFeed">使用默认城市</view>
+          </view>
         </view>
-        <view v-if="!nearbyVisible.length" class="hint-card mute">
-          <text>{{ feedLoading ? '正在加载附近推荐…' : '附近暂无可推荐地点' }}</text>
+        <view v-else-if="fallbackUsed" class="cy-hint-card">
+          <text>已按{{ cityStore.current || '成都' }}生成默认推荐，开启定位可获得附近真实推荐</text>
+          <view class="cy-hint-btn" @tap="retryLocation">重新定位</view>
         </view>
-        <view v-else class="poi-list">
+        <view class="cy-nearby-card">
+          <view v-if="feedLoading && !nearbyVisible.length" class="cy-hint-muted"><text>正在加载附近推荐…</text></view>
+          <view v-else-if="!nearbyVisible.length && !feedLoading" class="cy-hint-muted"><text>附近暂无可推荐地点</text></view>
           <view
-            v-for="poi in nearbyVisible"
+            v-for="(poi, i) in nearbyVisible"
             :key="poi.id"
-            class="poi-card"
+            class="cy-nearby-row"
+            :class="{ 'cy-nearby-row--divider': i > 0 }"
             @tap="goPoi(poi.id)"
           >
-            <view class="poi-thumb">
-              <image
-                :src="poiThumb(poi)"
-                class="poi-thumb-img"
-                mode="aspectFill"
-                lazy-load
-                @error="onPoiImageError(poi)"
-              />
+            <image :src="poiThumb(poi)" class="cy-nearby-thumb" mode="aspectFill" lazy-load @error="onPoiImageError(poi)" />
+            <view class="cy-nearby-body">
+              <text class="cy-nearby-name">{{ poi.name }}</text>
+              <view class="cy-nearby-tags">
+                <text v-for="tag in (poi.tags || []).slice(0, 3)" :key="tag" class="cy-nearby-tag">{{ tag }}</text>
+              </view>
             </view>
-            <view class="poi-content">
-              <view class="poi-line1">
-                <text class="poi-name">{{ poi.name }}</text>
-                <text class="poi-dist">{{ poi.distance }}</text>
-              </view>
-              <view class="poi-tags">
-                <text
-                  v-for="tag in (poi.tags || []).slice(0, 3)"
-                  :key="tag"
-                  class="poi-tag"
-                >{{ tag }}</text>
-                <text v-if="poi.kb_status" class="poi-tag kb-tag">{{ kbLabel(poi.kb_status) }}</text>
-              </view>
-              <view class="poi-line3">
-                <text class="poi-cat">{{ poi.category || '地点' }}</text>
-                <view class="poi-rating">
-                  <text class="rating-star">★</text>
-                  <text class="rating-num">{{ poi.rating || (4.0 + (poi.id % 10) / 10).toFixed(1) }}</text>
-                </view>
-                <view class="poi-nav" @tap.stop="navPoi(poi)">导航</view>
+            <view class="cy-nearby-right">
+              <text class="cy-nearby-dist">{{ poi.distance }}</text>
+              <view class="cy-nearby-rating">
+                <CyIcon name="star-yellow" :size="26" />
+                <text class="cy-nearby-rnum">{{ (poi.rating || (4.0 + (poi.id % 10) / 10)).toFixed(1) }}</text>
               </view>
             </view>
           </view>
         </view>
       </view>
 
-      <!-- 精选路线 -->
-      <view class="section">
-        <view class="section-head">
-          <text class="section-title">精选路线</text>
-          <text class="section-more" @tap="goRoutes">更多 ›</text>
+      <!-- 精选路线 横滑 -->
+      <view class="cy-section">
+        <view class="cy-section-head">
+          <text class="cy-section-title">精选路线</text>
+          <text class="cy-section-more" @tap="goRoutes">更多 ›</text>
         </view>
-        <view v-if="!routes.length" class="hint-card mute">
-          <text>{{ feedLoading ? '正在加载精选路线…' : '暂无精选路线' }}</text>
-        </view>
-        <scroll-view v-else scroll-x class="routes-scroll" :show-scrollbar="false">
-          <view class="routes-row">
-            <view
+        <view v-if="feedLoading && !routes.length" class="cy-hint-muted"><text>正在加载精选路线…</text></view>
+        <view v-else class="cy-routes-card">
+          <view class="cy-routes-row">
+            <cy-route-card
               v-for="route in routes"
               :key="route.id"
-              class="route-card"
+              :title="route.title"
+              :sub="(route.duration || '半日') + ' · ' + (route.stops?.length || 0) + '站'"
+              :stops="route.stops?.length || 2"
               @tap="openRoute(route)"
-            >
-              <view class="route-cover">
-                <image
-                  :src="routeThumb(route)"
-                  class="route-img"
-                  mode="aspectFill"
-                  lazy-load
-                  @error="onRouteImageError(route)"
-                />
-              </view>
-              <view class="route-body">
-                <text class="route-title">{{ route.title }}</text>
-                <text class="route-meta">{{ route.duration || '半日' }} · {{ route.stops?.length || 0 }}站</text>
-              </view>
-            </view>
+            />
           </view>
-        </scroll-view>
+        </view>
       </view>
-    </scroll-view>
 
-    <z-tab-bar current="home" />
+      <view style="height: 32rpx;" />
+    </scroll-view>
   </view>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { api } from '../../api/mock.js'
-import ZTabBar from '../../components/ZTabBar.vue'
-import UNavBar from '../../components/UNavBar.vue'
-import { DEFAULT_CITY, useCityStore } from '../../store/city.js'
+import { api } from '../../api/index.js'
+import CyEntryCard from '../../components/cy/cy-entry-card.vue'
+import CyRouteCard from '../../components/cy/cy-route-card.vue'
+import CyIcon from '../../components/cy/cy-icon.vue'
+import { useCityStore } from '../../store/city.js'
 import { setAssistantContext, setHomeFeedCache } from '../../api/storage.js'
 import { poiImage, routeImage } from '../../api/assets.js'
+import { setTabBarSelected } from '../../api/tabbar.js'
 
 const cityStore = useCityStore()
-
-const tabBarHeight = ref('80px')
+const statusBarH = ref(44)
+const tabBarH = ref('80px')
 const weather = ref(null)
-const defaultEntries = [
-  { id: 'place_index', title: '按场所索引' },
-  { id: 'nearby_now',  title: '附近适合去' },
-  { id: 'hot_routes',  title: '精选路线' },
-  { id: 'assistant',   title: '直接咨询' },
-]
-const entries = ref(defaultEntries)
 const nearby = ref([])
 const routes = ref([])
-const loaded = ref(false)
 const feedLoading = ref(false)
+const loaded = ref(false)
+const fallbackUsed = ref(false)
 const locationError = ref(false)
-const fallbackLocationUsed = ref(false)
-const brokenPoiImages = ref({})
-const brokenRouteImages = ref({})
+const brokenPoi = ref({})
+const brokenRoute = ref({})
+const landmark = ref('')
 
 const nearbyVisible = computed(() => nearby.value.slice(0, 3))
+const homeFeedCity = computed(() => (cityStore.source === 'default' ? cityStore.current : ''))
 
 const locText = computed(() => {
   if (cityStore.locating) return '定位中…'
-  if (fallbackLocationUsed.value) return `${cityStore.current || DEFAULT_CITY} · 默认推荐`
-  return cityStore.current || '当前位置'
+  if (locationError.value) return '需要开启定位'
+  if (!cityStore.coords) return '获取位置中…'
+  if (fallbackUsed.value || cityStore.source === 'default') return `${cityStore.current || '成都'} · 默认推荐`
+  const city = cityStore.current || '当前位置'
+  return landmark.value ? `${city} · ${landmark.value}附近` : `${city} · 附近`
 })
 
-const mascotSub = computed(() => (
-  fallbackLocationUsed.value
-    ? '定位未开启，已先为您准备默认城市出游方式'
-    : '已根据您的位置，为您准备了 4 种出游方式'
-))
+// mascotSub 已废弃（机器人 + 引导文字已删除），保留为不抛错的空值以兼容未观察到的外部引用
+const mascotSub = computed(() =>
+  locationError.value
+    ? ''
+    : fallbackUsed.value
+    ? ''
+    : ''
+)
 
-const weatherIcon = computed(() => weather.value?.icon || '☀️')
 const weatherText = computed(() => {
-  if (!weather.value) return '获取中'
+  if (!weather.value) return ''
   return `${weather.value.cond || ''} ${weather.value.temp != null ? weather.value.temp + '°C' : ''}`.trim()
 })
 
 const timeSlot = computed(() => {
-  const hour = new Date().getHours()
-  if (hour < 11) return '上午'
-  if (hour < 14) return '中午'
-  if (hour < 18) return '下午'
+  const h = new Date().getHours()
+  if (h < 11) return '上午'
+  if (h < 14) return '中午'
+  if (h < 18) return '下午'
   return '夜晚'
 })
 
-function entryLabel(id) {
-  return {
-    place_index: '按场所索引',
-    nearby_now:  '附近适合去',
-    hot_routes:  '精选路线',
-    assistant:   '直接咨询',
-  }[id] || ''
-}
+function poiThumb(poi) { return poiImage(poi, brokenPoi.value[poi?.id]) }
+function routeThumb(route) { return routeImage(route, brokenRoute.value[route?.id]) }
+function onPoiImageError(poi) { if (poi?.id) brokenPoi.value = { ...brokenPoi.value, [poi.id]: true } }
+function onRouteImageError(r) { if (r?.id) brokenRoute.value = { ...brokenRoute.value, [r.id]: true } }
 
-function entryDesc(id) {
-  return {
-    place_index: '景点、活动、好去处',
-    nearby_now:  '5公里以内推荐',
-    hot_routes:  '路线规划、节假日推荐',
-    assistant:   '智能 AI 出游问答',
-  }[id] || ''
-}
-
-function entryIcon(id) {
-  return {
-    place_index: '🗺️',
-    nearby_now:  '🧭',
-    hot_routes:  '🛣️',
-    assistant:   '💬',
-  }[id] || '🎯'
-}
-
-function kbLabel(status) {
-  return {
-    hit: '知识库',
-    unchanged: '知识库',
-    partial: '部分收录',
-    stale: '待更新',
-    miss: '地图来源',
-  }[status] || '地图来源'
-}
-
-function poiThumb(poi) {
-  return poiImage(poi, brokenPoiImages.value[poi?.id])
-}
-
-function routeThumb(route) {
-  return routeImage(route, brokenRouteImages.value[route?.id])
-}
-
-function onPoiImageError(poi) {
-  if (!poi?.id) return
-  brokenPoiImages.value = { ...brokenPoiImages.value, [poi.id]: true }
-}
-
-function onRouteImageError(route) {
-  if (!route?.id) return
-  brokenRouteImages.value = { ...brokenRouteImages.value, [route.id]: true }
-}
-
-function normalizeEntries(feedEntries) {
-  const byId = new Map((feedEntries || []).map(item => [item.id, item]))
-  return defaultEntries.map(item => ({ ...item, ...(byId.get(item.id) || {}) }))
-}
-
-async function loadFeed(intent = '') {
+async function loadFeed(options = {}) {
   if (cityStore.locating) return
   cityStore.locating = true
   feedLoading.value = true
   locationError.value = false
-  fallbackLocationUsed.value = false
+  fallbackUsed.value = options.useDefault === true
   try {
     let coords
-    try {
+    if (options.useDefault) {
+      cityStore.setDefaultLocation()
+      coords = { latitude: cityStore.coords.lat, longitude: cityStore.coords.lng }
+    } else if (cityStore.hasRealLocation && !options.forceLocate) {
+      coords = { latitude: cityStore.coords.lat, longitude: cityStore.coords.lng }
+    } else {
       coords = await new Promise((resolve, reject) => {
         uni.getLocation({ type: 'gcj02', success: resolve, fail: reject })
       })
       cityStore.locationDenied = false
       cityStore.setCoords(coords.latitude, coords.longitude)
-    } catch (_) {
-      cityStore.setDefaultLocation()
-      locationError.value = true
-      fallbackLocationUsed.value = true
-      coords = { latitude: cityStore.coords.lat, longitude: cityStore.coords.lng }
     }
-
     const feed = await api.getHomeFeed({
       lat: coords.latitude,
       lng: coords.longitude,
-      city: cityStore.current,
-      intent,
+      city: homeFeedCity.value,
     })
     if (feed?.location?.city) cityStore.setFromLocation(feed.location.city)
+    if (feed?.location?.landmark) {
+      landmark.value = feed.location.landmark
+      cityStore.landmark = feed.location.landmark
+      try { uni.setStorageSync('zhoumi_landmark', feed.location.landmark) } catch (_) {}
+    }
     weather.value = feed.weather || null
-    entries.value = normalizeEntries(feed.entries)
     nearby.value = (feed.nearby_now || []).filter(p => p.nav_ready && p.lat != null && p.lng != null)
     routes.value = feed.routes || []
     setHomeFeedCache(feed)
     loaded.value = true
-  } catch (_) {
-    locationError.value = true
-    weather.value = null
+  } catch (err) {
+    if (!options.useDefault && !cityStore.hasRealLocation) {
+      locationError.value = true
+      cityStore.locationDenied = true
+    }
     nearby.value = []
     routes.value = []
-    loaded.value = false
   } finally {
     cityStore.locating = false
     feedLoading.value = false
@@ -318,17 +221,18 @@ async function loadFeed(intent = '') {
 onLoad(async () => {
   try {
     const sys = uni.getSystemInfoSync()
-    const tabH = (sys.safeAreaInsets?.bottom || 18) + 56
-    tabBarHeight.value = tabH + 'px'
+    statusBarH.value = sys.statusBarHeight || 44
+    tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
   } catch (_) {}
   await loadFeed()
 })
 
 onShow(() => {
-  if (!loaded.value && !cityStore.locating) loadFeed()
+  setTabBarSelected(0)
+  if (!loaded.value && !cityStore.locating && !locationError.value) loadFeed()
 })
 
-function buildAssistantContext() {
+function buildCtx() {
   return {
     lat: cityStore.coords?.lat ?? '',
     lng: cityStore.coords?.lng ?? '',
@@ -342,12 +246,9 @@ function goEntry(id) {
   if (id === 'place_index') {
     uni.switchTab({ url: '/pages/scenes/scenes' })
   } else if (id === 'assistant') {
-    const context = buildAssistantContext()
-    setAssistantContext(context)
-    uni.switchTab({
-      url: '/pages/assistant/chat',
-      success: () => uni.$emit('assistantContext', context),
-    })
+    const ctx = buildCtx()
+    setAssistantContext(ctx)
+    uni.switchTab({ url: '/pages/assistant/chat', success: () => uni.$emit('assistantContext', ctx) })
   } else if (id === 'nearby_now') {
     uni.navigateTo({ url: '/pages/nearby/index' })
   } else if (id === 'hot_routes') {
@@ -355,31 +256,17 @@ function goEntry(id) {
   }
 }
 
-function goNearby() {
-  uni.navigateTo({ url: '/pages/nearby/index' })
-}
+function goNearby() { uni.navigateTo({ url: '/pages/nearby/index' }) }
+function goRoutes() { uni.navigateTo({ url: '/pages/routes/routes' }) }
 
-function goRoutes() {
-  uni.navigateTo({ url: '/pages/routes/routes' })
+function retryLocation() { loadFeed({ forceLocate: true }) }
+function useDefaultFeed() {
+  cityStore.setDefaultLocation()
+  loadFeed({ useDefault: true })
 }
 
 function goPoi(id) {
-  const lat = cityStore.coords?.lat
-  const lng = cityStore.coords?.lng
-  uni.navigateTo({ url: `/pages/poi/detail?id=${id}&lat=${lat || ''}&lng=${lng || ''}` })
-}
-
-function navPoi(poi) {
-  if (!poi?.lat || !poi?.lng) {
-    uni.showToast({ title: '暂无坐标，无法导航', icon: 'none' })
-    return
-  }
-  uni.openLocation({
-    latitude: Number(poi.lat),
-    longitude: Number(poi.lng),
-    name: poi.name,
-    address: poi.address || poi.category || '',
-  })
+  uni.navigateTo({ url: `/pages/poi/detail?id=${id}&lat=${cityStore.coords?.lat || ''}&lng=${cityStore.coords?.lng || ''}` })
 }
 
 function openRoute(route) {
@@ -389,412 +276,291 @@ function openRoute(route) {
 }
 
 function onSearch() {
-  const context = { ...buildAssistantContext(), intent: 'search' }
-  setAssistantContext(context)
-  uni.switchTab({
-    url: '/pages/assistant/chat',
-    success: () => uni.$emit('assistantContext', context),
-  })
+  const ctx = { ...buildCtx(), intent: 'search' }
+  setAssistantContext(ctx)
+  uni.switchTab({ url: '/pages/assistant/chat', success: () => uni.$emit('assistantContext', ctx) })
 }
 </script>
 
 <style lang="scss">
 @import '../../uni.scss';
 
-.page {
+.cy-page {
   min-height: 100vh;
-  background: $u-bg;
+  background: $cy-bg;
+  font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
+  overflow-x: hidden;
 }
 
-.scroll-body {
-  position: relative;
-}
+.cy-scroll { flex: 1; }
 
-// ── 位置 + 天气 ────────────────────────────────────────────
-.loc-row {
+// ── Header ─────────────────────────────────────────────────
+.cy-home-header {
+  background: #fff;
+  padding: 20rpx 36rpx 20rpx;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 18rpx 32rpx 14rpx;
-  gap: 18rpx;
+  border-bottom: 1rpx solid $cy-border;
 }
 
-.loc-left {
+.cy-hh-left {
   display: flex;
-  align-items: center;
-  gap: 8rpx;
+  flex-direction: column;
+  gap: 16rpx;
   flex: 1;
   min-width: 0;
 }
 
-.loc-pin {
-  width: 28rpx;
-  height: 28rpx;
+.cy-hh-title {
+  font-size: 48rpx;
+  font-weight: 800;
+  color: $cy-green;
+}
+
+.cy-hh-loc {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.cy-hh-loc-text {
+  font-size: 24rpx;
+  font-weight: 500;
+  color: $cy-text;
+}
+
+
+.cy-hh-search {
+  width: 60rpx;
+  height: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.cy-hh-weather {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.cy-weather-icon {
+  width: 36rpx;
+  height: 36rpx;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.loc-text {
-  font-size: 26rpx;
-  color: $u-text;
+.cy-weather-text {
+  font-size: 24rpx;
+  color: $cy-text;
   font-weight: 500;
 }
 
-.loc-right {
+.cy-hh-range {
+  font-size: 24rpx;
+  color: $cy-muted;
+  white-space: nowrap;
+}
+
+// ── 大卡块 ─────────────────────────────────────────────────
+.cy-entry-section-head {
+  padding: 28rpx 28rpx 0;
+  margin-bottom: 20rpx;
+}
+
+.cy-entry-block {
+  margin: 0 28rpx 0;
+  background: $cy-green-ls;
+  border-radius: 32rpx;
+  padding: 28rpx 28rpx 32rpx;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 4rpx;
+  gap: 16rpx;
 }
 
-.weather-line {
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
+.cy-et-subtitle {
+  font-size: 26rpx;
+  color: $cy-text-sub;
+  line-height: 1.4;
+  margin-top: 4rpx;
 }
 
-.weather-icon { font-size: 24rpx; }
-
-.weather-text {
-  font-size: 24rpx;
-  color: $u-text;
-  font-weight: 500;
-}
-
-.radius-text {
-  font-size: 20rpx;
-  color: $u-text-mute;
-}
-
-// ── Mascot card ─────────────────────────────────────────────
-.mascot-card {
-  margin: 14rpx 32rpx 24rpx;
-  background: linear-gradient(135deg, #D7EBE5 0%, #C5E0D6 100%);
-  border-radius: 24rpx;
-  padding: 22rpx 24rpx;
-  display: flex;
-  align-items: center;
-  gap: 18rpx;
-}
-
-.mascot-avatar {
-  width: 80rpx;
-  height: 80rpx;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.mascot-avatar-emoji {
-  font-size: 40rpx;
-  line-height: 1;
-}
-
-.mascot-text { flex: 1; min-width: 0; }
-
-.mascot-title {
-  display: block;
-  font-size: 30rpx;
-  font-weight: 800;
-  color: $u-text;
-  margin-bottom: 4rpx;
-}
-
-.mascot-sub {
-  display: block;
-  font-size: 22rpx;
-  color: $u-text-sub;
+.cy-et-sub {
+  font-size: 26rpx;
+  color: $cy-text-sub;
   line-height: 1.4;
 }
 
-// ── 4 入口 ──────────────────────────────────────────────────
-.entry-grid {
+.cy-entry-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14rpx;
-  padding: 0 32rpx;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+  width: 100%;
 }
 
-.entry-card {
-  border-radius: 20rpx;
-  padding: 22rpx 20rpx 24rpx;
+// ── Sections ───────────────────────────────────────────────
+.cy-section {
+  padding: 28rpx 28rpx 0;
+}
+
+.cy-section-head {
   display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-  min-height: 160rpx;
-  cursor: pointer;
-
-  &.tint-place_index { background: $u-tint-beige; }
-  &.tint-nearby_now  { background: $u-tint-mint; }
-  &.tint-hot_routes  { background: $u-tint-coral; }
-  &.tint-assistant   { background: $u-tint-deep; }
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 20rpx;
 }
 
-.entry-icon-wrap {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 16rpx;
-  background: rgba(255, 255, 255, 0.65);
+.cy-section-title {
+  font-size: 32rpx;
+  font-weight: 800;
+  color: $cy-text;
+}
+
+.cy-section-more {
+  font-size: 26rpx;
+  color: $cy-muted;
+}
+
+// ── 附近地点卡 ─────────────────────────────────────────────
+.cy-nearby-card {
+  background: #fff;
+  border-radius: 32rpx;
+  border: 1rpx solid $cy-border;
+  padding: 0 28rpx 12rpx;
+  overflow: hidden;
+}
+
+.cy-nearby-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 6rpx;
+  gap: 24rpx;
+  padding: 20rpx 0;
 }
 
-.entry-icon {
-  font-size: 28rpx;
-  font-weight: 900;
-  color: $z-primary;
-  line-height: 1;
+.cy-nearby-row--divider {
+  border-top: 1rpx solid $cy-border;
 }
 
-.entry-label {
-  display: block;
-  font-size: 28rpx;
-  font-weight: 800;
-  color: $u-text;
-}
-
-.entry-desc {
-  display: block;
-  font-size: 20rpx;
-  color: $u-text-sub;
-  line-height: 1.35;
-}
-
-// ── 通用 section ───────────────────────────────────────────
-.section {
-  padding: 28rpx 32rpx 0;
-}
-
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 16rpx;
-}
-
-.section-title {
-  font-size: 30rpx;
-  font-weight: 800;
-  color: $u-text;
-}
-
-.section-more {
-  font-size: 22rpx;
-  color: $u-text-mute;
-  cursor: pointer;
-}
-
-// ── POI 横向卡 ──────────────────────────────────────────────
-.poi-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14rpx;
-}
-
-.poi-card {
-  background: $u-bg;
-  border-radius: 18rpx;
-  padding: 14rpx;
-  display: flex;
-  gap: 16rpx;
-  box-shadow: $u-shadow;
-  cursor: pointer;
-}
-
-.poi-thumb {
-  width: 120rpx;
-  height: 120rpx;
-  border-radius: 14rpx;
-  overflow: hidden;
+.cy-nearby-thumb {
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 20rpx;
   flex-shrink: 0;
-  background: $u-bg-soft;
+  background: $cy-green-ls;
+  overflow: hidden;
 }
 
-.poi-thumb-img { width: 100%; height: 100%; }
-
-.poi-content {
+.cy-nearby-body {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
 }
 
-.poi-line1 {
+.cy-nearby-name {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: $cy-text;
+}
+
+.cy-nearby-tags {
+  margin-top: 12rpx;
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  flex-wrap: wrap;
   gap: 12rpx;
 }
 
-.poi-name {
-  font-size: 28rpx;
-  font-weight: 800;
-  color: $u-text;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.cy-nearby-tag {
+  font-size: 24rpx;
+  color: $cy-green;
 }
 
-.poi-dist {
-  font-size: 22rpx;
-  color: $u-text-mute;
+.cy-nearby-right {
+  text-align: right;
   flex-shrink: 0;
+  padding-top: 4rpx;
 }
 
-.poi-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6rpx;
-  margin: 4rpx 0;
-}
-
-.poi-tag {
-  font-size: 18rpx;
-  color: #1A7A73;
-  background: $u-tint-mint;
-  padding: 2rpx 10rpx;
-  border-radius: 6rpx;
-}
-
-.kb-tag {
-  color: $u-text-sub;
-  background: $u-bg-soft;
-}
-
-.poi-line3 {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.poi-cat {
-  font-size: 20rpx;
-  color: $u-text-sub;
-}
-
-.poi-rating {
-  display: flex;
-  align-items: center;
-  gap: 4rpx;
-}
-
-.poi-nav {
-  height: 42rpx;
-  padding: 0 18rpx;
-  border-radius: 21rpx;
-  background: $z-primary;
-  color: $z-card;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20rpx;
-  font-weight: 800;
-  flex-shrink: 0;
-}
-
-.rating-star {
-  color: #F59E0B;
-  font-size: 22rpx;
-  line-height: 1;
-}
-
-.rating-num {
-  font-size: 22rpx;
-  color: $u-text;
+.cy-nearby-dist {
+  display: block;
+  font-size: 26rpx;
+  color: $cy-green;
   font-weight: 600;
 }
 
-// ── 精选路线 横滑 ──────────────────────────────────────────
-.routes-scroll {
-  width: 100%;
-  margin: 0 -32rpx;
-  padding-left: 32rpx;
-}
-
-.routes-row {
+.cy-nearby-rating {
+  margin-top: 16rpx;
   display: flex;
-  gap: 16rpx;
-  padding-right: 32rpx;
-  padding-bottom: 8rpx;
-  white-space: nowrap;
+  align-items: center;
+  gap: 4rpx;
+  justify-content: flex-end;
 }
 
-.route-card {
-  width: 240rpx;
-  flex-shrink: 0;
-  border-radius: 18rpx;
-  background: $u-bg;
-  overflow: hidden;
-  box-shadow: $u-shadow;
-  cursor: pointer;
-  display: inline-block;
-  white-space: normal;
+.cy-nearby-rnum { font-size: 26rpx; color: $cy-text; font-weight: 600; }
+
+// ── 路线卡 ─────────────────────────────────────────────────
+.cy-routes-card {
+  background: #fff;
+  border-radius: 32rpx;
+  border: 1rpx solid $cy-border;
+  padding: 24rpx 28rpx 24rpx;
 }
 
-.route-cover {
-  width: 100%;
-  height: 160rpx;
-  overflow: hidden;
-  background: $u-bg-soft;
+.cy-routes-row {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
 }
 
-.route-img { width: 100%; height: 100%; }
-
-.route-body { padding: 14rpx; }
-
-.route-title {
-  display: block;
-  font-size: 24rpx;
-  font-weight: 800;
-  color: $u-text;
-  line-height: 1.2;
-  margin-bottom: 6rpx;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+// ── Hints ──────────────────────────────────────────────────
+.cy-hint-muted {
+  padding: 32rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: $cy-muted;
 }
 
-.route-meta {
-  font-size: 20rpx;
-  color: $u-text-mute;
-}
-
-// ── Hint / error cards ─────────────────────────────────────
-.hint-card {
-  background: $u-bg-soft;
+.cy-hint-card {
+  background: $cy-green-ls;
   border-radius: 16rpx;
   padding: 24rpx;
   font-size: 24rpx;
-  color: $u-text-sub;
+  color: $cy-text-sub;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16rpx;
   margin-bottom: 16rpx;
-
-  &.mute { color: $u-text-mute; }
 }
 
-.hint-btn {
-  display: inline-flex;
+.cy-hint-actions {
+  display: flex;
   align-items: center;
   justify-content: center;
-  height: 64rpx;
+  gap: 16rpx;
+  flex-wrap: wrap;
+}
+
+.cy-hint-btn {
+  height: 60rpx;
   padding: 0 32rpx;
-  border-radius: 12rpx;
-  background: $z-primary;
+  border-radius: 30rpx;
+  background: $cy-green;
   color: #fff;
   font-size: 24rpx;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cy-hint-btn--ghost {
+  background: #fff;
+  color: $cy-green;
+  border: 1rpx solid $cy-green-line;
 }
 </style>

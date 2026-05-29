@@ -1,15 +1,14 @@
 <template>
-  <view class="page">
-    <u-nav-bar title="附近现在适合去" />
+  <view class="cy-page">
+    <cy-nav-bar title="附近现在适合去" right-icon="search" @right="onSearch" />
 
-    <!-- 筛选 pill -->
-    <scroll-view scroll-x class="filter-scroll" :show-scrollbar="false">
-      <view class="filter-row">
+    <scroll-view scroll-x class="cy-filter-scroll" :show-scrollbar="false">
+      <view class="cy-filter-row">
         <view
           v-for="f in filters"
           :key="f.id"
-          class="filter-pill"
-          :class="{ active: active === f.id }"
+          class="cy-filter-chip"
+          :class="{ 'cy-filter-chip--active': isFilterActive(f.id) }"
           @tap="setFilter(f.id)"
         >
           <text>{{ f.label }}</text>
@@ -17,68 +16,44 @@
       </view>
     </scroll-view>
 
-    <scroll-view
-      scroll-y
-      class="scroll-body"
-      :style="{ paddingBottom: safeBottom }"
-      :show-scrollbar="false"
-    >
-      <view v-if="loading && !pois.length" class="hint">正在加载附近推荐…</view>
-      <view v-else-if="locationError" class="state-card">
-        <text class="state-title">需要开启定位</text>
-        <text class="state-sub">允许位置权限后系统才会推荐真实可去的地点</text>
-        <view class="state-btn" @tap="reload">重新定位</view>
+    <scroll-view scroll-y class="cy-scroll" :style="{ paddingBottom: safeBottom }" :show-scrollbar="false">
+      <view v-if="loading && !pois.length" class="cy-hint-muted"><text>正在加载附近推荐…</text></view>
+      <view v-else-if="locationError" class="cy-state-card">
+        <text class="cy-state-title">需要开启定位</text>
+        <text class="cy-state-sub">允许位置权限后系统才会推荐真实可去的地点</text>
+        <view class="cy-state-btn" @tap="reload">重新定位</view>
       </view>
-      <view v-else-if="!visiblePois.length" class="hint">该筛选下暂无匹配地点</view>
+      <view v-else-if="!visiblePois.length && !loading" class="cy-hint-muted"><text>该筛选下暂无匹配地点</text></view>
 
-      <view class="poi-list">
-        <view
+      <view class="cy-poi-list">
+        <cy-place-card
           v-for="poi in visiblePois"
           :key="poi.id"
-          class="poi-card"
+          :name="poi.name"
+          :distance="poi.distance"
+          :desc="poi.reason || poi.category || ''"
+          :image="poiThumb(poi)"
+          :rating="ratingFor(poi)"
+          :tags="poi.tags || []"
           @tap="goPoi(poi.id)"
-        >
-          <view class="poi-thumb">
-            <image
-              :src="poiThumb(poi)"
-              class="poi-thumb-img"
-              mode="aspectFill"
-              lazy-load
-              @error="onPoiImageError(poi)"
-            />
-          </view>
-          <view class="poi-content">
-            <view class="poi-line1">
-              <text class="poi-name">{{ poi.name }}</text>
-              <text class="poi-dist">{{ poi.distance }}</text>
-            </view>
-            <text class="poi-reason">{{ poi.reason || poi.category || '' }}</text>
-            <view class="poi-line3">
-              <view class="poi-tags">
-                <text
-                  v-for="tag in (poi.tags || []).slice(0, 3)"
-                  :key="tag"
-                  class="poi-tag"
-                >{{ tag }}</text>
-              </view>
-              <view class="poi-rating">
-                <text class="rating-star">★</text>
-                <text class="rating-num">{{ ratingFor(poi) }}</text>
-              </view>
-            </view>
-          </view>
-        </view>
+          @img-error="onPoiImageError(poi)"
+        />
       </view>
     </scroll-view>
+
+    <ZTabBar current="home" />
   </view>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { api } from '../../api/mock.js'
+import { api } from '../../api/index.js'
 import { poiImage } from '../../api/assets.js'
 import { useCityStore } from '../../store/city.js'
-import UNavBar from '../../components/UNavBar.vue'
+import { setAssistantContext } from '../../api/storage.js'
+import CyNavBar from '../../components/cy/cy-nav-bar.vue'
+import CyPlaceCard from '../../components/cy/cy-place-card.vue'
+import ZTabBar from '../../components/ZTabBar.vue'
 
 const cityStore = useCityStore()
 const safeBottom = ref('40rpx')
@@ -95,60 +70,36 @@ const active = ref('all')
 const pois = ref([])
 const loading = ref(false)
 const locationError = ref(false)
-const brokenPoiImages = ref({})
+const brokenPoi = ref({})
 
-function parseDistanceKm(text) {
+function parseDistKm(text) {
   if (!text) return Number.POSITIVE_INFINITY
-  const s = String(text).trim().toLowerCase()
-  const m = s.match(/([0-9.]+)\s*(km|m|公里|米)?/)
+  const m = String(text).match(/([0-9.]+)\s*(km|m|公里|米)?/)
   if (!m) return Number.POSITIVE_INFINITY
   const n = parseFloat(m[1])
-  const unit = m[2] || ''
-  if (unit === 'm' || unit === '米') return n / 1000
-  return n
-}
-
-function tagsContain(poi, kw) {
-  return (poi.tags || []).some(t => String(t).includes(kw))
-}
-
-function categoryIndoor(poi) {
-  const c = (poi.category || '') + ''
-  return ['博物馆', '商场', '书店', '展馆', '室内', '美术馆', '科技馆', '咖啡', '影院'].some(k => c.includes(k))
+  return /^m|米$/i.test(m[2] || '') ? n / 1000 : n
 }
 
 const visiblePois = computed(() => {
   let arr = [...pois.value]
-  if (active.value === 'nearest') {
-    arr.sort((a, b) => parseDistanceKm(a.distance) - parseDistanceKm(b.distance))
-  } else if (active.value === 'free') {
-    arr = arr.filter(p => tagsContain(p, '免费') || tagsContain(p, '免门票'))
-  } else if (active.value === 'indoor') {
-    arr = arr.filter(p => tagsContain(p, '室内') || categoryIndoor(p))
-  } else if (active.value === 'recommend') {
-    arr = arr.filter(p => (p.score ?? 0) >= 60)
-  }
+  if (active.value === 'nearest') return arr.sort((a, b) => parseDistKm(a.distance) - parseDistKm(b.distance))
+  if (active.value === 'free')    return arr.filter(p => (p.tags || []).some(t => /免费|免门票/.test(t)))
+  if (active.value === 'indoor')  return arr.filter(p => (p.tags || []).some(t => /室内/.test(t)) || /博物|商场|书店|展馆|影院|咖啡/.test(p.category || ''))
+  if (active.value === 'recommend') return arr.filter(p => (p.score ?? 0) >= 60)
   return arr
 })
 
-function setFilter(id) {
-  if (active.value === id) return
-  active.value = id
+function isFilterActive(id) {
+  return active.value === id || (active.value === 'all' && id === 'recommend')
 }
-
+function setFilter(id) { active.value = id }
 function ratingFor(p) {
   if (p.rating) return Number(p.rating).toFixed(1)
-  const seed = (p.id ?? 0) % 10
-  return (4.3 + seed / 20).toFixed(1)
+  return (4.3 + ((p.id ?? 0) % 10) / 20).toFixed(1)
 }
-
-function poiThumb(poi) {
-  return poiImage(poi, brokenPoiImages.value[poi?.id])
-}
-
+function poiThumb(poi) { return poiImage(poi, brokenPoi.value[poi?.id]) }
 function onPoiImageError(poi) {
-  if (!poi?.id) return
-  brokenPoiImages.value = { ...brokenPoiImages.value, [poi.id]: true }
+  if (poi?.id) brokenPoi.value = { ...brokenPoi.value, [poi.id]: true }
 }
 
 async function reload() {
@@ -157,20 +108,14 @@ async function reload() {
   try {
     let coords = cityStore.coords
     if (!coords?.lat) {
-      coords = await new Promise((resolve, reject) => {
+      const r = await new Promise((resolve, reject) => {
         uni.getLocation({ type: 'gcj02', success: resolve, fail: reject })
-      }).then(r => {
-        cityStore.setCoords(r.latitude, r.longitude)
-        return cityStore.coords
       })
+      cityStore.setCoords(r.latitude, r.longitude)
+      coords = cityStore.coords
     }
-
-    const feed = await api.getHomeFeed({
-      lat: coords.lat,
-      lng: coords.lng,
-      city: cityStore.current,
-      intent: 'nearby_now',
-    })
+    const city = cityStore.source === 'default' ? cityStore.current : ''
+    const feed = await api.getHomeFeed({ lat: coords.lat, lng: coords.lng, city, intent: 'nearby_now' })
     if (feed?.location?.city) cityStore.setFromLocation(feed.location.city)
     pois.value = (feed.nearby_now || []).filter(p => p.nav_ready && p.lat != null && p.lng != null)
   } catch (_) {
@@ -182,15 +127,24 @@ async function reload() {
 }
 
 function goPoi(id) {
-  const lat = cityStore.coords?.lat
-  const lng = cityStore.coords?.lng
-  uni.navigateTo({ url: `/pages/poi/detail?id=${id}&lat=${lat || ''}&lng=${lng || ''}` })
+  uni.navigateTo({ url: `/pages/poi/detail?id=${id}&lat=${cityStore.coords?.lat || ''}&lng=${cityStore.coords?.lng || ''}` })
+}
+
+function onSearch() {
+  const context = {
+    city: cityStore.current,
+    lat: cityStore.coords?.lat ?? '',
+    lng: cityStore.coords?.lng ?? '',
+    intent: 'nearby_search',
+  }
+  setAssistantContext(context)
+  uni.switchTab({ url: '/pages/assistant/chat', success: () => uni.$emit('assistantContext', context) })
 }
 
 onMounted(() => {
   try {
     const sys = uni.getSystemInfoSync()
-    safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
+    safeBottom.value = (Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 84) + 'px'
   } catch (_) {}
   reload()
 })
@@ -199,206 +153,91 @@ onMounted(() => {
 <style lang="scss">
 @import '../../uni.scss';
 
-.page {
+.cy-page {
   min-height: 100vh;
-  background: $u-bg;
+  background: $cy-bg;
+  font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
 }
 
-.filter-scroll {
+.cy-filter-scroll {
   width: 100%;
-  padding: 10rpx 0 14rpx;
-  background: $u-bg;
+  background: #fff;
+  border-bottom: 1rpx solid $cy-border;
 }
 
-.filter-row {
+.cy-filter-row {
   display: flex;
-  gap: 8rpx;
-  padding: 0 24rpx;
+  gap: 12rpx;
+  padding: 16rpx 24rpx;
   white-space: nowrap;
 }
 
-.filter-pill {
+.cy-filter-chip {
   flex-shrink: 0;
-  height: 56rpx;
-  padding: 0 24rpx;
-  border-radius: 28rpx;
-  display: flex;
+  height: 60rpx;
+  padding: 0 36rpx;
+  border-radius: 16rpx;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  background: transparent;
-  font-size: 24rpx;
-  color: $u-text-sub;
+  background: #F4F5F6;
+  font-size: 28rpx;
+  color: $cy-text-sub;
   font-weight: 500;
 
-  &.active {
-    background: $u-bg;
-    color: $z-primary;
+  &--active {
+    background: $cy-green-l;
+    color: $cy-green;
     font-weight: 700;
-    box-shadow: $u-shadow;
   }
 }
 
-.scroll-body {
-  position: relative;
-  background: $u-bg-soft;
-}
-
-.hint {
+.cy-hint-muted {
   text-align: center;
-  color: $u-text-mute;
-  font-size: 24rpx;
+  color: $cy-muted;
+  font-size: 26rpx;
   padding: 60rpx 0;
 }
 
-.state-card {
+.cy-state-card {
   margin: 40rpx 24rpx 0;
-  background: $u-bg;
-  border-radius: 18rpx;
-  padding: 36rpx 28rpx;
+  background: $cy-card;
+  border-radius: 20rpx;
+  padding: 40rpx 28rpx;
   text-align: center;
-  box-shadow: $u-shadow;
+  box-shadow: $cy-shadow;
 }
 
-.state-title {
+.cy-state-title {
   display: block;
-  font-size: 28rpx;
+  font-size: 30rpx;
   font-weight: 800;
-  color: $u-text;
+  color: $cy-text;
   margin-bottom: 8rpx;
 }
 
-.state-sub {
+.cy-state-sub {
   display: block;
-  font-size: 22rpx;
-  color: $u-text-sub;
+  font-size: 24rpx;
+  color: $cy-text-sub;
   margin-bottom: 24rpx;
 }
 
-.state-btn {
+.cy-state-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 64rpx;
-  padding: 0 32rpx;
-  border-radius: 12rpx;
-  background: $z-primary;
+  height: 72rpx;
+  padding: 0 40rpx;
+  border-radius: 36rpx;
+  background: $cy-green;
   color: #fff;
-  font-size: 24rpx;
+  font-size: 26rpx;
   font-weight: 700;
 }
 
-// ── POI 卡（同 scenes/result.vue）────────────────────────
-.poi-list {
+.cy-poi-list {
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
-  padding: 16rpx 24rpx 32rpx;
-}
-
-.poi-card {
-  background: $u-bg;
-  border-radius: 18rpx;
-  padding: 14rpx;
-  display: flex;
-  gap: 16rpx;
-  box-shadow: $u-shadow;
-}
-
-.poi-thumb {
-  width: 140rpx;
-  height: 140rpx;
-  border-radius: 14rpx;
-  overflow: hidden;
-  background: $u-bg-soft;
-  flex-shrink: 0;
-}
-
-.poi-thumb-img { width: 100%; height: 100%; }
-
-.poi-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 4rpx 0;
-}
-
-.poi-line1 {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12rpx;
-}
-
-.poi-name {
-  font-size: 28rpx;
-  font-weight: 800;
-  color: $u-text;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.poi-dist {
-  font-size: 22rpx;
-  color: $u-text-mute;
-  flex-shrink: 0;
-}
-
-.poi-reason {
-  font-size: 22rpx;
-  color: $u-text-sub;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-}
-
-.poi-line3 {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12rpx;
-}
-
-.poi-tags {
-  display: flex;
-  gap: 6rpx;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.poi-tag {
-  font-size: 18rpx;
-  color: #1A7A73;
-  background: $u-tint-mint;
-  padding: 2rpx 10rpx;
-  border-radius: 6rpx;
-  flex-shrink: 0;
-}
-
-.poi-rating {
-  display: flex;
-  align-items: center;
-  gap: 4rpx;
-  flex-shrink: 0;
-}
-
-.rating-star {
-  color: #F59E0B;
-  font-size: 22rpx;
-  line-height: 1;
-}
-
-.rating-num {
-  font-size: 22rpx;
-  color: $u-text;
-  font-weight: 600;
+  padding: 20rpx 28rpx 32rpx;
 }
 </style>

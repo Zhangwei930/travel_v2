@@ -1,64 +1,55 @@
 <template>
-  <view class="page">
-    <!-- 导航栏 -->
-    <view class="nav-bar" :style="{ paddingTop: statusBarH + 'px' }">
-      <view class="nav-back" @tap="goBack">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="15 18 9 12 15 6"/>
-        </svg>
-      </view>
-      <text class="nav-title">设置</text>
-      <view style="width:44px"/>
-    </view>
+  <view class="cy-page">
+    <cy-nav-bar title="设置" />
 
-    <scroll-view scroll-y class="scroll-body">
+    <scroll-view scroll-y class="cy-scroll-body">
       <!-- 定位与城市 -->
-      <view class="group-label">定位与城市</view>
-      <view class="group-card">
-        <view class="row">
-          <text class="row-label">当前城市</text>
-          <text class="row-value">{{ cityStore.current }}</text>
+      <text class="cy-group-label">定位与城市</text>
+      <view class="cy-group-card">
+        <view class="cy-row">
+          <text class="cy-row-label">当前城市</text>
+          <text class="cy-row-value">{{ cityStore.current }}</text>
         </view>
-        <view class="divider"/>
-        <view class="row" @tap="relocate">
-          <text class="row-label">重新定位</text>
-          <text class="row-arrow" :class="{ spinning: locating }">{{ locating ? '定位中…' : '›' }}</text>
+        <view class="cy-divider" />
+        <view class="cy-row" @tap="relocate">
+          <text class="cy-row-label">重新定位</text>
+          <text class="cy-row-arrow" :class="{ spinning: locating }">{{ locating ? '定位中…' : '›' }}</text>
         </view>
       </view>
 
       <!-- 缓存 -->
-      <view class="group-label">缓存管理</view>
-      <view class="group-card">
-        <view class="row" @tap="onClearCache">
-          <text class="row-label">清除缓存</text>
-          <text class="row-sub">{{ cacheSize }}</text>
+      <text class="cy-group-label">缓存管理</text>
+      <view class="cy-group-card">
+        <view class="cy-row" @tap="onClearCache">
+          <text class="cy-row-label">清除缓存</text>
+          <text class="cy-row-sub">{{ cacheSize }}</text>
         </view>
       </view>
 
       <!-- 关于 -->
-      <view class="group-label">关于</view>
-      <view class="group-card">
-        <view class="row">
-          <text class="row-label">版本</text>
-          <text class="row-value">v1.0.0</text>
+      <text class="cy-group-label">关于</text>
+      <view class="cy-group-card">
+        <view class="cy-row">
+          <text class="cy-row-label">版本</text>
+          <text class="cy-row-value">v1.0.0</text>
         </view>
-        <view class="divider"/>
-        <view class="row" @tap="showPrivacy">
-          <text class="row-label">隐私政策</text>
-          <text class="row-arrow">›</text>
+        <view class="cy-divider" />
+        <view class="cy-row" @tap="showPrivacy">
+          <text class="cy-row-label">隐私政策</text>
+          <text class="cy-row-arrow">›</text>
         </view>
-        <view class="divider"/>
-        <view class="row" @tap="uni.navigateTo({ url: '/pages/saved/feedback' })">
-          <text class="row-label">意见反馈</text>
-          <text class="row-arrow">›</text>
+        <view class="cy-divider" />
+        <view class="cy-row" @tap="uni.navigateTo({ url: '/pages/saved/feedback' })">
+          <text class="cy-row-label">意见反馈</text>
+          <text class="cy-row-arrow">›</text>
         </view>
       </view>
 
       <!-- 账号 -->
-      <view v-if="userProfile" class="group-label">账号</view>
-      <view v-if="userProfile" class="group-card">
-        <view class="row logout-row" @tap="onLogout">
-          <text class="row-label danger">退出登录</text>
+      <text v-if="userProfile" class="cy-group-label">账号</text>
+      <view v-if="userProfile" class="cy-group-card">
+        <view class="cy-row" @tap="onLogout">
+          <text class="cy-row-label cy-danger">退出登录</text>
         </view>
       </view>
     </scroll-view>
@@ -69,21 +60,19 @@
 import { ref, onMounted } from 'vue'
 import { useCityStore } from '../../store/city.js'
 import { getUserProfile, clearUserProfile, clearTempCache } from '../../api/storage.js'
+import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 
 const cityStore   = useCityStore()
-const statusBarH  = ref(44)
 const locating    = ref(false)
 const cacheSize   = ref('已清理')
 const userProfile = ref(null)
 
 onMounted(() => {
-  try { statusBarH.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {}
   userProfile.value = getUserProfile()
   estimateCache()
 })
 
 function estimateCache() {
-  // 粗估：读两个缓存 key 的 JSON 长度
   try {
     const keys = ['zhoumi_home_feed', 'zhoumi_assistant_context']
     let bytes = 0
@@ -136,8 +125,6 @@ function onLogout() {
   })
 }
 
-function goBack() { uni.navigateBack() }
-
 function showPrivacy() {
   uni.showModal({
     title: '隐私政策',
@@ -150,34 +137,44 @@ function showPrivacy() {
 <style lang="scss">
 @import '../../uni.scss';
 
-.page { min-height: 100vh; background: $u-bg-soft; }
-
-.nav-bar {
-  background: #fff; display: flex; align-items: center; justify-content: space-between;
-  padding-left: 16px; padding-right: 16px; padding-bottom: 12px; border-bottom: 1rpx solid $u-line;
+.cy-page {
+  min-height: 100vh;
+  background: $cy-bg;
+  font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
 }
-.nav-back { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
-.nav-title { font-size: 32rpx; font-weight: 700; color: $u-text; }
 
-.scroll-body { padding-bottom: 60rpx; }
+.cy-scroll-body { padding-bottom: 60rpx; }
 
-.group-label {
-  font-size: 22rpx; color: $u-text-mute; font-weight: 500;
-  padding: 32rpx 32rpx 12rpx; text-transform: uppercase; letter-spacing: .05em;
+.cy-group-label {
+  display: block;
+  font-size: 22rpx;
+  color: $cy-muted;
+  font-weight: 500;
+  padding: 32rpx 32rpx 12rpx;
+  letter-spacing: .05em;
 }
-.group-card {
-  background: #fff; margin: 0 0 8rpx;
-  border-top: 1rpx solid $u-line; border-bottom: 1rpx solid $u-line;
-}
-.divider { height: 1rpx; background: $u-line; margin: 0 32rpx; }
 
-.row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 32rpx 32rpx; min-height: 96rpx; box-sizing: border-box;
+.cy-group-card {
+  background: #fff;
+  margin: 0 0 8rpx;
+  border-top: 1rpx solid $cy-border;
+  border-bottom: 1rpx solid $cy-border;
 }
-.row-label  { font-size: 30rpx; color: $u-text; }
-.row-value  { font-size: 28rpx; color: $u-text-mute; }
-.row-sub    { font-size: 26rpx; color: $u-text-mute; }
-.row-arrow  { font-size: 36rpx; color: $u-text-mute; transition: opacity .2s; }
-.danger     { color: #EF4444; }
+
+.cy-divider { height: 1rpx; background: $cy-border; margin: 0 32rpx; }
+
+.cy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 32rpx;
+  min-height: 96rpx;
+  box-sizing: border-box;
+}
+
+.cy-row-label  { font-size: 30rpx; color: $cy-text; }
+.cy-row-value  { font-size: 28rpx; color: $cy-muted; }
+.cy-row-sub    { font-size: 26rpx; color: $cy-muted; }
+.cy-row-arrow  { font-size: 36rpx; color: $cy-muted; }
+.cy-danger     { color: #EF4444; }
 </style>

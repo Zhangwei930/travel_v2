@@ -97,3 +97,33 @@ $pad-sec:    36rpx;   // 18px
 $serif: 'Noto Serif SC', 'Songti SC', serif;
 $sans:  'Noto Sans SC', -apple-system, 'PingFang SC', sans-serif;
 $mono:  'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+
+// ─── 出游助手 新 UI Design Tokens (cy-*) ─────────────────────
+$cy-green:      #1A8870;   // 主绿
+$cy-green-d:    #0F5E4D;   // 深绿·标题·CTA
+$cy-green-l:    #E8F2EC;   // 浅绿·标签底·块背景
+$cy-green-ls:   #F2F7F4;   // 极浅绿·卡片背景
+$cy-green-line: #D5E8DD;   // 绿色边线
+$cy-bg:         #FAFBFA;   // 页面背景
+$cy-card:       #FFFFFF;   // 卡片背景
+$cy-text:       #1F2A2A;   // 正文·标题
+$cy-text-sub:   #4B5563;   // 次要正文
+$cy-muted:      #9CA3AF;   // 占位/辅助文字
+$cy-border:     #EFEFEF;   // 分割线·卡片边
+$cy-star:       #F5B940;   // 评分星标
+$cy-tag-blue-bg:#E5F0FA;   // 蓝色标签底
+$cy-tag-blue:   #4A90C8;   // 蓝色标签文字
+$cy-tag-pink-bg:#FCE8EC;   // 粉色标签底
+$cy-tag-pink:   #C8597A;   // 粉色标签文字
+
+// 分类卡片专用底色
+$cy-cat-green:  #DCEDE0;   // 亲子/Citywalk/钓鱼
+$cy-cat-pink:   #FAE2E7;   // 情侣/拍照
+$cy-cat-blue:   #E2EBF7;   // 雨天室内
+$cy-cat-yellow: #FAEED0;   // 低预算
+$cy-cat-purple: #E5E2EF;   // 夜游
+$cy-cat-beige:  #F0E8DC;   // 适老休闲
+
+// cy- 阴影
+$cy-shadow:     0 2rpx 12rpx rgba(0,0,0,0.06);
+$cy-shadow-lg:  0 4rpx 20rpx rgba(0,0,0,0.08);

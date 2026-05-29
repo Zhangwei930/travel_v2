@@ -20,3 +20,5 @@ server/*.db
 server/.env
 
 *.DS_Store
+design_handoff_chuyou/screens/
+design_handoff_chuyou/source/assets/

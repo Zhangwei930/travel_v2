@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>出游助手 — 12屏 UI 设计</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #F2F4F2;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "palt" 1;
+    letter-spacing: 0.01em;
+  }
+  /* Refine Chinese typography across the design — looser leading, subtler weight */
+  .phone-typo, .phone-typo * {
+    font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif !important;
+  }
+  *::-webkit-scrollbar { display: none; }
+  * { scrollbar-width: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="chuyou-tokens.jsx"></script>
+<script type="text/babel" src="chuyou-screens-a.jsx"></script>
+<script type="text/babel" src="chuyou-screens-b.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+const SCREENS = [
+  { id:'01-splash',     label:'01 启动页',     Comp: ScreenSplash },
+  { id:'02-locating',   label:'02 定位中',     Comp: ScreenLocating },
+  { id:'03-home',       label:'03 首页',       Comp: ScreenHome },
+  { id:'04-categories', label:'04 按场所索引', Comp: ScreenCategoryIndex },
+  { id:'05-cat-list',   label:'05 亲子游列表', Comp: ScreenCategoryList },
+  { id:'06-nearby',     label:'06 附近适合去', Comp: ScreenNearbyList },
+  { id:'07-routes',     label:'07 精选路线',   Comp: ScreenRoutes },
+  { id:'08-route-d',    label:'08 路线详情',   Comp: ScreenRouteDetail },
+  { id:'09-place',      label:'09 地点详情',   Comp: ScreenPlaceDetail },
+  { id:'10-chat-1',     label:'10 咨询·开场',  Comp: ScreenChatEmpty },
+  { id:'11-chat-2',     label:'11 咨询·推荐',  Comp: ScreenChatReply },
+  { id:'12-profile',    label:'12 我的',       Comp: ScreenProfile },
+];
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="screens-all" title="全部 12 屏" subtitle="按用户流顺序排布">
+        {SCREENS.map(s => (
+          <DCArtboard key={s.id} id={s.id} label={s.label} width={393} height={852} bg="#fff">
+            <s.Comp/>
+          </DCArtboard>
+        ))}
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

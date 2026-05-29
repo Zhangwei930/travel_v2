@@ -1,8 +1,6 @@
 <script>
 export default {
-  onLaunch() {
-    console.log('[周密出游] App onLaunch')
-  },
+  onLaunch() {},
   onShow() {},
   onHide() {},
 }

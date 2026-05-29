@@ -5,9 +5,7 @@
     <view class="u-navbar-row">
       <view class="u-navbar-left">
         <view v-if="showBack" class="u-icon-btn" @tap="onBack">
-          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="20" viewBox="0 0 11 20" fill="none">
-            <path d="M9 1.5L2 10l7 8.5" stroke="#1A2E2C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <CyIcon name="back-dark" :size="44" />
         </view>
       </view>
       <view class="u-navbar-title">
@@ -15,22 +13,13 @@
       </view>
       <view class="u-navbar-right">
         <view v-if="rightIcon === 'search'" class="u-icon-btn" @tap="onRight">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="#1A2E2C" stroke-width="2"/>
-            <path d="M20 20l-3.5-3.5" stroke="#1A2E2C" stroke-width="2" stroke-linecap="round"/>
-          </svg>
+          <CyIcon name="search-dark" :size="40" />
         </view>
         <view v-else-if="rightIcon === 'share'" class="u-icon-btn" @tap="onRight">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M14 4h6v6M10 14L20 4M20 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1h5" stroke="#1A2E2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <CyIcon name="share-dark" :size="40" />
         </view>
         <view v-else-if="rightIcon === 'more'" class="u-icon-btn" @tap="onRight">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <circle cx="5"  cy="12" r="1.6" fill="#1A2E2C"/>
-            <circle cx="12" cy="12" r="1.6" fill="#1A2E2C"/>
-            <circle cx="19" cy="12" r="1.6" fill="#1A2E2C"/>
-          </svg>
+          <CyIcon name="more-dark" :size="40" />
         </view>
       </view>
     </view>
@@ -39,6 +28,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import CyIcon from './cy/cy-icon.vue'
 
 defineProps({
   title: { type: String, default: '' },

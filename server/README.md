@@ -33,7 +33,7 @@ cd ..
 PYTHONPATH=server python -m unittest discover -s server/tests -p 'test_*.py'
 ```
 
-首次启动会自动建表并灌入与前端 `src/api/mock.js` 对齐的种子数据（5 个 POI、4 条路线、7 条 FAQ）。
+首次启动会自动建表并灌入与前端 API 契约对齐的种子数据（5 个 POI、4 条路线、7 条 FAQ）。
 
 ## 接口一览
 

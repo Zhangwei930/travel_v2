@@ -6,6 +6,8 @@ from app.schemas import RecommendPoiOut, RouteCardOut, RouteStopOut
 from app.services import map_provider
 from app.taxonomy import SCENE_LABELS
 
+MAX_ROUTE_STOP_KM = 15.0
+
 
 def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
     if not requested_city:
@@ -16,10 +18,13 @@ def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
 def _stop_from_poi(poi: PoiIndex, origin: tuple[float, float]) -> RouteStopOut | None:
     if poi.lat is None or poi.lng is None:
         return None
+    km = map_provider.haversine_km(origin[0], origin[1], poi.lat, poi.lng)
+    if km > MAX_ROUTE_STOP_KM:
+        return None
     return RouteStopOut(
         id=poi.id,
         name=poi.name,
-        distance=map_provider.distance_text(origin, poi.lat, poi.lng),
+        distance=map_provider.format_distance(km),
         reason=poi.category or "",
         lat=poi.lat,
         lng=poi.lng,
@@ -62,6 +67,8 @@ def _template_routes(
             stop = _stop_from_poi(poi, origin)
             if stop:
                 stops.append(stop)
+        if not stops:
+            continue
         cards.append(RouteCardOut(
             id=route.id,
             title=route.title,
@@ -112,10 +119,10 @@ def build_home_routes(
     recommended: list[RecommendPoiOut],
     limit: int = 3,
 ) -> list[RouteCardOut]:
-    cards = _template_routes(db, city, scene, origin, limit)
+    cards = _dynamic_routes(recommended, scene, limit)
     if len(cards) < limit:
         existing_ids = {str(card.id) for card in cards}
-        for card in _dynamic_routes(recommended, scene, limit):
+        for card in _template_routes(db, city, scene, origin, limit):
             if str(card.id) not in existing_ids:
                 cards.append(card)
             if len(cards) >= limit:

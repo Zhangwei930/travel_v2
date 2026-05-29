@@ -1,3 +1,5 @@
+import { BASE_URL } from './request.js'
+
 const KNOWN_POI_IMAGES = [
   { pattern: /成都博物馆|四川博物院|金沙遗址|武侯祠|杜甫草堂|博物馆/, image: '/static/images/poi-museum-a.svg' },
   { pattern: /人民公园|浣花溪|望江楼|青城山|都江堰|公园/, image: '/static/images/poi-park-a.svg' },
@@ -10,6 +12,7 @@ const POI_GROUPS = {
   park: [
     '/static/images/poi-park-a.svg',
     '/static/images/poi-park-b.svg',
+    '/static/images/poi-park-c.svg',
   ],
   museum: [
     '/static/images/poi-museum-a.svg',
@@ -17,6 +20,7 @@ const POI_GROUPS = {
   ],
   indoor: [
     '/static/images/poi-indoor-a.svg',
+    '/static/images/poi-indoor-b.svg',
     '/static/images/poi-city-a.svg',
   ],
   food: [
@@ -25,10 +29,12 @@ const POI_GROUPS = {
   ],
   water: [
     '/static/images/poi-water-a.svg',
+    '/static/images/poi-water-b.svg',
     '/static/images/poi-park-b.svg',
   ],
   city: [
     '/static/images/poi-city-a.svg',
+    '/static/images/poi-city-b.svg',
     '/static/images/poi-museum-b.svg',
   ],
   default: [
@@ -38,9 +44,9 @@ const POI_GROUPS = {
 }
 
 const ROUTE_IMAGES = {
-  short: '/static/images/route-short-a.svg',
-  half: '/static/images/route-half-a.svg',
-  day: '/static/images/route-day-a.svg',
+  short: ['/static/images/route-short-a.svg', '/static/images/route-short-b.svg'],
+  half: ['/static/images/route-half-a.svg', '/static/images/route-half-b.svg'],
+  day: ['/static/images/route-day-a.svg', '/static/images/route-day-b.svg'],
 }
 
 function textOf(item) {
@@ -75,7 +81,6 @@ export function poiImage(item, forceFallback = false) {
   if (!forceFallback && item?.img) return item.img
   // 无照片但有坐标 → 用后端代理的 AMap 静态地图作为缩略图
   if (!forceFallback && item?.lat && item?.lng) {
-    const { BASE_URL } = require('./request.js')
     if (BASE_URL) return `${BASE_URL}/api/poi/map-thumb?lat=${item.lat}&lng=${item.lng}`
   }
   const text = textOf(item)
@@ -88,7 +93,10 @@ export function poiImage(item, forceFallback = false) {
 export function routeImage(route, forceFallback = false) {
   if (!forceFallback && (route?.img || route?.cover_image)) return route.img || route.cover_image
   const duration = String(route?.duration || '')
-  if (/一日|全天|一天|day/i.test(duration)) return ROUTE_IMAGES.day
-  if (/半日|半天|3\s*小时|4\s*小时/i.test(duration)) return ROUTE_IMAGES.half
-  return ROUTE_IMAGES.short
+  const images = /一日|全天|一天|day/i.test(duration)
+    ? ROUTE_IMAGES.day
+    : /半日|半天|3\s*小时|4\s*小时/i.test(duration)
+    ? ROUTE_IMAGES.half
+    : ROUTE_IMAGES.short
+  return images[imageIndex(route, images.length)]
 }

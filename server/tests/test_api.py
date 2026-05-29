@@ -1,6 +1,7 @@
 import os
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 DB_PATH = Path("/private/tmp/zhoumi_test_api.sqlite")
 try:
@@ -17,6 +18,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import FaqKnowledge, KbPending, PoiIndex, TravelKnowledge, TravelRoute  # noqa: E402
+from app.schemas import RecommendPoiOut  # noqa: E402
+from app.services import map_provider, weather_provider  # noqa: E402
+from app.services.route_builder import build_home_routes  # noqa: E402
 
 
 class ApiSmokeTest(unittest.TestCase):
@@ -109,6 +113,141 @@ class ApiSmokeTest(unittest.TestCase):
     def test_home_feed_requires_user_location(self):
         response = self.client.get("/api/home/feed", params={"city": "成都"})
         self.assertEqual(response.status_code, 422)
+
+    def test_home_feed_uses_reversed_city_before_stale_client_city(self):
+        original_reverse = map_provider.amap_reverse_city
+        try:
+            map_provider.amap_reverse_city = lambda lat, lng: "成都"
+            response = self.client.get(
+                "/api/home/feed",
+                params={"lat": 30.5728, "lng": 104.0668, "city": "广州"},
+            )
+        finally:
+            map_provider.amap_reverse_city = original_reverse
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["location"]["city"], "成都")
+
+    def test_home_feed_searches_around_15km(self):
+        captured = {}
+        original_search = map_provider.amap_search_around
+
+        def fake_search(lat, lng, radius_km=5.0, types=map_provider.AMAP_DEFAULT_TYPES):
+            captured["radius_km"] = radius_km
+            return []
+
+        try:
+            map_provider.amap_search_around = fake_search
+            response = self.client.get(
+                "/api/home/feed",
+                params={"lat": 30.5728, "lng": 104.0668, "city": "成都"},
+            )
+        finally:
+            map_provider.amap_search_around = original_search
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured.get("radius_km"), 15.0)
+
+    def test_weather_uses_amap_live_api_when_key_configured(self):
+        calls = []
+        original_key = weather_provider.settings.amap_key
+        original_httpx = getattr(weather_provider, "httpx", None)
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "status": "1",
+                    "lives": [{
+                        "weather": "小雨",
+                        "temperature": "28",
+                        "winddirection": "东南",
+                        "windpower": "3",
+                    }],
+                }
+
+        def fake_get(url, params, timeout):
+            calls.append((url, params, timeout))
+            return FakeResponse()
+
+        try:
+            weather_provider.settings.amap_key = "test-amap-key"
+            weather_provider.httpx = SimpleNamespace(get=fake_get)
+            weather = weather_provider.get_weather("成都")
+        finally:
+            weather_provider.settings.amap_key = original_key
+            if original_httpx is None:
+                try:
+                    delattr(weather_provider, "httpx")
+                except AttributeError:
+                    pass
+            else:
+                weather_provider.httpx = original_httpx
+
+        self.assertEqual(weather.source, "amap")
+        self.assertEqual(weather.temp, 28)
+        self.assertEqual(weather.cond, "小雨")
+        self.assertEqual(weather.icon, "rain")
+        self.assertIn("东南风", weather.wind)
+        self.assertTrue(calls)
+
+    def test_home_routes_prefer_destinations_inside_15km(self):
+        db = SessionLocal()
+        try:
+            far_poi = PoiIndex(
+                provider="stub",
+                name="成都远距离路线点",
+                city="成都",
+                category="景点",
+                lat=31.2,
+                lng=104.7,
+                source="test",
+            )
+            db.add(far_poi)
+            db.flush()
+            db.add(TravelRoute(
+                title="成都远距离模板路线",
+                city="成都",
+                scene="family",
+                scene_label="亲子",
+                duration="一日",
+                budget_level="中",
+                poi_ids=[far_poi.id],
+                route_text="远距离路线不应出现在 15 公里首页推荐里",
+                review_status="approved",
+            ))
+            db.commit()
+
+            recommended = [
+                RecommendPoiOut(
+                    id=f"near-{i}",
+                    name=f"15公里内推荐点{i}",
+                    category="景点",
+                    distance=f"{i + 1}.0km",
+                    reason="附近可去",
+                    lat=30.5728 + i * 0.001,
+                    lng=104.0668 + i * 0.001,
+                    nav_ready=True,
+                )
+                for i in range(5)
+            ]
+            routes = build_home_routes(
+                db,
+                city="成都",
+                scene="family",
+                origin=(30.5728, 104.0668),
+                recommended=recommended,
+                limit=3,
+            )
+        finally:
+            db.close()
+
+        self.assertGreaterEqual(len(routes), 1)
+        self.assertTrue(str(routes[0].id).startswith("dynamic_"))
+        stop_names = [stop.name for route in routes for stop in route.stops]
+        self.assertNotIn("成都远距离路线点", stop_names)
 
     def test_plan_aligned_api_aliases_are_available(self):
         db = SessionLocal()

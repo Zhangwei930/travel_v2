@@ -1,194 +1,139 @@
 <template>
-  <view class="page">
-    <u-nav-bar title="出游助手" right-icon="search" />
-
-    <!-- 位置栏 -->
-    <view class="loc-bar">
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
-        <path d="M12 22s-8-7-8-13a8 8 0 1116 0c0 6-8 13-8 13z" fill="#0D4F4A"/>
-        <circle cx="12" cy="9" r="3" fill="#FFFFFF"/>
-      </svg>
-      <text class="loc-bar-text">{{ locLabel }}</text>
+  <view class="cy-page">
+    <!-- Header -->
+    <view class="cy-chat-header" :style="{ paddingTop: statusBarH + 'px' }">
+      <text class="cy-chat-title">出游助手</text>
+      <view class="cy-chat-loc">
+        <CyIcon name="pin-outline-green" :size="26" />
+        <text class="cy-chat-loc-text">{{ locLabel }}</text>
+      </view>
     </view>
 
     <!-- 消息区 -->
     <scroll-view
       scroll-y
-      class="msg-scroll"
+      class="cy-msg-scroll"
       :style="{ height: msgScrollH + 'px' }"
       :scroll-top="scrollTop"
       :show-scrollbar="false"
     >
-      <view class="msg-list">
-        <view v-for="(msg, i) in messages" :key="i" class="msg-row" :class="msg.role">
+      <view class="cy-msg-list">
+        <view v-for="(msg, i) in messages" :key="i" class="cy-msg-row" :class="msg.role">
+
           <!-- Bot 头像 -->
-          <view v-if="msg.role === 'bot'" class="bot-avatar-wrap">
-            <view class="bot-avatar">🤖</view>
+          <view v-if="msg.role === 'bot'" class="cy-bot-avatar">
+            <cy-robot-mascot :size="72" />
           </view>
-          
-          <view class="bubble-wrap" :class="msg.role">
-            <view v-if="msg.text" class="bubble" :class="msg.role">
-              <text>{{ msg.text }}</text>
+
+          <view class="cy-bubble-wrap" :class="msg.role">
+            <!-- 图片气泡 -->
+            <view v-if="msg.image" class="cy-bubble cy-bubble--user cy-bubble--img">
+              <image :src="msg.image" class="cy-msg-image" mode="widthFix" />
             </view>
 
-            <!-- Bot 快捷回复 - 2列网格 -->
-            <view v-if="msg.chips && msg.role === 'bot'" class="chips-grid">
+            <!-- 文字气泡 -->
+            <view v-if="msg.text" class="cy-bubble" :class="'cy-bubble--' + msg.role">
+              <text user-select>{{ msg.text }}</text>
+            </view>
+
+            <!-- 建议气泡 chips（仅欢迎消息） -->
+            <view v-if="msg.chips && msg.isWelcome" class="cy-chips-list">
               <view
-                v-for="(c, ci) in msg.chips"
+                v-for="c in msg.chips"
                 :key="c"
-                class="quick-chip"
-                :class="{ 'chip-full': msg.chips.length % 2 !== 0 && ci === msg.chips.length - 1 }"
+                class="cy-quick-chip"
                 @tap="sendMsg(c)"
               >{{ c }}</view>
             </view>
+          </view>
 
-            <!-- 数据源 -->
-            <view v-if="msg.sources && msg.role === 'bot'" class="sources-row">
-              <view v-for="s in msg.sources" :key="s.k" class="source-badge">
-                <text class="source-k">[{{ s.k }}]</text>
-                <text class="source-v">{{ s.v }}</text>
-              </view>
-            </view>
-
-            <!-- 推荐卡片：地点 -->
-            <view v-if="msg.destinations?.length" class="assistant-cards">
-              <view
-                v-for="poi in msg.destinations"
-                :key="poi.id"
-                class="assistant-poi"
-                @tap="goPoi(poi.id, poi)"
-              >
-                <view class="poi-card-inner">
-                  <image
-                    :src="destinationThumb(poi)"
-                    class="assistant-poi-thumb"
-                    mode="aspectFill"
-                    lazy-load
-                    @error="onDestinationImageError(poi)"
-                  />
-                  <view class="poi-card-text">
-                    <text class="poi-card-name">{{ poi.name }}</text>
-                    <text class="poi-card-meta">{{ poi.category || '景点' }} · {{ poi.distance }}</text>
-                    <text class="poi-card-reason">{{ poi.reason }}</text>
-                  </view>
-                  <view class="poi-card-nav" @tap.stop="openNav(poi)">
-                    <text>导航</text>
-                  </view>
-                </view>
-              </view>
-            </view>
-
-            <!-- 推荐卡片：路线 -->
-            <view v-if="msg.routes?.length" class="assistant-cards">
-              <view
-                v-for="route in msg.routes"
-                :key="route.id"
-                class="assistant-route"
-                @tap="openRoute(route)"
-              >
-                <view class="route-card-inner">
-                  <image
-                    :src="assistantRouteThumb(route)"
-                    class="assistant-route-thumb"
-                    mode="aspectFill"
-                    lazy-load
-                    @error="onAssistantRouteImageError(route)"
-                  />
-                  <view class="route-card-text">
-                    <text class="route-card-title">{{ route.title }}</text>
-                    <text class="route-card-meta">{{ route.duration }} · {{ route.stops?.length || 0 }}站</text>
-                  </view>
-                </view>
-              </view>
+          <!-- 用户头像 -->
+          <view v-if="msg.role === 'user'" class="cy-user-avatar">
+            <image v-if="userAvatar" :src="userAvatar" class="cy-user-avatar-img" mode="aspectFill" />
+            <view v-else class="cy-user-avatar-default">
+              <CyIcon name="user-muted" :size="48" />
             </view>
           </view>
         </view>
 
         <!-- 打字中 -->
-        <view v-if="typing" class="msg-row bot">
-          <view class="bot-avatar-wrap">
-            <view class="bot-avatar">🤖</view>
+        <view v-if="typing" class="cy-msg-row bot">
+          <view class="cy-bot-avatar">
+            <cy-robot-mascot :size="72" />
           </view>
-          <view class="bubble bot typing-bubble">
-            <view class="typing-dots">
-              <view class="dot" /><view class="dot" /><view class="dot" />
+          <view class="cy-bubble cy-bubble--bot cy-typing-bubble">
+            <view class="cy-dots">
+              <view class="cy-dot" /><view class="cy-dot" /><view class="cy-dot" />
             </view>
           </view>
         </view>
       </view>
     </scroll-view>
 
-    <!-- 底部输入区 -->
-    <view class="composer" :style="{ bottom: tabBarHeight + 'px' }">
-      <!-- 输入栏 -->
-      <view class="input-bar">
-        <view class="input-wrap">
-          <input
-            class="msg-input"
-            v-model="inputText"
-            placeholder="问问附近适合去哪..."
-            placeholder-style="color: #9CA3AF;"
-            :adjust-position="true"
-            confirm-type="send"
-            @confirm="sendMsg(inputText)"
-          />
-          <view class="input-actions">
-            <text class="input-emoji">😊</text>
-            <view class="send-btn" :class="{ active: inputText.length > 0 }" @tap="sendMsg(inputText)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="#0D4F4A" stroke-width="2"/>
-                <text x="12" y="17" text-anchor="middle" font-size="14" fill="#0D4F4A">+</text>
-              </svg>
-            </view>
-          </view>
+    <!-- 输入区 -->
+    <view class="cy-composer" :style="{ bottom: tabBarH + 'px' }">
+      <view class="cy-input-bar">
+        <input
+          class="cy-msg-input"
+          v-model="inputText"
+          placeholder="问问附近适合去哪..."
+          placeholder-style="color:#9CA3AF;"
+          :adjust-position="true"
+          confirm-type="send"
+          @confirm="sendMsg(inputText)"
+        />
+        <view class="cy-input-tool" @tap="chooseImage">
+          <CyIcon name="camera" :size="44" />
+        </view>
+        <view class="cy-send-btn" :class="{ 'cy-send-btn--active': inputText.length > 0 }" @tap="sendMsg(inputText)">
+          <CyIcon name="send-green" :size="40" />
         </view>
       </view>
     </view>
-
-    <z-tab-bar current="assistant" />
   </view>
 </template>
 
 <script setup>
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import ZTabBar from '../../components/ZTabBar.vue'
-import UNavBar from '../../components/UNavBar.vue'
-import { api } from '../../api/mock.js'
+import { api } from '../../api/index.js'
 import { streamAsk } from '../../api/stream.js'
 import { useCityStore } from '../../store/city.js'
-import { getAssistantContext } from '../../api/storage.js'
+import { getAssistantContext, getUserProfile } from '../../api/storage.js'
 import { poiImage, routeImage } from '../../api/assets.js'
+import { setTabBarSelected } from '../../api/tabbar.js'
+import CyRobotMascot from '../../components/cy/cy-robot-mascot.vue'
+import CyIcon from '../../components/cy/cy-icon.vue'
 
 const cityStore = useCityStore()
+const statusBarH  = ref(44)
+const tabBarH     = ref(80)
+const msgScrollH  = ref(400)
+const scrollTop   = ref(0)
+const inputText   = ref('')
+const typing      = ref(false)
+const brokenDest  = ref({})
+const brokenRouteImgs = ref({})
+const HISTORY_KEY = 'zhoumi_assistant_messages'
 
-const statusBarHeight = ref(44)
-const tabBarHeight    = ref(80)
-const msgScrollH      = ref(400)
-const scrollTop       = ref(0)
-const inputText       = ref('')
-const typing          = ref(false)
-const brokenDestinationImages = ref({})
-const brokenRouteImages = ref({})
-const HISTORY_KEY     = 'zhoumi_assistant_messages'
+const userAvatar = computed(() => getUserProfile()?.avatar || '')
+
 const locLabel = computed(() => {
   const city = cityStore.current || chatContext.value.city || ''
-  return city ? `${city}·附近` : '当前位置附近'
+  if (!city) return '当前位置附近'
+  return cityStore.landmark ? `${city} · ${cityStore.landmark}附近` : `${city} · 附近`
 })
 
-const chatContext     = ref({
+const chatContext = ref({
   city: cityStore.current,
   lat: cityStore.coords?.lat ?? null,
   lng: cityStore.coords?.lng ?? null,
-  weather: '',
-  time_slot: '',
-  scene: '',
-  intent: '',
+  weather: '', time_slot: '', scene: '', intent: '',
 })
 
 const defaultMessages = [
   { role: 'bot', text: '你好呀！我是出游助手，有什么可以帮你的吗？' },
-  { role: 'bot', chips: ['带孩子2小时内去哪玩？', '雨天室内去哪？', '夜晚适合去哪里？', '低预算去哪？', '附近适合约会吗？'] },
+  { role: 'bot', chips: ['带孩子2小时内去哪玩？', '雨天室内去哪？', '夜晚适合去哪里？', '低预算去哪？', '附近适合约会吗？'], isWelcome: true },
 ]
 
 function loadMessages() {
@@ -211,16 +156,7 @@ function applyChatContext(options = {}) {
   const lat = Number(source.lat) || cityStore.coords?.lat || null
   const lng = Number(source.lng) || cityStore.coords?.lng || null
   const city = source.city || cityStore.current
-
-  if (lat && lng) cityStore.setCoords(lat, lng)
-  
-  chatContext.value = {
-    city, lat, lng,
-    weather: source.weather || '',
-    time_slot: source.time_slot || '',
-    scene: source.scene || '',
-    intent: source.intent || '',
-  }
+  chatContext.value = { city, lat, lng, weather: source.weather || '', time_slot: source.time_slot || '', scene: source.scene || '', intent: source.intent || '' }
 }
 
 onLoad((options) => { applyChatContext(options) })
@@ -229,37 +165,80 @@ onMounted(() => {
   try {
     const sys = uni.getSystemInfoSync()
     const statusH = sys.statusBarHeight || 44
-    const safeB   = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
-    const winH    = sys.windowHeight || 600
-    statusBarHeight.value = statusH
-    const tabH = safeB + 56
-    tabBarHeight.value = tabH
+    const safeB = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
+    const winH = sys.windowHeight || 600
+    statusBarH.value = statusH
+    tabBarH.value = safeB + 56
     const navH = 44 + statusH
-    const composerH = 160 // Estimated
-    msgScrollH.value = winH - navH - tabH - composerH
+    const composerH = 120
+    msgScrollH.value = winH - navH - tabBarH.value - composerH
   } catch (_) {}
   uni.$on('assistantContext', applyChatContext)
   scrollToBottom()
 })
 
-onShow(() => { applyChatContext() })
+onShow(() => { setTabBarSelected(2); applyChatContext() })
 onUnmounted(() => { uni.$off('assistantContext', applyChatContext) })
+
+function chooseImage() {
+  uni.chooseMedia({
+    count: 1,
+    mediaType: ['image'],
+    sourceType: ['album', 'camera'],
+    success: (res) => {
+      const tempPath = res.tempFiles[0]?.tempFilePath
+      if (!tempPath) return
+      // 显示图片气泡
+      messages.value.push({ role: 'user', image: tempPath })
+      scrollToBottom()
+      typing.value = true
+      // 读取 base64 发送给后端视觉接口
+      const fs = uni.getFileSystemManager()
+      fs.readFile({
+        filePath: tempPath,
+        encoding: 'base64',
+        success: (fileRes) => {
+          const botMsg = { role: 'bot', text: '', sources: null, chips: null, destinations: null, routes: null }
+          messages.value.push(botMsg)
+          api.askVision({
+            image_base64: fileRes.data,
+            city: chatContext.value.city,
+            lat: chatContext.value.lat,
+            lng: chatContext.value.lng,
+          }).then(r => {
+            botMsg.text = r?.answer || '图片已收到，暂时无法识别，请用文字描述你看到的地点。'
+            botMsg.sources = r?.sources || null
+            botMsg.destinations = r?.destinations || null
+          }).catch(() => {
+            botMsg.text = '图片识别失败，请用文字描述你想去的地方。'
+          }).finally(() => {
+            typing.value = false
+            scrollToBottom()
+          })
+        },
+        fail: () => {
+          typing.value = false
+          messages.value.push({ role: 'bot', text: '图片读取失败，请重试。' })
+          scrollToBottom()
+        },
+      })
+    },
+  })
+}
 
 function sendMsg(text) {
   const q = text?.trim()
   if (!q) return
-
   const history = messages.value
     .filter(m => m.text && (m.role === 'user' || m.role === 'bot'))
     .slice(-12)
     .map(m => ({ role: m.role, text: m.text }))
-
   messages.value.push({ role: 'user', text: q })
   inputText.value = ''
   typing.value = true
   scrollToBottom()
 
-  const botMsg = { role: 'bot', text: '', sources: null, chips: null, destinations: null, routes: null }
+  const botMsg = { role: 'bot', text: '' }
   let started = false
 
   const payload = {
@@ -274,46 +253,23 @@ function sendMsg(text) {
   }
 
   streamAsk(payload, {
-    onMeta: (m) => {
+    onMeta: () => {
       typing.value = false
       messages.value.push(botMsg)
-      botMsg.sources = m.sources
-      botMsg.chips = m.chips
-      botMsg.destinations = m.destinations
-      botMsg.routes = m.routes
       started = true
       scrollToBottom()
     },
-    onText: (t) => {
-      botMsg.text = t
-      scrollToBottom()
-    },
-    onChunk: (t) => {
-      botMsg.text = (botMsg.text || '') + t
-      scrollToBottom()
-    },
-    onDone: () => {
-      typing.value = false
-      if (!started) fallbackNonStream(payload)
-    },
-    onError: () => {
-      typing.value = false
-      if (!started) fallbackNonStream(payload)
-    },
+    onText: (t) => { botMsg.text = t; scrollToBottom() },
+    onChunk: (t) => { botMsg.text = (botMsg.text || '') + t; scrollToBottom() },
+    onDone: () => { typing.value = false; if (!started) fallbackNonStream(payload) },
+    onError: () => { typing.value = false; if (!started) fallbackNonStream(payload) },
   })
 }
 
 function fallbackNonStream(payload) {
   api.ask(payload)
     .then((res) => {
-      messages.value.push({
-        role: 'bot',
-        text: res.text,
-        sources: res.sources,
-        chips: res.chips,
-        destinations: res.destinations,
-        routes: res.routes,
-      })
+      messages.value.push({ role: 'bot', text: res.text })
       scrollToBottom()
     })
     .catch(() => {
@@ -322,9 +278,7 @@ function fallbackNonStream(payload) {
     })
 }
 
-function scrollToBottom() {
-  nextTick(() => { scrollTop.value = 99999 })
-}
+function scrollToBottom() { nextTick(() => { scrollTop.value = 99999 }) }
 
 function goPoi(id, poi) {
   try { uni.setStorageSync('currentPoiPreview', poi) } catch (_) {}
@@ -333,11 +287,7 @@ function goPoi(id, poi) {
 
 function openNav(poi) {
   if (poi.lat && poi.lng) {
-    uni.openLocation({
-      latitude: Number(poi.lat),
-      longitude: Number(poi.lng),
-      name: poi.name,
-    })
+    uni.openLocation({ latitude: Number(poi.lat), longitude: Number(poi.lng), name: poi.name })
   }
 }
 
@@ -346,308 +296,296 @@ function openRoute(route) {
   uni.navigateTo({ url: '/pages/routes/detail' })
 }
 
-function imageKey(item) {
-  return String(item?.id ?? item?.name ?? item?.title ?? '')
-}
-
-function destinationThumb(poi) {
-  return poiImage(poi, Boolean(brokenDestinationImages.value[imageKey(poi)]))
-}
-
-function onDestinationImageError(poi) {
-  brokenDestinationImages.value = {
-    ...brokenDestinationImages.value,
-    [imageKey(poi)]: true,
-  }
-}
-
-function assistantRouteThumb(route) {
-  return routeImage(route, Boolean(brokenRouteImages.value[imageKey(route)]))
-}
-
-function onAssistantRouteImageError(route) {
-  brokenRouteImages.value = {
-    ...brokenRouteImages.value,
-    [imageKey(route)]: true,
-  }
-}
+function imgKey(item) { return String(item?.id ?? item?.name ?? item?.title ?? '') }
+function destinationThumb(poi) { return poiImage(poi, Boolean(brokenDest.value[imgKey(poi)])) }
+function onDestImgError(poi) { brokenDest.value = { ...brokenDest.value, [imgKey(poi)]: true } }
+function assistantRouteThumb(route) { return routeImage(route, Boolean(brokenRouteImgs.value[imgKey(route)])) }
+function onRouteImgError(route) { brokenRouteImgs.value = { ...brokenRouteImgs.value, [imgKey(route)]: true } }
 </script>
 
 <style lang="scss">
 @import '../../uni.scss';
 
-.page {
+.cy-page {
   min-height: 100vh;
-  background: $u-bg;
+  background: $cy-bg;
+  font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
 }
 
-// ── 位置栏 ──────────────────────────────────────────────────
-.loc-bar {
+// ── Header ─────────────────────────────────────────────────
+.cy-chat-header {
+  background: #fff;
+  padding: 12rpx 28rpx 16rpx;
+  border-bottom: 1rpx solid $cy-border;
+}
+
+.cy-chat-title {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 800;
+  color: $cy-green-d;
+}
+
+.cy-chat-loc {
   display: flex;
   align-items: center;
-  gap: 8rpx;
-  padding: 10rpx 32rpx;
-  background: #FFFFFF;
-  border-bottom: 1rpx solid $u-line;
+  gap: 4rpx;
+  margin-top: 4rpx;
 }
 
-.loc-bar-text {
+.cy-chat-loc-text {
   font-size: 24rpx;
-  color: $u-text-sub;
+  color: $cy-green;
+  font-weight: 500;
 }
 
-.msg-scroll {
-  background: $u-bg;
-}
+// ── 消息区 ─────────────────────────────────────────────────
+.cy-msg-scroll { flex: 1; }
 
-.msg-list {
-  padding: 32rpx 28rpx;
+.cy-msg-list {
   display: flex;
   flex-direction: column;
-  gap: 32rpx;
+  padding: 16rpx 0 24rpx;
 }
 
-.msg-row {
+.cy-msg-row {
   display: flex;
-  gap: 20rpx;
-  
+  align-items: flex-end;
+  gap: 12rpx;
+  padding: 0 24rpx;
+  margin-bottom: 20rpx;
+
   &.user { flex-direction: row-reverse; }
 }
 
-.bot-avatar-wrap {
+.cy-bot-avatar {
   width: 72rpx;
   height: 72rpx;
   flex-shrink: 0;
 }
 
-.bot-avatar {
-  width: 100%;
-  height: 100%;
+.cy-bubble-wrap {
+  max-width: 75%;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.cy-bubble {
+  border-radius: 24rpx;
+  padding: 20rpx 24rpx;
+  font-size: 28rpx;
+  line-height: 1.6;
+
+  &--bot {
+    background: #F0EDE6;
+    color: $cy-text;
+    border-bottom-left-radius: 6rpx;
+  }
+
+  &--user {
+    background: $cy-green-l;
+    color: $cy-green-d;
+    border-bottom-right-radius: 6rpx;
+  }
+
+  &--img {
+    padding: 0;
+    overflow: hidden;
+    background: transparent;
+  }
+}
+
+.cy-msg-image {
+  width: 360rpx;
+  max-width: 100%;
+  border-radius: 24rpx;
+  border-bottom-right-radius: 6rpx;
+  display: block;
+}
+
+// ── 建议 chips ──────────────────────────────────────────────
+.cy-chips-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.cy-quick-chip {
+  background: $cy-green-l;
+  color: $cy-green-d;
   border-radius: 20rpx;
-  background: $u-bg-soft;
+  padding: 14rpx 24rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+// ── 数据源 ──────────────────────────────────────────────────
+.cy-sources-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+
+.cy-source-badge {
+  background: #F3F4F6;
+  border-radius: 8rpx;
+  padding: 4rpx 12rpx;
+  font-size: 20rpx;
+  color: $cy-muted;
+}
+
+// ── 推荐卡 ─────────────────────────────────────────────────
+.cy-dest-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  background: #F0EDE6;
+  border-radius: 28rpx;
+  padding: 24rpx;
+}
+
+.cy-dest-card,
+.cy-route-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 16rpx;
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+  cursor: pointer;
+}
+
+.cy-dest-thumb {
+  width: 112rpx;
+  height: 100rpx;
+  border-radius: 12rpx;
+  flex-shrink: 0;
+  background: $cy-green-ls;
+}
+
+.cy-dest-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.cy-dest-name  { font-size: 28rpx; font-weight: 700; color: $cy-text; }
+.cy-dest-meta  { font-size: 22rpx; color: $cy-muted; }
+.cy-dest-reason {
+  font-size: 22rpx;
+  color: $cy-text-sub;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cy-dest-nav {
+  padding: 14rpx 28rpx;
+  border-radius: 16rpx;
+  background: $cy-green-d;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 40rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
-.bubble-wrap {
-  max-width: 80%;
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-  
-  &.user { align-items: flex-end; }
-}
+// ── 打字中 ──────────────────────────────────────────────────
+.cy-typing-bubble { padding: 24rpx 32rpx; }
 
-.bubble {
-  padding: 24rpx 28rpx;
-  font-size: 28rpx;
-  line-height: 1.6;
-  
-  &.bot {
-    background: $u-bg;
-    color: $u-text;
-    border-radius: 4rpx 28rpx 28rpx 28rpx;
-    box-shadow: $u-shadow;
-  }
-  
-  &.user {
-    background: $z-primary;
-    color: #fff;
-    border-radius: 28rpx 4rpx 28rpx 28rpx;
-    box-shadow: 0 4rpx 12rpx rgba(13, 79, 74, 0.15);
-  }
-}
-
-// Typing
-.typing-dots {
+.cy-dots {
   display: flex;
   gap: 8rpx;
   align-items: center;
-  height: 32rpx;
 }
 
-.dot {
-  width: 10rpx;
-  height: 10rpx;
-  border-radius: 5rpx;
-  background: $u-text-mute;
-  animation: dotBounce 1.4s infinite;
+.cy-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 6rpx;
+  background: $cy-muted;
+  animation: cy-dot-bounce 1.4s infinite ease-in-out;
+
   &:nth-child(2) { animation-delay: 0.2s; }
   &:nth-child(3) { animation-delay: 0.4s; }
 }
 
-@keyframes dotBounce {
-  0%, 80%, 100% { transform: scale(1); opacity: 0.4; }
-  40% { transform: scale(1.3); opacity: 1; }
+@keyframes cy-dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-8rpx); }
 }
 
-// Chips 网格
-.chips-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-}
-
-.quick-chip {
-  flex: 1 1 calc(50% - 6rpx);
-  max-width: calc(50% - 6rpx);
-  padding: 18rpx 24rpx;
-  background: $u-bg;
-  border: 1rpx solid rgba(0,0,0,0.08);
-  border-radius: 16rpx;
-  font-size: 26rpx;
-  color: $u-text-sub;
-  box-sizing: border-box;
-
-  &.chip-full {
-    flex: 1 1 100%;
-    max-width: 100%;
-  }
-}
-
-// Sources
-.sources-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-}
-
-.source-badge {
-  background: $u-bg-soft;
-  padding: 4rpx 12rpx;
-  border-radius: 6rpx;
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-}
-
-.source-k { font-size: 18rpx; color: $z-primary; font-weight: 700; }
-.source-v { font-size: 18rpx; color: $u-text-mute; }
-
-// Cards
-.assistant-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-  width: 100%;
-}
-
-.assistant-poi, .assistant-route {
-  background: $u-bg;
-  border-radius: 24rpx;
-  box-shadow: $u-shadow;
+// ── 用户头像 ───────────────────────────────────────────────
+.cy-user-avatar {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 36rpx;
   overflow: hidden;
-  border: 1rpx solid $u-line;
-}
-
-.poi-card-inner {
-  padding: 24rpx;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16rpx;
-}
-
-.assistant-poi-thumb {
-  width: 112rpx;
-  height: 112rpx;
-  border-radius: 16rpx;
   flex-shrink: 0;
-  background: $u-bg-soft;
-}
-
-.poi-card-text { flex: 1; min-width: 0; }
-.poi-card-name { display: block; font-size: 28rpx; font-weight: 800; color: $u-text; margin-bottom: 4rpx; }
-.poi-card-meta { display: block; font-size: 22rpx; color: $u-text-mute; margin-bottom: 8rpx; }
-.poi-card-reason { display: block; font-size: 24rpx; color: $u-text-sub; line-height: 1.4; }
-
-.poi-card-nav {
-  height: 60rpx;
-  padding: 0 24rpx;
-  background: $u-tint-mint;
-  color: $z-primary;
-  border-radius: 30rpx;
-  display: flex;
-  align-items: center;
-  font-size: 24rpx;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.route-card-inner {
-  padding: 24rpx;
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
-
-.assistant-route-thumb {
-  width: 112rpx;
-  height: 88rpx;
-  border-radius: 16rpx;
-  flex-shrink: 0;
-  background: $u-bg-soft;
-}
-
-.route-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
-.route-card-title { font-size: 28rpx; font-weight: 800; color: $u-text; }
-.route-card-meta { font-size: 22rpx; color: $u-text-mute; }
-
-// Composer
-.composer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  background: #fff;
-  border-top: 1rpx solid $u-line;
-  z-index: 100;
-}
-
-.input-bar {
-  padding: 16rpx 28rpx 28rpx;
-}
-
-.input-wrap {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  background: $u-bg-soft;
-  border-radius: 48rpx;
-  padding: 14rpx 16rpx 14rpx 32rpx;
-}
-
-.msg-input {
-  flex: 1;
-  font-size: 28rpx;
-  color: $u-text;
-}
-
-.input-actions {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
-
-.input-emoji {
-  font-size: 40rpx;
-  line-height: 1;
-}
-
-.send-btn {
-  width: 60rpx;
-  height: 60rpx;
-  border-radius: 30rpx;
-  background: transparent;
+  background: #F3F4F6;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: $z-primary;
+}
 
-  &.active {
-    background: $z-primary;
-    box-shadow: 0 4rpx 12rpx rgba(13, 79, 74, 0.2);
-  }
+.cy-user-avatar-img { width: 100%; height: 100%; }
+.cy-user-avatar-default { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+
+// ── 输入区 ─────────────────────────────────────────────────
+.cy-composer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  background: rgba(255,255,255,0.97);
+  backdrop-filter: blur(12px);
+  padding: 12rpx 24rpx;
+  border-top: 1rpx solid $cy-border;
+  z-index: 98;
+}
+
+.cy-input-bar {
+  background: #F3F4F6;
+  border-radius: 50rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 16rpx;
+  gap: 8rpx;
+}
+
+.cy-msg-input {
+  flex: 1;
+  height: 100%;
+  font-size: 28rpx;
+  color: $cy-text;
+  background: transparent;
+  padding: 0 8rpx;
+}
+
+.cy-input-tool {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cy-send-btn {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  transition: background 0.15s;
+
+  &--active { background: $cy-green-l; }
 }
 </style>

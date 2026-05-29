@@ -24,6 +24,7 @@ HOME_ENTRIES = [
 ]
 
 ASSISTANT_CHIPS = ["2小时内去哪", "带孩子去哪", "雨天室内去哪", "低预算去哪"]
+NEARBY_RADIUS_KM = 15.0
 
 
 def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
@@ -49,7 +50,7 @@ def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None
     raw = map_provider.amap_search_around(
         lat,
         lng,
-        radius_km=5.0,
+        radius_km=NEARBY_RADIUS_KM,
         types=map_provider.amap_types_for_scene(scene),
     )
     parsed = [p for p in (map_provider.parse_amap_poi(item) for item in raw) if p and p["name"]]
@@ -158,11 +159,13 @@ def _build_home_feed(
     scene: str | None,
     db: Session,
 ) -> HomeFeedOut:
+    _regeo = map_provider.amap_reverse_geocode(lat, lng)
     resolved_city = (
-        map_provider.normalize_city(city)
-        or map_provider.amap_reverse_city(lat, lng)
+        _regeo["city"]
+        or map_provider.normalize_city(city)
         or map_provider.nearest_city(lat, lng)
     )
+    landmark = _regeo["landmark"]
     origin = (lat, lng)
     weather = get_weather(resolved_city)
 
@@ -187,7 +190,7 @@ def _build_home_feed(
     )
 
     return HomeFeedOut(
-        location=LocationOut(city=resolved_city, lat=lat, lng=lng),
+        location=LocationOut(city=resolved_city, lat=lat, lng=lng, landmark=landmark),
         weather=weather,
         entries=HOME_ENTRIES,
         scene_index=SCENES,

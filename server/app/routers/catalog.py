@@ -16,6 +16,17 @@ from app.taxonomy import SCENES
 router = APIRouter(prefix="/api", tags=["catalog"])
 
 
+def _dist_km(item: PoiOut) -> float:
+    d = item.dist or ""
+    if d.endswith("km"):
+        try: return float(d[:-2])
+        except ValueError: pass
+    if d.endswith("m"):
+        try: return float(d[:-1]) / 1000
+        except ValueError: pass
+    return 9999.0
+
+
 def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
     if not requested_city:
         return True
@@ -41,14 +52,12 @@ def _poi_out(poi: PoiIndex, kn: TravelKnowledge | None, origin, dist_text: str |
     )
 
 
-def _amap_nearby(lat: float, lng: float, city: str | None, db: Session) -> list[PoiOut] | None:
-    """高德实时附近搜索：查 POI → 写入 poi_index 短期缓存 → 组装返回（方案 4.3）。"""
-    raw = map_provider.amap_search_around(lat, lng)
+def _parse_amap_to_poiout(raw: list, lat: float, lng: float, city: str | None, db: Session) -> list[PoiOut]:
+    """将高德原始 POI 列表解析入库并返回 PoiOut。"""
     parsed = [p for p in (map_provider.parse_amap_poi(x) for x in raw) if p and p["name"]]
     if not parsed:
-        return None
+        return []
 
-    # 按名称匹配已有知识库内容，匹配上的用精编知识，否则用高德基础信息
     kn_by_name: dict[str, TravelKnowledge] = {}
     for kn in db.query(TravelKnowledge).all():
         poi = db.get(PoiIndex, kn.poi_id) if kn.poi_id else None
@@ -81,11 +90,9 @@ def _amap_nearby(lat: float, lng: float, city: str | None, db: Session) -> list[
             db.flush()
         kn = kn_by_name.get(p["name"])
         dist = map_provider.format_distance(p["distance_m"] / 1000) if p["distance_m"] is not None else "—"
-
         img_url = (kn.cover_image if kn else None) or row.image or ""
         if not img_url and row.lat and row.lng and settings.amap_key:
             img_url = f"https://restapi.amap.com/v3/staticmap?location={row.lng},{row.lat}&zoom=15&size=400x400&markers=mid,,A:{row.lng},{row.lat}&key={settings.amap_key}"
-
         out.append(PoiOut(
             id=row.id,
             no=(kn.display_no if kn else None) or f"NO.{row.id:03d}",
@@ -100,6 +107,13 @@ def _amap_nearby(lat: float, lng: float, city: str | None, db: Session) -> list[
         ))
     db.commit()
     return out
+
+
+def _amap_nearby(lat: float, lng: float, city: str | None, db: Session) -> list[PoiOut] | None:
+    """高德实时附近搜索（无场景，默认类型）。"""
+    raw = map_provider.amap_search_around(lat, lng)
+    result = _parse_amap_to_poiout(raw, lat, lng, city, db)
+    return result if result else None
 
 
 @router.get("/weather", response_model=WeatherOut)
@@ -149,11 +163,22 @@ def poi_list(
     keyword: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    # 带定位、无场景/关键词筛选时，走高德实时附近搜索
-    if lat is not None and lng is not None and not scene and not keyword:
-        nearby = _amap_nearby(lat, lng, city, db)
-        if nearby is not None:
-            return nearby
+    # 有坐标时走高德实时搜索
+    if lat is not None and lng is not None and not keyword:
+        types = map_provider.amap_types_for_scene(scene) if scene else map_provider.AMAP_DEFAULT_TYPES
+        radius = map_provider.SCENE_RADIUS_KM.get(scene or "", 15.0)
+        scene_kw = map_provider.SCENE_KEYWORDS.get(scene or "", "")
+        raw = []
+        if scene_kw:
+            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types, keyword=scene_kw)
+        if not raw:
+            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types)
+        # 场景搜索无结果时，用默认类型兜底（避免只返回2条种子数据）
+        if not raw and scene:
+            raw = map_provider.amap_search_around(lat, lng, radius_km=15.0, types=map_provider.AMAP_DEFAULT_TYPES)
+        amap_results = _parse_amap_to_poiout(raw, lat, lng, city, db) if raw else None
+        if amap_results:
+            return sorted(amap_results, key=lambda p: _dist_km(p))
 
     # 知识库分支：仅取种子/精编 POI（不含高德实时缓存）
     origin = map_provider.resolve_origin(city or settings.default_city, lat, lng)
@@ -179,6 +204,8 @@ def poi_list(
         if keyword and keyword not in poi.name and keyword not in (poi.category or ""):
             continue
         out.append(_poi_out(poi, kn, origin, dist_text=real_dist.get(poi.id)))
+
+    out.sort(key=_dist_km)
     return out
 
 
@@ -199,10 +226,10 @@ def poi_detail(
     people = (kn.suitable_people if kn else None) or []
     weather = (kn.suitable_weather if kn else None) or []
     fit_items = [
-        FitItem(icon="👨‍👩‍👧", label="人群", val="·".join(people) or "通用"),
-        FitItem(icon="🌤", label="天气", val="·".join(weather) or "晴天最佳"),
-        FitItem(icon="⏰", label="时段", val=(kn.best_time if kn else None) or "全天"),
-        FitItem(icon="💪", label="强度", val="轻量"),
+        FitItem(icon="people", label="人群", val="·".join(people) or "通用"),
+        FitItem(icon="weather", label="天气", val="·".join(weather) or "晴天最佳"),
+        FitItem(icon="time", label="时段", val=(kn.best_time if kn else None) or "全天"),
+        FitItem(icon="strength", label="强度", val="轻量"),
     ]
     tips_raw = (kn.avoid_tips if kn else None) or ""
     avoid_tips = [t.strip() for t in tips_raw.replace("；", "\n").splitlines() if t.strip()]
@@ -246,6 +273,6 @@ def route_recommend(
         rows = [r for r in rows if _city_matches(r.city, city)]
     if scene:
         matched = [r for r in rows if r.scene == scene]
-        # 该场景无专属路线时回退到全部路线（与前端 mock 行为一致）
+        # 该场景无专属路线时回退到全部路线，保持前端列表可继续浏览。
         rows = matched or rows
     return [_route_out(r) for r in rows]

@@ -1,4 +1,4 @@
-"""请求/响应模型。响应结构与前端 src/api/mock.js 对齐，前端可直接联调。"""
+"""请求/响应模型。响应结构与前端 API 客户端契约保持一致。"""
 from pydantic import BaseModel, Field
 
 
@@ -56,6 +56,7 @@ class LocationOut(BaseModel):
     city: str
     lat: float
     lng: float
+    landmark: str | None = None
 
 
 class HomeEntryOut(BaseModel):
@@ -188,6 +189,13 @@ class AskIn(BaseModel):
     weather: str | None = None
     context: str | None = Field(default=None, description="（兼容旧字段）上一条用户问题")
     history: list[ChatTurn] = Field(default_factory=list, description="最近 N 轮对话，建议传 4-6 条")
+
+
+class VisionAskIn(BaseModel):
+    image_base64: str
+    city: str | None = None
+    lat: float | None = None
+    lng: float | None = None
 
 
 class AskSource(BaseModel):

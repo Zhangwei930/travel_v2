@@ -9,40 +9,13 @@
       @tap="onTap(item)"
     >
       <view class="ztab-icon">
-        <!-- home -->
-        <svg v-if="item.id === 'home'" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H5a1 1 0 01-1-1V9.5z"
-            :stroke="isActive(item) ? '#0D4F4A' : '#8B9594'" stroke-width="2"
-            :fill="isActive(item) ? '#0D4F4A22' : 'none'"/>
-          <path d="M9 21V13h6v8" :stroke="isActive(item) ? '#0D4F4A' : '#8B9594'" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <!-- scenes -->
-        <svg v-else-if="item.id === 'scenes'" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <rect x="3" y="3" width="7" height="7" rx="1" :stroke="isActive(item) ? '#0D4F4A' : '#8B9594'" stroke-width="2" :fill="isActive(item) ? '#0D4F4A22' : 'none'"/>
-          <rect x="14" y="3" width="7" height="7" rx="1" :stroke="isActive(item) ? '#0D4F4A' : '#8B9594'" stroke-width="2"/>
-          <rect x="3" y="14" width="7" height="7" rx="1" :stroke="isActive(item) ? '#0D4F4A' : '#8B9594'" stroke-width="2"/>
-          <rect x="14" y="14" width="7" height="7" rx="1" :stroke="isActive(item) ? '#0D4F4A' : '#8B9594'" stroke-width="2" :fill="isActive(item) ? '#0D4F4A22' : 'none'"/>
-        </svg>
-        <!-- assistant -->
-        <svg v-else-if="item.id === 'assistant'" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <path d="M21 12a8 8 0 01-12.5 6.6L3 20l1.4-5.5A8 8 0 1121 12z"
-            :stroke="isActive(item) ? '#0D4F4A' : '#8B9594'" stroke-width="2"
-            :fill="isActive(item) ? '#0D4F4A22' : 'none'" stroke-linejoin="round"/>
-          <circle cx="8.5" cy="12" r="1.2" :fill="isActive(item) ? '#0D4F4A' : '#8B9594'"/>
-          <circle cx="12" cy="12" r="1.2" :fill="isActive(item) ? '#0D4F4A' : '#8B9594'"/>
-          <circle cx="15.5" cy="12" r="1.2" :fill="isActive(item) ? '#0D4F4A' : '#8B9594'"/>
-        </svg>
-        <!-- profile -->
-        <svg v-else-if="item.id === 'profile'" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="8" r="4" :stroke="isActive(item) ? '#0D4F4A' : '#8B9594'" stroke-width="2" :fill="isActive(item) ? '#0D4F4A22' : 'none'"/>
-          <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" :stroke="isActive(item) ? '#0D4F4A' : '#8B9594'" stroke-width="2" stroke-linecap="round"/>
-        </svg>
+        <CyIcon :name="iconName(item)" :size="48" />
       </view>
 
       <text
         class="ztab-label"
         :style="{
-          color: item.center ? '#8B9594' : (isActive(item) ? '#0D4F4A' : '#8B9594'),
+          color: item.center ? '#9AA3A8' : (isActive(item) ? '#1A8870' : '#9AA3A8'),
           fontWeight: isActive(item) ? '700' : '500',
         }"
       >{{ item.label }}</text>
@@ -52,6 +25,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import CyIcon from './cy/cy-icon.vue'
 
 const props = defineProps({
   current: { type: String, default: 'home' },
@@ -78,6 +52,12 @@ function isActive(item) {
   return props.current === item.id
 }
 
+function iconName(item) {
+  const suffix = isActive(item) ? 'active' : 'muted'
+  const base = item.id === 'assistant' ? 'chat' : item.id
+  return `${base}-${suffix}`
+}
+
 function onTap(item) {
   uni.switchTab({ url: item.path })
 }
@@ -92,10 +72,10 @@ function onTap(item) {
   left: 0;
   right: 0;
   background: rgba(255, 255, 255, 0.98);
-  border-top: 1rpx solid $z-border;
+  border-top: 1rpx solid $cy-border;
   display: flex;
   align-items: flex-end;
-  padding-top: 12rpx;
+  padding-top: 16rpx;
   z-index: 999;
   // backdrop-filter 在低端小程序机型降级
   backdrop-filter: blur(20px);
@@ -107,7 +87,7 @@ function onTap(item) {
   flex-direction: column;
   align-items: center;
   gap: 6rpx;
-  padding-bottom: 8rpx;
+  padding-bottom: 6rpx;
   cursor: pointer;
 
   &.is-center {
@@ -136,15 +116,15 @@ function onTap(item) {
 }
 
 .ztab-icon {
-  width: 44rpx;
-  height: 44rpx;
+  width: 48rpx;
+  height: 48rpx;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .ztab-label {
-  font-size: 20rpx;
+  font-size: 24rpx;
   line-height: 1;
 }
 </style>
