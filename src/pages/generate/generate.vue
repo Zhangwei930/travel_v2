@@ -136,7 +136,7 @@ const statusBarHeight = ref(44)
 const capability = ref(null)  // 后端能力开关：决定显示哪些生成步骤
 
 onMounted(async () => {
-  try { statusBarHeight.value = uni.getSystemInfoSync().statusBarHeight || 44 } catch (_) {
+  try { statusBarHeight.value = uni.getWindowInfo().statusBarHeight || 44 } catch (_) {
     console.warn('getSystemInfoSync failed')
   }
   try { capability.value = await api.getCapability() } catch (e) {

@@ -157,6 +157,7 @@ class UserFeedback(Base):
     useful: Mapped[bool | None] = mapped_column(Boolean)
     rating: Mapped[int | None] = mapped_column(Integer)
     comment: Mapped[str | None] = mapped_column(Text)
+    images: Mapped[str | None] = mapped_column(Text)                  # JSON 列表：截图 base64 data URL
     handled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 

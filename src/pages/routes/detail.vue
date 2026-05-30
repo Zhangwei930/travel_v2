@@ -218,7 +218,7 @@ onShareTimeline(() => {
 
 onMounted(() => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     const sb = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
     safeBottomBarPx.value = sb + 'px'
     safeBottomPx.value = (sb + 120) + 'rpx'

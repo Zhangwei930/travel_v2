@@ -75,7 +75,7 @@ function applyHomeLocationContext(context = {}) {
 
 onMounted(async () => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
   } catch (_) {}
 

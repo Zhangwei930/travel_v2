@@ -108,7 +108,7 @@ const loading = ref(false)
 const tab = ref('kb')            // 'kb' | 'gear'
 
 onMounted(() => {
-  const info = uni.getSystemInfoSync()
+  const info = uni.getWindowInfo()
   statusBarHeight.value = info.statusBarHeight || 0
   token.value = uni.getStorageSync('admin_token') || ''
   if (token.value) loadList()

@@ -49,6 +49,11 @@ const ROUTE_IMAGES = {
   day: ['/static/images/route-day-a.svg', '/static/images/route-day-b.svg'],
 }
 
+// 微信小程序 <image> 不支持 http，统一升级为 https（高德图片 CDN 均支持 https）
+function toHttps(url) {
+  return typeof url === 'string' && url.startsWith('http://') ? 'https://' + url.slice(7) : url
+}
+
 function textOf(item) {
   return [
     item?.name,
@@ -78,10 +83,12 @@ function imageIndex(item, size) {
 }
 
 export function poiImage(item, forceFallback = false) {
-  if (!forceFallback && item?.img) return item.img
-  // 无照片但有坐标 → 用后端代理的 AMap 静态地图作为缩略图
-  if (!forceFallback && item?.lat && item?.lng) {
-    if (BASE_URL) return `${BASE_URL}/api/poi/map-thumb?lat=${item.lat}&lng=${item.lng}`
+  // 后端不同接口字段名不一：列表用 img，首页 feed/助手卡用 image
+  const real = toHttps(item?.img || item?.image)
+  if (!forceFallback && real) return real
+  // 真实照片缺失或加载失败 → 用定位地图缩略（仍是真实位置），再退到分类插画
+  if (item?.lat != null && item?.lng != null && BASE_URL) {
+    return `${BASE_URL}/api/poi/map-thumb?lat=${item.lat}&lng=${item.lng}`
   }
   const text = textOf(item)
   const known = KNOWN_POI_IMAGES.find(entry => entry.pattern.test(text))
@@ -91,7 +98,8 @@ export function poiImage(item, forceFallback = false) {
 }
 
 export function routeImage(route, forceFallback = false) {
-  if (!forceFallback && (route?.img || route?.cover_image)) return route.img || route.cover_image
+  const real = toHttps(route?.img || route?.cover_image)
+  if (!forceFallback && real) return real
   const duration = String(route?.duration || '')
   const images = /一日|全天|一天|day/i.test(duration)
     ? ROUTE_IMAGES.day

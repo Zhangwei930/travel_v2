@@ -246,7 +246,7 @@ const mapCenter = computed(() => {
 
 onMounted(async () => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     statusBarHeight.value = sys.statusBarHeight || 44
     safeBottom.value = Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 'px'
   } catch (_) {}

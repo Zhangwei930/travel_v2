@@ -220,6 +220,7 @@ class FeedbackIn(BaseModel):
     useful: bool | None = None
     rating: int | None = None
     comment: str | None = None
+    images: list[str] | None = None      # 截图 base64 data URL 列表
 
 
 class OkOut(BaseModel):

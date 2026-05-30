@@ -57,17 +57,23 @@
         <text class="cy-sheet-sub">授权后获取头像和昵称，仅存储在本设备</text>
 
         <!-- #ifdef MP-WEIXIN -->
-        <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" />
-        <button class="cy-avatar-btn" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">{{ tempAvatar ? '更换头像' : '选择微信头像' }}</button>
-        <input class="cy-name-input" type="nickname" :value="tempName" placeholder="点击填写微信昵称" placeholder-style="color:#9CA3AF" @change="e => tempName = e.detail.value" />
+        <!-- form + form-type=submit 可靠收集 nickname，避免 change 事件时序导致取不到昵称 -->
+        <form class="cy-sheet-form" @submit="onSubmitProfile">
+          <button class="cy-avatar-btn-lg" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
+            <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" />
+            <text class="cy-avatar-tip">{{ tempAvatar ? '点击更换头像' : '点击选择微信头像' }}</text>
+          </button>
+          <input class="cy-name-input" type="nickname" name="nickname" :value="tempName" placeholder="点击填写微信昵称" placeholder-style="color:#9CA3AF" @change="e => tempName = e.detail.value" @blur="e => tempName = e.detail.value" />
+          <button class="cy-save-btn" form-type="submit">确认授权</button>
+        </form>
         <!-- #endif -->
 
         <!-- #ifdef H5 -->
         <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" />
         <input class="cy-name-input" :value="tempName" placeholder="输入昵称" placeholder-style="color:#9CA3AF" @input="e => tempName = e.detail.value" />
+        <button class="cy-save-btn" :disabled="!tempName" @tap="saveProfile">确认授权</button>
         <!-- #endif -->
 
-        <button class="cy-save-btn" :disabled="!tempName" @tap="saveProfile">确认授权</button>
         <text class="cy-cancel-link" @tap="showLoginSheet = false">取消</text>
       </view>
     </view>
@@ -128,7 +134,7 @@ function refreshStats() {
 
 onMounted(() => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     statusBarH.value = sys.statusBarHeight || 44
     tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
   } catch (_) {}
@@ -146,7 +152,37 @@ function onLogin() {
   showLoginSheet.value = true
 }
 
-function onChooseAvatar(e) { tempAvatar.value = e.detail.avatarUrl }
+function onChooseAvatar(e) {
+  const tempUrl = e.detail.avatarUrl
+  if (!tempUrl) return
+  // #ifdef MP-WEIXIN
+  // chooseAvatar 返回的是临时路径，需持久化保存，否则重启后头像失效
+  uni.saveFile({
+    tempFilePath: tempUrl,
+    success: (res) => { tempAvatar.value = res.savedFilePath },
+    fail: () => { tempAvatar.value = tempUrl },
+  })
+  // #endif
+  // #ifndef MP-WEIXIN
+  tempAvatar.value = tempUrl
+  // #endif
+}
+
+// #ifdef MP-WEIXIN
+// form 提交时由 e.detail.value 可靠取到 nickname，规避 change 事件未触发的情况
+function onSubmitProfile(e) {
+  const name = ((e.detail.value && e.detail.value.nickname) || tempName.value || '').trim()
+  if (!name) {
+    uni.showToast({ title: '请填写昵称', icon: 'none' })
+    return
+  }
+  const profile = { name, avatar: tempAvatar.value, loginAt: Date.now() }
+  setUserProfile(profile)
+  userProfile.value = profile
+  showLoginSheet.value = false
+  uni.showToast({ title: '登录成功', icon: 'success' })
+}
+// #endif
 
 function funcIconName(key) {
   const map = {
@@ -303,6 +339,9 @@ function goSettings() { uni.navigateTo({ url: '/pages/profile/settings' }) }
   display: flex;
   align-items: center;
   justify-content: center;
+  line-height: 0;            // 消除 image 基线间隙，避免图标偏上
+
+  .cy-icon { display: block; }
 }
 
 .cy-func-label { font-size: 24rpx; color: $cy-text; text-align: center; }
@@ -333,15 +372,23 @@ function goSettings() { uni.navigateTo({ url: '/pages/profile/settings' }) }
 .cy-sheet-title  { font-size: 36rpx; font-weight: 700; color: $cy-text; }
 .cy-sheet-sub    { font-size: 24rpx; color: $cy-muted; text-align: center; line-height: 1.6; }
 
+.cy-sheet-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24rpx;
+}
+
 .cy-avatar-preview { width: 160rpx; height: 160rpx; border-radius: 80rpx; background: $cy-green-ls; }
 
-.cy-avatar-btn {
-  height: 72rpx; padding: 0 40rpx; margin: 0;
-  background: $cy-green-ls; border: 1rpx solid $cy-border;
-  border-radius: 36rpx; font-size: 26rpx; color: $cy-text-sub;
-  display: flex; align-items: center; justify-content: center;
-  line-height: normal;
+.cy-avatar-btn-lg {
+  background: transparent; border: none; padding: 0; margin: 0; line-height: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 12rpx;
+  &::after { border: none; }
 }
+
+.cy-avatar-tip { font-size: 24rpx; color: $cy-green; }
 
 .cy-name-input {
   width: 100%; height: 96rpx;

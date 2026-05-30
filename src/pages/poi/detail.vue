@@ -123,7 +123,7 @@ const heroImage = computed(() => poiImage(poi.value, heroBroken.value))
 
 onMounted(async () => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     const sb = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
     safeBarPadding.value = sb + 'px'
     safeBottom.value = (sb + 140) + 'rpx'

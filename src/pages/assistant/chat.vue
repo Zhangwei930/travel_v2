@@ -116,7 +116,8 @@ const brokenDest  = ref({})
 const brokenRouteImgs = ref({})
 const HISTORY_KEY = 'zhoumi_assistant_messages'
 
-const userAvatar = computed(() => getUserProfile()?.avatar || '')
+// 用 ref + onShow 刷新，避免登录后返回助手页头像不更新（computed 读非响应式 storage 不会重算）
+const userAvatar = ref(getUserProfile()?.avatar || '')
 
 const locLabel = computed(() => {
   const city = cityStore.current || chatContext.value.city || ''
@@ -163,7 +164,7 @@ onLoad((options) => { applyChatContext(options) })
 
 onMounted(() => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     const statusH = sys.statusBarHeight || 44
     const safeB = Math.max(sys.safeAreaInsets?.bottom || 18, 18)
     const winH = sys.windowHeight || 600
@@ -177,7 +178,7 @@ onMounted(() => {
   scrollToBottom()
 })
 
-onShow(() => { setTabBarSelected(2); applyChatContext() })
+onShow(() => { setTabBarSelected(2); applyChatContext(); userAvatar.value = getUserProfile()?.avatar || '' })
 onUnmounted(() => { uni.$off('assistantContext', applyChatContext) })
 
 function chooseImage() {

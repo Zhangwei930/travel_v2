@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -140,8 +141,21 @@ def city_list(db: Session = Depends(get_db)):
 
 @router.get("/geo/city")
 def geo_city(lat: float = Query(...), lng: float = Query(...)):
-    city = map_provider.amap_reverse_city(lat, lng) or map_provider.nearest_city(lat, lng)
-    return {"city": city}
+    geo = map_provider.amap_reverse_geocode(lat, lng)
+    city = geo["city"] or map_provider.nearest_city(lat, lng)
+    return {"city": city, "landmark": geo.get("landmark")}
+
+
+@router.get("/poi/map-thumb")
+def poi_map_thumb(lat: float = Query(...), lng: float = Query(...)):
+    """POI 无照片时的定位地图缩略图：302 跳转到高德静态地图（隐藏 key）。"""
+    if map_provider.provider_name() == "amap" and settings.amap_key:
+        url = (
+            f"https://restapi.amap.com/v3/staticmap?location={lng},{lat}"
+            f"&zoom=15&size=400x300&markers=mid,,A:{lng},{lat}&key={settings.amap_key}"
+        )
+        return RedirectResponse(url)
+    raise HTTPException(status_code=404, detail="map unavailable")
 
 
 @router.get("/scene/list", response_model=list[SceneOut])

@@ -66,7 +66,7 @@ const tips = [
 ]
 
 onMounted(() => {
-  try { safeBottom.value = Math.max(uni.getSystemInfoSync().safeAreaInsets?.bottom || 20, 20) + 'px' } catch (_) {}
+  try { safeBottom.value = Math.max(uni.getWindowInfo().safeAreaInsets?.bottom || 20, 20) + 'px' } catch (_) {}
   doLocate()
 })
 

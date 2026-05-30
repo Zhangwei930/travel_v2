@@ -10,6 +10,7 @@ const KEY_COORDS = 'zhoumi_current_coords'
 const KEY_HOME_FEED = 'zhoumi_home_feed'
 const KEY_ASSISTANT_CONTEXT = 'zhoumi_assistant_context'
 const KEY_USER = 'zhoumi_user_profile'
+const KEY_FEEDBACK = 'zhoumi_my_feedback'
 
 function get(key) {
   try { return uni.getStorageSync(key) || [] } catch (e) {
@@ -88,6 +89,20 @@ export function setUserProfile(p) {
 export function clearUserProfile() {
   try { uni.removeStorageSync(KEY_USER) } catch (_) {}
 }
+
+// 我的反馈（本设备提交记录，仅本地展示；文字提交走 POST /api/feedback，截图仅存本地）
+export function addMyFeedback(item) {
+  const list = get(KEY_FEEDBACK)
+  list.unshift({
+    id: Date.now(),
+    type: item.type || '',
+    content: item.content || '',
+    images: Array.isArray(item.images) ? item.images : [],
+    created_at: Date.now(),
+  })
+  set(KEY_FEEDBACK, list.slice(0, 50))
+}
+export function getMyFeedback() { return get(KEY_FEEDBACK) }
 
 // 清除临时缓存（首页 feed + 助手上下文），不清除用户数据
 export function clearTempCache() {

@@ -220,7 +220,7 @@ async function loadFeed(options = {}) {
 
 onLoad(async () => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     statusBarH.value = sys.statusBarHeight || 44
     tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
   } catch (_) {}

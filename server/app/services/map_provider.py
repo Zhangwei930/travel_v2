@@ -218,6 +218,8 @@ def parse_amap_poi(poi: dict) -> dict | None:
     image = ""
     if isinstance(photos, list) and photos and isinstance(photos[0], dict):
         image = photos[0].get("url") or ""
+    if image.startswith("http://"):          # 小程序不支持 http 图片，统一 https
+        image = "https://" + image[len("http://"):]
     distance = poi.get("distance")
     try:
         distance_m = float(distance) if distance not in (None, "", []) else None

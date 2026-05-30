@@ -39,7 +39,7 @@ const statusBarH = ref(44)
 
 onMounted(() => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     statusBarH.value = sys.statusBarHeight || 44
   } catch (_) {}
 })

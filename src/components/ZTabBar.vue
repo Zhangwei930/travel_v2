@@ -35,7 +35,7 @@ const safeBottom = ref('18px')
 
 onMounted(() => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     const b = sys.safeAreaInsets?.bottom || 0
     safeBottom.value = Math.max(b, 18) + 'px'
   } catch (_) {}

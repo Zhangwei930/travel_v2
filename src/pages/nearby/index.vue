@@ -143,7 +143,7 @@ function onSearch() {
 
 onMounted(() => {
   try {
-    const sys = uni.getSystemInfoSync()
+    const sys = uni.getWindowInfo()
     safeBottom.value = (Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 84) + 'px'
   } catch (_) {}
   reload()

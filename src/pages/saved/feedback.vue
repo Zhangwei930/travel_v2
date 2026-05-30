@@ -1,109 +1,192 @@
 <template>
   <view class="cy-page">
-    <cy-nav-bar title="我的反馈" />
+    <cy-nav-bar title="意见反馈" />
 
-    <!-- KB 流程卡 -->
-    <view class="cy-kb-banner">
-      <text class="cy-kb-title">反馈如何进入知识库</text>
-      <view class="cy-step-row">
-        <view class="cy-step">
-          <text class="cy-step-no">01</text>
-          <text class="cy-step-label">你提交</text>
-        </view>
-        <text class="cy-step-arrow">→</text>
-        <view class="cy-step">
-          <text class="cy-step-no">02</text>
-          <text class="cy-step-label">人工审核</text>
-        </view>
-        <text class="cy-step-arrow">→</text>
-        <view class="cy-step">
-          <text class="cy-step-no">03</text>
-          <text class="cy-step-label">入库/驳回</text>
-        </view>
-        <text class="cy-step-arrow">→</text>
-        <view class="cy-step">
-          <text class="cy-step-no">04</text>
-          <text class="cy-step-label">推荐更准</text>
-        </view>
-      </view>
-    </view>
-
-    <scroll-view scroll-y class="cy-list-scroll">
-      <view v-if="loading" class="cy-empty">加载中…</view>
-      <view v-else-if="errored" class="cy-empty">加载失败，请稍后重试</view>
-      <view v-else-if="list.length === 0" class="cy-empty-card">
-        <text class="cy-empty-title">还没有反馈过</text>
-        <text class="cy-empty-sub">在地点详情或攻略页提交有用或反馈，内容会进入知识库审核队列。</text>
+    <scroll-view scroll-y class="cy-scroll">
+      <!-- 未登录：前置登录引导 -->
+      <view v-if="!profile" class="cy-gate-card">
+        <text class="cy-gate-title">登录后才能提交反馈</text>
+        <text class="cy-gate-sub">反馈与你的账号关联，仅你自己可见提交记录。</text>
+        <view class="cy-gate-btn" @tap="goLogin">去登录</view>
       </view>
 
-      <view v-for="item in list" :key="item.id" class="cy-card">
-        <view class="cy-card-meta">
-          <text class="cy-kind" :class="{ useful: item.useful }">
-            {{ item.useful ? '有用' : '反馈' }}
-          </text>
-          <text class="cy-date">{{ formatDate(item.created_at) }}</text>
-        </view>
-        <text v-if="item.target_label" class="cy-target">{{ item.target_label }}</text>
-        <text v-if="item.content" class="cy-content">{{ item.content }}</text>
+      <template v-else>
+        <!-- 提交表单 -->
+        <view class="cy-form-card">
+          <text class="cy-label">反馈类型</text>
+          <view class="cy-type-row">
+            <view
+              v-for="t in TYPES"
+              :key="t"
+              class="cy-type-chip"
+              :class="{ active: type === t }"
+              @tap="type = t"
+            >{{ t }}</view>
+          </view>
 
-        <view class="cy-card-status">
-          <view
-            v-for="phase in phases(item.status)"
-            :key="phase.id"
-            class="cy-phase"
-            :class="{ active: phase.active, current: phase.current }"
-          >
-            <view class="cy-phase-dot" />
-            <text class="cy-phase-label">{{ phase.label }}</text>
+          <text class="cy-label">具体描述</text>
+          <textarea
+            class="cy-textarea"
+            v-model="content"
+            placeholder="请描述你遇到的问题或建议…"
+            placeholder-style="color:#9CA3AF"
+            :maxlength="500"
+          />
+          <text class="cy-count">{{ content.length }}/500</text>
+
+          <text class="cy-label">截图（选填，最多 3 张）</text>
+          <view class="cy-img-row">
+            <view v-for="(img, i) in images" :key="i" class="cy-img-thumb">
+              <image :src="img" mode="aspectFill" class="cy-thumb-img" @tap="previewImg(i)" />
+              <view class="cy-img-del" @tap.stop="removeImg(i)">×</view>
+            </view>
+            <view v-if="images.length < 3" class="cy-img-add" @tap="chooseImages">
+              <text class="cy-img-add-plus">+</text>
+            </view>
+          </view>
+
+          <button class="cy-submit-btn" :disabled="!content.trim() || submitting" @tap="submit">
+            {{ submitting ? '提交中…' : '提交反馈' }}
+          </button>
+        </view>
+
+        <!-- 我的反馈历史（本地） -->
+        <view v-if="history.length" class="cy-history">
+          <text class="cy-history-title">我的反馈</text>
+          <view v-for="h in history" :key="h.id" class="cy-hist-card">
+            <view class="cy-hist-meta">
+              <text class="cy-hist-type">{{ h.type || '反馈' }}</text>
+              <text class="cy-hist-date">{{ formatDate(h.created_at) }}</text>
+            </view>
+            <text class="cy-hist-content">{{ h.content }}</text>
+            <view v-if="h.images && h.images.length" class="cy-hist-imgs-row">
+              <image
+                v-for="(img, k) in h.images"
+                :key="k"
+                :src="img"
+                mode="aspectFill"
+                class="cy-hist-thumb"
+                @tap="uni.previewImage({ current: img, urls: h.images })"
+              />
+            </view>
+            <view class="cy-hist-foot">
+              <text class="cy-hist-status">已提交</text>
+            </view>
           </view>
         </view>
-      </view>
+      </template>
+
+      <view style="height: 32rpx;" />
     </scroll-view>
   </view>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { api } from '../../api/index.js'
+import { getUserProfile, addMyFeedback, getMyFeedback } from '../../api/storage.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 
-const list    = ref([])
-const loading = ref(true)
-const errored = ref(false)
+const TYPES = ['功能异常', '内容纠错', '体验建议', '其他']
+const profile    = ref(null)
+const type       = ref('体验建议')
+const content    = ref('')
+const images     = ref([])   // 本地临时路径，仅用于预览
+const submitting = ref(false)
+const history    = ref([])
 
-onMounted(async () => {
-  try {
-    const res = await api.getFeedbackList()
-    list.value = Array.isArray(res) ? res : (res?.items ?? [])
-  } catch (_) {
-    errored.value = true
-  } finally {
-    loading.value = false
-  }
+onShow(() => {
+  profile.value = getUserProfile()
+  history.value = getMyFeedback()
 })
+
+function goLogin() { uni.switchTab({ url: '/pages/profile/profile' }) }
+
+function chooseImages() {
+  const remain = 3 - images.value.length
+  if (remain <= 0) return
+  uni.chooseMedia({
+    count: remain,
+    mediaType: ['image'],
+    sizeType: ['compressed'],
+    sourceType: ['album', 'camera'],
+    success: (res) => {
+      res.tempFiles.forEach(f => { if (f.tempFilePath) images.value.push(f.tempFilePath) })
+    },
+  })
+}
+
+function removeImg(i) { images.value.splice(i, 1) }
+function previewImg(i) { uni.previewImage({ current: images.value[i], urls: images.value }) }
+
+// 截图持久化：chooseMedia 的临时路径重启后失效，需 saveFile 转永久路径供本地历史展示
+function persistImage(path) {
+  return new Promise((resolve) => {
+    // #ifdef MP-WEIXIN
+    uni.saveFile({
+      tempFilePath: path,
+      success: (res) => resolve(res.savedFilePath),
+      fail: () => resolve(path),
+    })
+    // #endif
+    // #ifndef MP-WEIXIN
+    resolve(path)
+    // #endif
+  })
+}
+
+// 读成 base64 data URL，随反馈上传到服务器供开发者查看
+function readBase64(path) {
+  return new Promise((resolve) => {
+    // #ifdef MP-WEIXIN
+    uni.getFileSystemManager().readFile({
+      filePath: path,
+      encoding: 'base64',
+      success: (r) => resolve('data:image/jpeg;base64,' + r.data),
+      fail: () => resolve(''),
+    })
+    // #endif
+    // #ifndef MP-WEIXIN
+    resolve('')
+    // #endif
+  })
+}
+
+async function submit() {
+  const text = content.value.trim()
+  if (!text || submitting.value) return
+  submitting.value = true
+  try {
+    const who = profile.value?.name ? `（${profile.value.name}）` : ''
+    let imgData = []
+    // #ifdef MP-WEIXIN
+    imgData = (await Promise.all(images.value.map(readBase64))).filter(Boolean)
+    // #endif
+    await api.sendFeedback({
+      target_type: 'app',
+      comment: `[${type.value}]${who} ${text}`,
+      images: imgData,
+    })
+    const savedImgs = await Promise.all(images.value.map(persistImage))
+    addMyFeedback({ type: type.value, content: text, images: savedImgs })
+    uni.showToast({ title: '已提交，感谢反馈', icon: 'success' })
+    content.value = ''
+    images.value = []
+    history.value = getMyFeedback()
+  } catch (e) {
+    uni.showToast({ title: '提交失败，请稍后重试', icon: 'none' })
+  } finally {
+    submitting.value = false
+  }
+}
 
 function formatDate(ts) {
   if (!ts) return ''
-  const d = new Date(typeof ts === 'number' ? ts : Date.parse(ts))
+  const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return ''
-  return `${d.getMonth() + 1}/${d.getDate()}`
-}
-
-function phases(status) {
-  const map = {
-    pending:   { stage: 1, terminal: false },
-    reviewing: { stage: 2, terminal: false },
-    accepted:  { stage: 3, terminal: true, label: '已入库' },
-    rejected:  { stage: 3, terminal: true, label: '已驳回', failed: true },
-    applied:   { stage: 4, terminal: true, label: '已生效' },
-  }
-  const meta = map[status] || map.pending
-  return [
-    { id: 1, label: '已提交', active: meta.stage >= 1, current: meta.stage === 1 },
-    { id: 2, label: '审核中', active: meta.stage >= 2, current: meta.stage === 2 },
-    { id: 3, label: meta.failed ? '已驳回' : '已入库', active: meta.stage >= 3, current: meta.stage === 3 && !meta.terminal },
-    { id: 4, label: '已生效', active: meta.stage >= 4, current: meta.stage === 4 },
-  ]
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 </script>
 
@@ -116,124 +199,128 @@ function phases(status) {
   font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
 }
 
-// KB banner
-.cy-kb-banner {
-  margin: 20rpx 24rpx 0;
+.cy-scroll { padding: 20rpx 24rpx 32rpx; box-sizing: border-box; }
+
+// ── 登录前置 ───────────────────────────────────────────────
+.cy-gate-card {
+  margin-top: 60rpx;
   background: $cy-card;
   border-radius: 24rpx;
-  padding: 24rpx;
+  padding: 48rpx 36rpx;
+  text-align: center;
   box-shadow: $cy-shadow;
-}
-
-.cy-kb-title {
-  display: block;
-  font-size: 26rpx;
-  font-weight: 800;
-  color: $cy-text;
-  margin-bottom: 18rpx;
-}
-
-.cy-step-row {
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-}
-
-.cy-step {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6rpx;
-  flex: 1;
+  gap: 16rpx;
 }
 
-.cy-step-no    { font-size: 18rpx; color: $cy-green; font-weight: 800; letter-spacing: 1rpx; }
-.cy-step-label { font-size: 19rpx; color: $cy-text-sub; text-align: center; }
-.cy-step-arrow { color: $cy-muted; font-size: 20rpx; flex-shrink: 0; }
-
-// List
-.cy-list-scroll { padding: 20rpx 24rpx 32rpx; box-sizing: border-box; }
-
-.cy-empty {
-  display: block;
-  color: $cy-muted;
-  font-size: 26rpx;
-  text-align: center;
-  margin-top: 60rpx;
+.cy-gate-title { font-size: 30rpx; font-weight: 800; color: $cy-text; }
+.cy-gate-sub   { font-size: 24rpx; color: $cy-muted; line-height: 1.5; }
+.cy-gate-btn {
+  margin-top: 16rpx;
+  height: 76rpx; padding: 0 56rpx;
+  border-radius: 38rpx; background: $cy-green; color: #fff;
+  font-size: 28rpx; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
 }
 
-.cy-empty-card {
-  margin-top: 24rpx;
+// ── 表单卡 ─────────────────────────────────────────────────
+.cy-form-card {
   background: $cy-card;
   border-radius: 24rpx;
-  padding: 36rpx 28rpx;
-  text-align: center;
+  padding: 28rpx 24rpx 32rpx;
   box-shadow: $cy-shadow;
 }
 
-.cy-empty-title {
+.cy-label {
   display: block;
-  font-size: 28rpx;
-  font-weight: 800;
+  font-size: 26rpx;
+  font-weight: 700;
   color: $cy-text;
-  margin-bottom: 10rpx;
+  margin: 8rpx 0 16rpx;
 }
 
-.cy-empty-sub {
-  display: block;
-  font-size: 24rpx;
-  color: $cy-muted;
+.cy-type-row { display: flex; flex-wrap: wrap; gap: 16rpx; margin-bottom: 24rpx; }
+
+.cy-type-chip {
+  padding: 12rpx 28rpx;
+  border-radius: 32rpx;
+  background: $cy-green-ls;
+  border: 1rpx solid $cy-border;
+  font-size: 26rpx; color: $cy-text-sub;
+
+  &.active {
+    background: $cy-green-l;
+    border-color: $cy-green;
+    color: $cy-green;
+    font-weight: 700;
+  }
+}
+
+.cy-textarea {
+  width: 100%;
+  height: 200rpx;
+  background: $cy-green-ls;
+  border: 1rpx solid $cy-border;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  box-sizing: border-box;
+  font-size: 28rpx;
+  color: $cy-text;
   line-height: 1.5;
 }
 
-.cy-card {
+.cy-count { display: block; text-align: right; font-size: 22rpx; color: $cy-muted; margin: 8rpx 0 24rpx; }
+
+// 截图上传
+.cy-img-row { display: flex; flex-wrap: wrap; gap: 16rpx; margin-bottom: 32rpx; }
+
+.cy-img-thumb { position: relative; width: 150rpx; height: 150rpx; }
+.cy-thumb-img { width: 100%; height: 100%; border-radius: 16rpx; background: $cy-green-ls; }
+.cy-img-del {
+  position: absolute; top: -12rpx; right: -12rpx;
+  width: 40rpx; height: 40rpx; border-radius: 20rpx;
+  background: rgba(0,0,0,0.55); color: #fff; font-size: 30rpx;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+}
+
+.cy-img-add {
+  width: 150rpx; height: 150rpx;
+  border-radius: 16rpx;
+  border: 1rpx dashed $cy-border;
+  background: $cy-green-ls;
+  display: flex; align-items: center; justify-content: center;
+}
+.cy-img-add-plus { font-size: 56rpx; color: $cy-muted; line-height: 1; }
+
+.cy-submit-btn {
+  width: 100%; height: 92rpx; border-radius: 46rpx;
+  background: $cy-green; color: #fff; font-size: 30rpx; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: none;
+  &[disabled] { opacity: 0.45; }
+}
+
+// ── 历史 ───────────────────────────────────────────────────
+.cy-history { margin-top: 32rpx; }
+.cy-history-title { display: block; font-size: 28rpx; font-weight: 800; color: $cy-text; margin-bottom: 16rpx; }
+
+.cy-hist-card {
   background: $cy-card;
-  border-radius: 24rpx;
+  border-radius: 20rpx;
   padding: 24rpx;
   margin-bottom: 16rpx;
   box-shadow: $cy-shadow;
 }
 
-.cy-card-meta { display: flex; justify-content: space-between; margin-bottom: 10rpx; }
-.cy-kind      { font-size: 22rpx; color: $cy-muted; &.useful { color: $cy-green; } }
-.cy-date      { font-size: 22rpx; color: $cy-muted; }
-.cy-target    { display: block; font-size: 28rpx; font-weight: 800; color: $cy-text; margin-bottom: 6rpx; }
-.cy-content   { display: block; font-size: 24rpx; color: $cy-text-sub; line-height: 1.55; margin-bottom: 14rpx; }
-
-// 4-step progress
-.cy-card-status {
-  display: flex;
-  align-items: center;
-  padding-top: 14rpx;
-  border-top: 1rpx dashed $cy-border;
-  margin-top: 4rpx;
-}
-
-.cy-phase {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4rpx;
-  opacity: 0.4;
-
-  &.active { opacity: 1; }
-}
-
-.cy-phase-dot {
-  width: 14rpx;
-  height: 14rpx;
-  border-radius: 7rpx;
-  background: $cy-muted;
-
-  .cy-phase.active & { background: $cy-green; }
-  .cy-phase.current & { background: $cy-green; box-shadow: 0 0 0 4rpx $cy-green-l; }
-}
-
-.cy-phase-label {
-  font-size: 18rpx;
-  color: $cy-muted;
-
-  .cy-phase.active & { color: $cy-text-sub; }
-}
+.cy-hist-meta { display: flex; justify-content: space-between; margin-bottom: 10rpx; }
+.cy-hist-type { font-size: 24rpx; color: $cy-green; font-weight: 700; }
+.cy-hist-date { font-size: 22rpx; color: $cy-muted; }
+.cy-hist-content { display: block; font-size: 26rpx; color: $cy-text; line-height: 1.55; }
+.cy-hist-imgs-row { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 14rpx; }
+.cy-hist-thumb { width: 120rpx; height: 120rpx; border-radius: 12rpx; background: $cy-green-ls; }
+.cy-hist-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12rpx; }
+.cy-hist-status { font-size: 22rpx; color: $cy-green; margin-left: auto; }
 </style>

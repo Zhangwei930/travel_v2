@@ -58,6 +58,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { api } from '../../api/index.js'
 import { useCityStore } from '../../store/city.js'
 import { getUserProfile, clearUserProfile, clearTempCache } from '../../api/storage.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
@@ -89,8 +90,17 @@ function relocate() {
   locating.value = true
   uni.getLocation({
     type: 'gcj02',
-    success: r => {
+    success: async r => {
       cityStore.setCoords(r.latitude, r.longitude)
+      // 回查城市名与地标，让「当前城市」立即刷新
+      try {
+        const g = await api.geoCity(r.latitude, r.longitude)
+        if (g?.city) cityStore.setFromLocation(g.city)
+        if (g?.landmark) {
+          cityStore.landmark = g.landmark
+          try { uni.setStorageSync('zhoumi_landmark', g.landmark) } catch (_) {}
+        }
+      } catch (_) {}
       uni.showToast({ title: '定位成功', icon: 'success' })
     },
     fail: () => uni.showToast({ title: '定位失败，请检查权限', icon: 'none' }),

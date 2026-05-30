@@ -2,6 +2,8 @@
 
 方案文档合规约束 5：用户反馈必须回流，沉淀为数据资产。
 """
+import json
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -20,6 +22,7 @@ def submit_feedback(payload: FeedbackIn, db: Session = Depends(get_db)):
         useful=payload.useful,
         rating=payload.rating,
         comment=payload.comment,
+        images=json.dumps(payload.images) if payload.images else None,
     )
     db.add(fb)
     if payload.comment:
