@@ -11,6 +11,7 @@ const KEY_HOME_FEED = 'zhoumi_home_feed'
 const KEY_ASSISTANT_CONTEXT = 'zhoumi_assistant_context'
 const KEY_USER = 'zhoumi_user_profile'
 const KEY_FEEDBACK = 'zhoumi_my_feedback'
+const KEY_LOGIN_REDIRECT = 'zhoumi_login_redirect'
 
 function get(key) {
   try { return uni.getStorageSync(key) || [] } catch (e) {
@@ -88,6 +89,21 @@ export function setUserProfile(p) {
 }
 export function clearUserProfile() {
   try { uni.removeStorageSync(KEY_USER) } catch (_) {}
+}
+
+export function setPendingLoginRedirect(url) {
+  if (!url) return
+  try { uni.setStorageSync(KEY_LOGIN_REDIRECT, url) } catch (_) {}
+}
+
+export function consumePendingLoginRedirect() {
+  try {
+    const url = uni.getStorageSync(KEY_LOGIN_REDIRECT)
+    if (url) uni.removeStorageSync(KEY_LOGIN_REDIRECT)
+    return url || ''
+  } catch (_) {
+    return ''
+  }
 }
 
 // 我的反馈（本设备提交记录，仅本地展示；文字提交走 POST /api/feedback，截图仅存本地）

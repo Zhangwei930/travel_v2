@@ -253,6 +253,13 @@ function sendMsg(text) {
     history,
   }
 
+  // #ifdef MP-WEIXIN
+  // 微信小程序的分块流式（无原生 fetch、onChunkReceived 时序不稳）经常拿不到内容 → 空气泡。
+  // 直接走非流式接口，确保有回复（H5 仍用流式打字机效果）。
+  fallbackNonStream(payload)
+  return
+  // #endif
+
   streamAsk(payload, {
     onMeta: () => {
       typing.value = false
@@ -270,10 +277,12 @@ function sendMsg(text) {
 function fallbackNonStream(payload) {
   api.ask(payload)
     .then((res) => {
-      messages.value.push({ role: 'bot', text: res.text })
+      typing.value = false
+      messages.value.push({ role: 'bot', text: res.text || '抱歉，这次没有获取到回复，请换个说法再试。' })
       scrollToBottom()
     })
     .catch(() => {
+      typing.value = false
       messages.value.push({ role: 'bot', text: '暂时无法连接助手，请稍后再试。' })
       scrollToBottom()
     })

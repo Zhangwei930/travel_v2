@@ -132,7 +132,7 @@ class ApiSmokeTest(unittest.TestCase):
         captured = {}
         original_search = map_provider.amap_search_around
 
-        def fake_search(lat, lng, radius_km=5.0, types=map_provider.AMAP_DEFAULT_TYPES):
+        def fake_search(lat, lng, radius_km=5.0, types=map_provider.AMAP_DEFAULT_TYPES, **_kwargs):
             captured["radius_km"] = radius_km
             return []
 
@@ -147,6 +147,34 @@ class ApiSmokeTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(captured.get("radius_km"), 15.0)
+
+    def test_home_feed_spans_full_radius_with_weight_sort(self):
+        # 附近页带半径时应按热度横跨全半径召回，避免只堆积最近一圈
+        # （bug：选 15km 列表只拉到 ~4.2km 就没有更多，因 distance 排序只返回最近一批）
+        captured = {}
+        original_search = map_provider.amap_search_around
+
+        def fake_search(lat, lng, radius_km=5.0, types=map_provider.AMAP_DEFAULT_TYPES,
+                        sortrule="distance", pages=1, **_kwargs):
+            captured["radius_km"] = radius_km
+            captured["sortrule"] = sortrule
+            captured["pages"] = pages
+            return []
+
+        try:
+            map_provider.amap_search_around = fake_search
+            response = self.client.get(
+                "/api/home/feed",
+                params={"lat": 30.5728, "lng": 104.0668, "city": "成都", "radius": 15},
+            )
+        finally:
+            map_provider.amap_search_around = original_search
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured.get("radius_km"), 15.0)
+        self.assertEqual(captured.get("sortrule"), "weight")
+        # 大半径需抓多页才能拉到远处，固定 3 页只够最近一圈
+        self.assertGreaterEqual(captured.get("pages"), 5)
 
     def test_weather_uses_amap_live_api_when_key_configured(self):
         calls = []
@@ -248,6 +276,104 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertTrue(str(routes[0].id).startswith("dynamic_"))
         stop_names = [stop.name for route in routes for stop in route.stops]
         self.assertNotIn("成都远距离路线点", stop_names)
+
+    def test_featured_routes_can_return_multiple_routes_for_one_duration(self):
+        scene = "route_bucket_test"
+        db = SessionLocal()
+        try:
+            for i in range(9):
+                poi = PoiIndex(
+                    provider="stub",
+                    name=f"成都半日路线候选点{i + 1}",
+                    city="成都",
+                    category="景点",
+                    address=f"成都市路线测试路 {i + 1} 号",
+                    lat=30.5728 + i * 0.001,
+                    lng=104.0668 + i * 0.001,
+                    source="test",
+                )
+                db.add(poi)
+                db.flush()
+                db.add(TravelKnowledge(
+                    poi_id=poi.id,
+                    scene_ids=[scene],
+                    scene_tags=["路线"],
+                    recommend_reason="用于验证同一时长下有多条线路可选",
+                    play_duration="1h",
+                    budget_level="低",
+                    review_status="approved",
+                ))
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.get(
+            "/api/routes/featured",
+            params={
+                "lat": 30.5728,
+                "lng": 104.0668,
+                "city": "成都市",
+                "scene": scene,
+                "duration": "half",
+                "radius": 15,
+                "route_per_duration": 3,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        routes = response.json()
+        self.assertEqual(len(routes), 3)
+        self.assertTrue(all(route["duration"] == "半日" for route in routes))
+        self.assertTrue(all(len(route["stops"]) >= 3 for route in routes))
+
+    def test_dynamic_routes_respect_time_budget_and_allow_many_per_duration(self):
+        # 每个时长可出 4 条以上路线；且车程超出该时长的远点不进路线（别光路上就超时）
+        origin = (30.5728, 104.0668)
+        near = [
+            RecommendPoiOut(
+                id=f"near-{i}",
+                name=f"成都近点{i}",
+                category="景点",
+                distance=f"0.{i}km",
+                reason="附近可去",
+                lat=30.5728 + i * 0.001,
+                lng=104.0668 + i * 0.001,
+                nav_ready=True,
+            )
+            for i in range(12)
+        ]
+        far = [
+            RecommendPoiOut(
+                id=f"far-{i}",
+                name=f"成都远点{i}",
+                category="景点",
+                distance="80km",
+                reason="太远",
+                lat=31.30 + i * 0.001,   # 距 origin ~80km，往返车程远超 2 小时/一日预算
+                lng=104.0668,
+                nav_ready=True,
+            )
+            for i in range(2)
+        ]
+        db = SessionLocal()
+        try:
+            routes = build_home_routes(
+                db,
+                city="路线时间预算测试市",   # 无模板路线，仅验证动态路线
+                scene=None,
+                origin=origin,
+                recommended=near + far,
+                limit=60,
+                max_per_dur=10,
+            )
+        finally:
+            db.close()
+
+        two_hour = [r for r in routes if r.duration == "2小时"]
+        self.assertGreater(len(two_hour), 4)   # 不再卡在 4 条
+        stop_names = {stop.name for route in routes for stop in route.stops}
+        self.assertNotIn("成都远点0", stop_names)
+        self.assertNotIn("成都远点1", stop_names)
 
     def test_plan_aligned_api_aliases_are_available(self):
         db = SessionLocal()
@@ -421,6 +547,38 @@ class ApiSmokeTest(unittest.TestCase):
             for stop in route["stops"]
         ]
         self.assertIn("成都可导航亲子公园", route_stop_names)
+
+    def test_poi_detail_returns_existing_poi_coordinates(self):
+        db = SessionLocal()
+        try:
+            poi = PoiIndex(
+                provider="amap",
+                provider_poi_id="detail-test-poi",
+                name="成都详情接口测试点",
+                city="成都",
+                category="景点",
+                address="成都市详情测试路 1 号",
+                lat=30.5730,
+                lng=104.0670,
+                source="test",
+            )
+            db.add(poi)
+            db.commit()
+            poi_id = poi.id
+        finally:
+            db.close()
+
+        response = self.client.get(
+            "/api/poi/detail",
+            params={"id": poi_id, "lat": 30.5728, "lng": 104.0668},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        detail = response.json()
+        self.assertEqual(detail["id"], poi_id)
+        self.assertEqual(detail["name"], "成都详情接口测试点")
+        self.assertEqual(detail["lat"], 30.5730)
+        self.assertEqual(detail["lng"], 104.0670)
 
     def test_generate_plan_does_not_claim_realtime_weather_without_provider(self):
         response = self.client.post(

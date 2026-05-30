@@ -75,11 +75,7 @@
     <view class="cy-action-bar" :style="{ paddingBottom: safeBottomBarPx }">
       <button class="cy-act-icon cy-share-btn" open-type="share">
         <CyIcon name="share-dark" :size="50" />
-        <text class="cy-act-icon-label">发给朋友</text>
-      </button>
-      <button class="cy-act-icon cy-share-btn" open-type="shareTimeline">
-        <CyIcon name="share-dark" :size="50" />
-        <text class="cy-act-icon-label">朋友圈</text>
+        <text class="cy-act-icon-label">分享</text>
       </button>
       <view class="cy-nav-btn" :class="{ disabled: !mappableStops.length }" @tap="chooseNavStop">
         <text>跟着路线导航</text>
@@ -431,6 +427,7 @@ onMounted(() => {
 }
 
 .cy-nav-btn {
+  flex: 1;
   height: 100rpx;
   background: $cy-green-d;
   color: #fff;

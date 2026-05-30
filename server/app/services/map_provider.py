@@ -4,6 +4,7 @@
 默认 stub 模式用本地坐标做 haversine 距离计算，无需密钥即可运行；
 配置 MAP_PROVIDER=amap 并填入 AMAP_KEY 后接入高德地图（周边搜索 + 真实路程）。
 """
+import concurrent.futures
 import time
 from math import asin, cos, radians, sin, sqrt
 
@@ -147,9 +148,42 @@ SCENE_KEYWORDS: dict[str, str] = {
 }
 
 
+def pages_for_radius(radius_km: float) -> int:
+    """半径越大抓越多页（每页25个POI），让结果横跨整个半径而非只堆最近一圈。
+    多页改为并发抓取，故页数不再线性拖慢延迟；上限 8 页以控高德配额。
+    （15km 仍为 5 页，结果与之前一致；仅 30/50km 略收。）"""
+    return max(5, min(8, round(radius_km / 6)))
+
+
 # 周边搜索进程内缓存：场景列表与首页 feed 共用，TTL 内重复请求不再打高德
 _AROUND_CACHE: dict[str, tuple[float, list]] = {}
 _AROUND_TTL = 1800.0   # 30 分钟
+
+
+def _fetch_around_page(page: int, lat: float, lng: float, radius_km: float,
+                       types: str, keyword: str, sortrule: str) -> list[dict]:
+    """抓取周边搜索单页，失败/无结果返回 []。供并发调用。"""
+    params = {
+        "key": settings.amap_key,
+        "location": f"{lng},{lat}",
+        "radius": int(radius_km * 1000),
+        "types": types,
+        "offset": 25,
+        "page": page,
+        "extensions": "all",
+        "sortrule": sortrule,
+    }
+    if keyword:
+        params["keywords"] = keyword
+    try:
+        resp = httpx.get(f"{AMAP_BASE}/v3/place/around", params=params, timeout=8.0)
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return []
+        return data.get("pois") or []
+    except (httpx.HTTPError, ValueError):
+        return []
 
 
 def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
@@ -159,7 +193,7 @@ def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
     """高德周边搜索，返回原始 POI 列表（方案 4.1 附近搜索）。失败返回 []。
 
     sortrule: distance（按距离，近→远）/ weight（按热度，能横跨全半径召回知名点）。
-    pages: 抓取的页数（每页 25 个），用于一次返回更多、覆盖更广距离。
+    pages: 抓取的页数（每页 25 个）；多页并发抓取，避免大半径下顺序请求拖慢、前端超时。
     结果按 ~1km 网格坐标缓存，TTL 内复用，省高德配额与延迟。
     """
     if provider_name() != "amap":
@@ -168,32 +202,22 @@ def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
     cached = _AROUND_CACHE.get(cache_key)
     if cached and cached[0] > time.time():
         return cached[1]
+
+    pages_n = max(1, pages)
+    if pages_n == 1:
+        page_lists = [_fetch_around_page(1, lat, lng, radius_km, types, keyword, sortrule)]
+    else:
+        # 顺序 N×~1.5s → 并发约等于单次调用耗时，避免大半径下前端超时
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(pages_n, 6)) as ex:
+            futures = [
+                ex.submit(_fetch_around_page, p, lat, lng, radius_km, types, keyword, sortrule)
+                for p in range(1, pages_n + 1)
+            ]
+            page_lists = [f.result() for f in futures]
+
     out: list[dict] = []
     seen: set[str] = set()
-    for page in range(1, max(1, pages) + 1):
-        try:
-            params = {
-                "key": settings.amap_key,
-                "location": f"{lng},{lat}",
-                "radius": int(radius_km * 1000),
-                "types": types,
-                "offset": 25,
-                "page": page,
-                "extensions": "all",
-                "sortrule": sortrule,
-            }
-            if keyword:
-                params["keywords"] = keyword
-            resp = httpx.get(f"{AMAP_BASE}/v3/place/around", params=params, timeout=8.0)
-            resp.raise_for_status()
-            data = resp.json()
-            if str(data.get("status")) != "1":
-                break
-            pois = data.get("pois") or []
-        except (httpx.HTTPError, ValueError):
-            break
-        if not pois:
-            break
+    for pois in page_lists:        # 保持页序：靠前页（更相关/更近）优先
         for p in pois:
             pid = str(p.get("id") or "")
             if pid and pid in seen:
@@ -201,8 +225,6 @@ def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
             if pid:
                 seen.add(pid)
             out.append(p)
-        if len(pois) < 25:        # 已到最后一页
-            break
     if out:
         _AROUND_CACHE[cache_key] = (time.time() + _AROUND_TTL, out)
         if len(_AROUND_CACHE) > 500:

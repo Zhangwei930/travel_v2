@@ -66,11 +66,7 @@
       </view>
       <button class="cy-act-icon cy-share-btn" open-type="share">
         <CyIcon name="share-dark" :size="50" />
-        <text class="cy-act-icon-label">发给朋友</text>
-      </button>
-      <button class="cy-act-icon cy-share-btn" open-type="shareTimeline">
-        <CyIcon name="share-dark" :size="50" />
-        <text class="cy-act-icon-label">朋友圈</text>
+        <text class="cy-act-icon-label">分享</text>
       </button>
       <view class="cy-nav-btn" @tap="goNav">
         <CyIcon name="send-white" :size="38" />

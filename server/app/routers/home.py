@@ -47,13 +47,15 @@ def _knowledge_maps(db: Session) -> tuple[dict[int, TravelKnowledge], dict[str, 
 
 
 def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None,
-               radius_km: float = NEARBY_RADIUS_KM, pages: int = 1) -> list[tuple[PoiIndex, TravelKnowledge | None]]:
+               radius_km: float = NEARBY_RADIUS_KM, pages: int = 1,
+               sortrule: str = "distance") -> list[tuple[PoiIndex, TravelKnowledge | None]]:
     raw = map_provider.amap_search_around(
         lat,
         lng,
         radius_km=radius_km,
         types=map_provider.amap_types_for_scene(scene),
         pages=pages,
+        sortrule=sortrule,
     )
     parsed = [p for p in (map_provider.parse_amap_poi(item) for item in raw) if p and p["name"]]
     if not parsed:
@@ -161,6 +163,8 @@ def _build_home_feed(
     scene: str | None,
     db: Session,
     radius: float | None = None,
+    route_limit: int = 3,
+    route_per_duration: int = 1,
 ) -> HomeFeedOut:
     _regeo = map_provider.amap_reverse_geocode(lat, lng)
     resolved_city = (
@@ -173,10 +177,13 @@ def _build_home_feed(
     weather = get_weather(resolved_city)
 
     # 附近页传 radius → 用该半径抓多页、返回更多（供下拉加载）；首页不传则保持 15km/精简
+    # 带半径时按热度横跨全半径召回（与场景页一致）：distance 排序只返回最近一圈，
+    # 且页数随半径放大，否则大半径（15/30/50km）列表会卡在最近几公里（如选 15km 却只拉到 ~4.2km）。
     eff_radius = radius or NEARBY_RADIUS_KM
-    pages = 3 if radius else 1
-    nearby_limit = 60 if radius else 8
-    poi_rows = _amap_rows(db, lat, lng, resolved_city, scene, radius_km=eff_radius, pages=pages)
+    pages = map_provider.pages_for_radius(eff_radius) if radius else 1
+    nearby_limit = pages * 25 if radius else 8
+    sortrule = "weight" if radius else "distance"
+    poi_rows = _amap_rows(db, lat, lng, resolved_city, scene, radius_km=eff_radius, pages=pages, sortrule=sortrule)
     if not poi_rows:
         poi_rows = _local_rows(db, resolved_city, scene)
 
@@ -193,7 +200,8 @@ def _build_home_feed(
         scene=scene,
         origin=origin,
         recommended=nearby,
-        limit=3,
+        limit=route_limit,
+        max_per_dur=route_per_duration,
     )
 
     return HomeFeedOut(
@@ -215,9 +223,20 @@ def home_feed(
     intent: str | None = Query(default=None),
     scene: str | None = Query(default=None),
     radius: float | None = Query(default=None, ge=1, le=100),
+    route_limit: int = Query(default=3, ge=1, le=90),
+    route_per_duration: int = Query(default=1, ge=1, le=30),
     db: Session = Depends(get_db),
 ):
-    return _build_home_feed(lat=lat, lng=lng, city=city, scene=scene, db=db, radius=radius)
+    return _build_home_feed(
+        lat=lat,
+        lng=lng,
+        city=city,
+        scene=scene,
+        db=db,
+        radius=radius,
+        route_limit=route_limit,
+        route_per_duration=route_per_duration,
+    )
 
 
 @router.get("/bootstrap", response_model=HomeFeedOut)
@@ -254,7 +273,21 @@ def routes_featured(
     city: str | None = Query(default=None),
     scene: str | None = Query(default=None),
     duration: str | None = Query(default=None),
+    radius: float | None = Query(default=None, ge=1, le=100),
+    route_limit: int | None = Query(default=None, ge=1, le=90),
+    route_per_duration: int = Query(default=1, ge=1, le=30),
     db: Session = Depends(get_db),
 ):
-    feed = _build_home_feed(lat=lat, lng=lng, city=city, scene=scene, db=db)
-    return _filter_routes(feed.routes, duration)
+    response_limit = route_limit or (route_per_duration if duration else 3)
+    build_limit = max(response_limit, route_per_duration * 3) if duration else response_limit
+    feed = _build_home_feed(
+        lat=lat,
+        lng=lng,
+        city=city,
+        scene=scene,
+        db=db,
+        radius=radius,
+        route_limit=build_limit,
+        route_per_duration=route_per_duration,
+    )
+    return _filter_routes(feed.routes, duration)[:response_limit]

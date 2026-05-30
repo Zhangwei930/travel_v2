@@ -102,8 +102,8 @@ function parseDistKm(text) {
 }
 
 const filteredPois = computed(() => {
-  let arr = [...pois.value]
-  if (active.value === 'nearest') return arr.sort((a, b) => parseDistKm(a.distance) - parseDistKm(b.distance))
+  // 始终按距离由近到远排序（位置类列表，避免顺序看起来是乱的）
+  let arr = [...pois.value].sort((a, b) => parseDistKm(a.distance) - parseDistKm(b.distance))
   if (active.value === 'free')    return arr.filter(p => (p.tags || []).some(t => /免费|免门票/.test(t)))
   if (active.value === 'indoor')  return arr.filter(p => (p.tags || []).some(t => /室内/.test(t)) || /博物|商场|书店|展馆|影院|咖啡/.test(p.category || ''))
   if (active.value === 'recommend') return arr.filter(p => (p.score ?? 0) >= 60)
@@ -186,10 +186,16 @@ onMounted(() => {
 @import '../../uni.scss';
 
 .cy-page {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   background: $cy-bg;
   font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
 }
+
+/* scroll-view 必须有约束高度才会内部滚动并触发 @scrolltolower（否则整页滚动、加载不出更多） */
+.cy-scroll { flex: 1; min-height: 0; }
 
 .cy-filter-scroll {
   width: 100%;

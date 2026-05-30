@@ -82,18 +82,18 @@
       <view class="cy-section">
         <view class="cy-section-head">
           <text class="cy-section-title">精选路线</text>
-          <text class="cy-section-more" @tap="goRoutes">更多 ›</text>
+          <text class="cy-section-more" @tap="goRoutes()">更多 ›</text>
         </view>
-        <view v-if="feedLoading && !routes.length" class="cy-hint-muted"><text>正在加载精选路线…</text></view>
+        <view v-if="feedLoading && !loaded" class="cy-hint-muted"><text>正在加载精选路线…</text></view>
         <view v-else class="cy-routes-card">
           <view class="cy-routes-row">
             <cy-route-card
-              v-for="route in routes"
-              :key="route.id"
-              :title="route.title"
-              :sub="(route.duration || '半日') + ' · ' + (route.stops?.length || 0) + '站'"
-              :stops="route.stops?.length || 2"
-              @tap="openRoute(route)"
+              v-for="entry in loaded ? routeDurationEntries : []"
+              :key="entry.id"
+              :title="entry.title"
+              :sub="entry.sub"
+              :stops="entry.stops"
+              @tap="goRoutes(entry.id)"
             />
           </view>
         </view>
@@ -113,7 +113,7 @@ import CyRouteCard from '../../components/cy/cy-route-card.vue'
 import CyIcon from '../../components/cy/cy-icon.vue'
 import { useCityStore } from '../../store/city.js'
 import { setAssistantContext, setHomeFeedCache } from '../../api/storage.js'
-import { poiImage, routeImage } from '../../api/assets.js'
+import { poiImage } from '../../api/assets.js'
 import { setTabBarSelected } from '../../api/tabbar.js'
 
 const cityStore = useCityStore()
@@ -121,14 +121,18 @@ const statusBarH = ref(44)
 const tabBarH = ref('80px')
 const weather = ref(null)
 const nearby = ref([])
-const routes = ref([])
 const feedLoading = ref(false)
 const loaded = ref(false)
 const fallbackUsed = ref(false)
 const locationError = ref(false)
 const brokenPoi = ref({})
-const brokenRoute = ref({})
 const landmark = ref('')
+
+const routeDurationEntries = [
+  { id: '2h', title: '2小时游', sub: '短线组合 · 多条路线可选', stops: 2 },
+  { id: 'half', title: '半日游', sub: '半天安排 · 多条路线可选', stops: 3 },
+  { id: 'day', title: '一日游', sub: '全天串联 · 多条路线可选', stops: 5 },
+]
 
 const nearbyVisible = computed(() => nearby.value.slice(0, 3))
 const homeFeedCity = computed(() => (cityStore.source === 'default' ? cityStore.current : ''))
@@ -165,9 +169,7 @@ const timeSlot = computed(() => {
 })
 
 function poiThumb(poi) { return poiImage(poi, brokenPoi.value[poi?.id]) }
-function routeThumb(route) { return routeImage(route, brokenRoute.value[route?.id]) }
 function onPoiImageError(poi) { if (poi?.id) brokenPoi.value = { ...brokenPoi.value, [poi.id]: (brokenPoi.value[poi.id] || 0) + 1 } }
-function onRouteImageError(r) { if (r?.id) brokenRoute.value = { ...brokenRoute.value, [r.id]: true } }
 
 async function loadFeed(options = {}) {
   if (cityStore.locating) return
@@ -202,7 +204,6 @@ async function loadFeed(options = {}) {
     }
     weather.value = feed.weather || null
     nearby.value = (feed.nearby_now || []).filter(p => p.nav_ready && p.lat != null && p.lng != null)
-    routes.value = feed.routes || []
     setHomeFeedCache(feed)
     loaded.value = true
   } catch (err) {
@@ -211,7 +212,6 @@ async function loadFeed(options = {}) {
       cityStore.locationDenied = true
     }
     nearby.value = []
-    routes.value = []
   } finally {
     cityStore.locating = false
     feedLoading.value = false
@@ -257,7 +257,10 @@ function goEntry(id) {
 }
 
 function goNearby() { uni.navigateTo({ url: '/pages/nearby/index' }) }
-function goRoutes() { uni.navigateTo({ url: '/pages/routes/routes' }) }
+function goRoutes(duration = '') {
+  if (typeof duration !== 'string') duration = ''
+  uni.navigateTo({ url: `/pages/routes/routes${duration ? `?duration=${duration}` : ''}` })
+}
 
 function retryLocation() { loadFeed({ forceLocate: true }) }
 function useDefaultFeed() {
@@ -267,12 +270,6 @@ function useDefaultFeed() {
 
 function goPoi(id) {
   uni.navigateTo({ url: `/pages/poi/detail?id=${id}&lat=${cityStore.coords?.lat || ''}&lng=${cityStore.coords?.lng || ''}` })
-}
-
-function openRoute(route) {
-  if (!route) return
-  try { uni.setStorageSync('currentRoute', route) } catch (_) {}
-  uni.navigateTo({ url: '/pages/routes/detail' })
 }
 
 function onSearch() {

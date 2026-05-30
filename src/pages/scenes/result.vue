@@ -252,12 +252,16 @@ function onSearch() {
 @import '../../uni.scss';
 
 .cy-page {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   background: $cy-bg;
   font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
 }
 
-.cy-scroll { position: relative; }
+/* scroll-view 必须有约束高度才会内部滚动并触发 @scrolltolower（否则整页滚动、加载不出更多） */
+.cy-scroll { position: relative; flex: 1; min-height: 0; }
 
 // ── 筛选 chips ─────────────────────────────────────────────
 .cy-filter-scroll {

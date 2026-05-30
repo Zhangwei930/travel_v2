@@ -9,14 +9,14 @@
         :key="t.id"
         class="cy-dur-tab"
         :class="{ 'cy-dur-tab--active': active === t.id }"
-        @tap="active = t.id"
+        @tap="setTab(t.id)"
       >
         <text class="cy-dur-label">{{ t.label }}</text>
         <view v-if="active === t.id" class="cy-dur-line" />
       </view>
     </view>
 
-    <scroll-view scroll-y class="cy-scroll" :show-scrollbar="false">
+    <scroll-view scroll-y class="cy-scroll" :show-scrollbar="false" @scrolltolower="loadMore">
       <view v-if="loading" class="cy-hint-muted"><text>加载中…</text></view>
       <view v-else-if="locationError" class="cy-state-card">
         <text class="cy-state-title">需要开启定位</text>
@@ -61,6 +61,9 @@
         </view>
       </view>
 
+      <view v-if="filteredRoutes.length && visibleRoutes.length >= filteredRoutes.length" class="cy-list-end">
+        <text>— 没有更多了 —</text>
+      </view>
       <view style="height: 32rpx;" />
     </scroll-view>
   </view>
@@ -71,7 +74,7 @@ import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/index.js'
 import { routeImage } from '../../api/assets.js'
-import { getHomeFeedCache, setHomeFeedCache } from '../../api/storage.js'
+import { getHomeFeedCache } from '../../api/storage.js'
 import { useCityStore } from '../../store/city.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 import CyIcon from '../../components/cy/cy-icon.vue'
@@ -88,13 +91,28 @@ const tabs = [
   { id: 'day',  label: '一日' },
 ]
 const active = ref('2h')
+const ROUTES_PER_DURATION = 15
+const ROUTE_LIMIT = ROUTES_PER_DURATION * 3   // 三个时长合计，避免后端按 limit 截断
+const PAGE_SIZE = 5
+const displayCount = ref(PAGE_SIZE)
 
-const visibleRoutes = computed(() => {
+const filteredRoutes = computed(() => {
   const match = active.value === '2h'   ? /2\s*小时|2h|两小时/i
               : active.value === 'half' ? /半日|半天|3\s*小时|4\s*小时/i
               :                           /一日|全天|一天|day/i
   return allRoutes.value.filter(r => match.test(r.duration || ''))
 })
+// 仅渲染前 displayCount 条，触底再加载更多
+const visibleRoutes = computed(() => filteredRoutes.value.slice(0, displayCount.value))
+
+function setTab(id) {
+  if (active.value === id) return
+  active.value = id
+  displayCount.value = PAGE_SIZE
+}
+function loadMore() {
+  if (displayCount.value < filteredRoutes.value.length) displayCount.value += PAGE_SIZE
+}
 
 function parseDistKm(text) {
   const m = String(text || '').match(/([0-9.]+)\s*(km|m|公里|米)?/i)
@@ -115,19 +133,20 @@ function onRouteImageError(r) {
   if (r?.id) brokenRoute.value = { ...brokenRoute.value, [r.id]: true }
 }
 
-onLoad(() => { loadFeed(false) })
+onLoad((query = {}) => {
+  if (tabs.some(t => t.id === query.duration)) active.value = query.duration
+  loadFeed(false)
+})
 
 async function loadFeed(forceLocation) {
   loading.value = true
   locationError.value = false
   try {
     const cached = !forceLocation ? getHomeFeedCache() : null
-    if (cached) {
-      allRoutes.value = cached.routes || []
-      loading.value = false
-      return
-    }
     let coords = cityStore.coords
+    if ((!coords?.lat || !coords?.lng) && cached?.location?.lat && cached?.location?.lng) {
+      coords = { lat: cached.location.lat, lng: cached.location.lng }
+    }
     if (!coords?.lat || forceLocation) {
       const r = await new Promise((res, rej) => {
         uni.getLocation({ type: 'gcj02', success: res, fail: rej })
@@ -136,10 +155,17 @@ async function loadFeed(forceLocation) {
       coords = cityStore.coords
     }
     const city = cityStore.source === 'default' ? cityStore.current : ''
-    const feed = await api.getHomeFeed({ lat: coords.lat, lng: coords.lng, city, intent: 'hot_routes' })
-    if (feed?.location?.city) cityStore.setFromLocation(feed.location.city)
-    setHomeFeedCache(feed)
-    allRoutes.value = feed.routes || []
+    const feed = await api.getHomeFeed({
+      lat: coords.lat,
+      lng: coords.lng,
+      city,
+      intent: 'hot_routes',
+      radius: cityStore.radiusKm,
+      route_limit: ROUTE_LIMIT,
+      route_per_duration: ROUTES_PER_DURATION,
+    })
+    allRoutes.value = feed?.routes || []
+    displayCount.value = PAGE_SIZE
   } catch (_) {
     locationError.value = true
     allRoutes.value = []
@@ -161,10 +187,16 @@ function openRoute(route) {
 @import '../../uni.scss';
 
 .cy-page {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   background: $cy-bg;
   font-family: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, system-ui, sans-serif;
 }
+
+/* scroll-view 必须有约束高度才会内部滚动并触发 @scrolltolower（否则整页滚动、加载不出更多） */
+.cy-scroll { flex: 1; min-height: 0; }
 
 // ── 时长 tabs ──────────────────────────────────────────────
 .cy-dur-tabs {
@@ -214,6 +246,13 @@ function openRoute(route) {
   color: $cy-muted;
   font-size: 26rpx;
   padding: 60rpx 0;
+}
+
+.cy-list-end {
+  text-align: center;
+  padding: 8rpx 0 24rpx;
+  font-size: 22rpx;
+  color: $cy-muted;
 }
 
 .cy-state-card {

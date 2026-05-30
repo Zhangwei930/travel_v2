@@ -82,33 +82,63 @@ def _template_routes(
     return cards
 
 
+AVG_SPEED_KMH = 25.0   # 车程估算速度，与 recommend_service 的 drive_time 一致
+
+# 每个时长：站点数 + 预算等级 + 往返车程上限(分钟)。
+# 2小时=2站/≤60min、半日=3站/≤120min、一日=5站/≤240min。
+# 往返车程超上限即"光路上就超时"，不出该路线。
+_DURATION_SPECS = [
+    ("2h", "2小时", 2, "低", 60),
+    ("half", "半日", 3, "低", 120),
+    ("day", "一日", 5, "中", 240),
+]
+
+
+def _route_travel_min(origin: tuple[float, float], stops: list[RouteStopOut]) -> float:
+    """估算 当前位置→各站→返回 的总车程分钟（直线距离 / 平均车速）。"""
+    pts = [origin] + [(s.lat, s.lng) for s in stops] + [origin]
+    km = sum(
+        map_provider.haversine_km(a[0], a[1], b[0], b[1])
+        for a, b in zip(pts, pts[1:])
+    )
+    return km / AVG_SPEED_KMH * 60
+
+
 def _dynamic_routes(
     recommended: list[RecommendPoiOut],
     scene: str | None,
-    limit: int,
+    origin: tuple[float, float],
+    max_per_dur: int,
 ) -> list[RouteCardOut]:
+    """把附近 POI 池切成每个时长多条路线，标题用「首站-末站」。
+    按距离由近到远成行，并跳过往返车程超出该时长预算的路线。"""
     label = SCENE_LABELS.get(scene or "", "附近")
-    specs = [
-        ("dynamic_2h", f"2小时{label}轻松路线", "2小时", "低", recommended[:2]),
-        ("dynamic_half_day", f"半日{label}路线", "半日", "低", recommended[:3]),
-        ("dynamic_day", f"一日{label}路线", "一日", "中", recommended[:5]),
-    ]
+    pool = [s for s in (_stop_from_card(card) for card in recommended) if s]
+    pool.sort(key=lambda s: map_provider.haversine_km(origin[0], origin[1], s.lat, s.lng))
     cards: list[RouteCardOut] = []
-    for route_id, title, duration, budget, stops_src in specs:
-        stops = [s for s in (_stop_from_card(card) for card in stops_src) if s]
-        if not stops:
-            continue
-        cards.append(RouteCardOut(
-            id=f"{route_id}_{scene or 'nearby'}",
-            title=title,
-            duration=duration,
-            budget=budget,
-            scene=scene,
-            summary="距离近，强度低，适合从当前位置直接出发。",
-            stops=stops,
-            nav_ready=True,
-        ))
-    return cards[:limit]
+    for key, duration, size, budget, max_travel in _DURATION_SPECS:
+        cnt = 0
+        for i in range(0, len(pool), size):
+            chunk = pool[i:i + size]
+            if len(chunk) < 2:          # 至少 2 站才算一条路线
+                break
+            if _route_travel_min(origin, chunk) > max_travel:
+                break                   # 距离升序，后续路线更远，必然也超时
+            title = f"{chunk[0].name}-{chunk[-1].name}"
+            cards.append(RouteCardOut(
+                id=f"dynamic_{scene or 'nearby'}_{key}_{i}",
+                title=title,
+                duration=duration,
+                budget=budget,
+                scene=scene,
+                summary=f"{label}·{len(chunk)}站，就近成行，从当前位置出发。",
+                stops=chunk,
+                nav_ready=True,
+            ))
+            cnt += 1
+            if cnt >= max_per_dur:
+                break
+    return cards
 
 
 def build_home_routes(
@@ -118,8 +148,9 @@ def build_home_routes(
     origin: tuple[float, float],
     recommended: list[RecommendPoiOut],
     limit: int = 3,
+    max_per_dur: int = 1,
 ) -> list[RouteCardOut]:
-    cards = _dynamic_routes(recommended, scene, limit)
+    cards = _dynamic_routes(recommended, scene, origin, max_per_dur)
     if len(cards) < limit:
         existing_ids = {str(card.id) for card in cards}
         for card in _template_routes(db, city, scene, origin, limit):

@@ -14,10 +14,6 @@
             <text class="cy-user-hint">{{ userProfile ? '点击修改资料' : '点击登录/注册' }}</text>
           </view>
         </view>
-        <view class="cy-settings-btn" @tap.stop="goSettings">
-          <CyIcon name="gear-muted" :size="44" />
-          <text class="cy-settings-arrow">›</text>
-        </view>
       </view>
 
       <!-- 统计卡 -->
@@ -54,17 +50,17 @@
       <view class="cy-sheet">
         <view class="cy-sheet-handle" />
         <text class="cy-sheet-title">微信授权登录</text>
-        <text class="cy-sheet-sub">授权后获取头像和昵称，仅存储在本设备</text>
+        <text class="cy-sheet-sub">①点头像选微信头像 ②点昵称栏一键填入微信昵称 ③完成登录（仅存本机）</text>
 
         <!-- #ifdef MP-WEIXIN -->
-        <!-- form + form-type=submit 可靠收集 nickname，避免 change 事件时序导致取不到昵称 -->
+        <!-- 昵称用 type=nickname，必须靠 form 提交才能稳定取到（input 事件时序会丢值）；昵称为空不阻断，默认"微信用户" -->
         <form class="cy-sheet-form" @submit="onSubmitProfile">
           <button class="cy-avatar-btn-lg" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
             <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" />
             <text class="cy-avatar-tip">{{ tempAvatar ? '点击更换头像' : '点击选择微信头像' }}</text>
           </button>
-          <input class="cy-name-input" type="nickname" name="nickname" :value="tempName" placeholder="点击填写微信昵称" placeholder-style="color:#9CA3AF" @change="e => tempName = e.detail.value" @blur="e => tempName = e.detail.value" />
-          <button class="cy-save-btn" form-type="submit">确认授权</button>
+          <input class="cy-name-input" type="nickname" name="nickname" :value="tempName" placeholder="点这里一键填入微信昵称" placeholder-style="color:#9CA3AF" @input="onNameInput" @blur="onNameInput" />
+          <button class="cy-save-btn" form-type="submit">完成登录</button>
         </form>
         <!-- #endif -->
 
@@ -98,7 +94,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { getProfileStats, getUserProfile, setUserProfile } from '../../api/storage.js'
+import { consumePendingLoginRedirect, getProfileStats, getUserProfile, setUserProfile } from '../../api/storage.js'
 import { setTabBarSelected } from '../../api/tabbar.js'
 import CyIcon from '../../components/cy/cy-icon.vue'
 
@@ -109,6 +105,7 @@ const showLoginSheet = ref(false)
 const showOfflineSheet = ref(false)
 const tempAvatar = ref('')
 const tempName   = ref('')
+const loginRedirect = ref('')
 
 const stats = ref([
   { num: '0', label: '收藏',  onTap: () => uni.navigateTo({ url: '/pages/saved/pois' }) },
@@ -121,7 +118,6 @@ const funcItems = [
   { iconKey: 'history',  label: '浏览历史', onTap: () => uni.navigateTo({ url: '/pages/saved/visited' }) },
   { iconKey: 'route',    label: '我的路线', onTap: () => uni.navigateTo({ url: '/pages/saved/plans' }) },
   { iconKey: 'offline',  label: '离线地图', onTap: () => { showOfflineSheet.value = true } },
-  { iconKey: 'feedback', label: '意见反馈', onTap: () => uni.navigateTo({ url: '/pages/saved/feedback' }) },
   { iconKey: 'settings', label: '设置',    onTap: goSettings },
 ]
 
@@ -141,27 +137,56 @@ onMounted(() => {
   userProfile.value = getUserProfile()
   refreshStats()
   uni.$on('cityChanged', refreshStats)
+  uni.$on('profileLoginRequest', onProfileLoginRequest)
 })
 
-onShow(() => { setTabBarSelected(3); refreshStats(); userProfile.value = getUserProfile() })
-onUnmounted(() => uni.$off('cityChanged', refreshStats))
+onShow(() => {
+  setTabBarSelected(3)
+  refreshStats()
+  userProfile.value = getUserProfile()
+  const redirect = consumePendingLoginRedirect()
+  if (redirect && !userProfile.value) openLoginSheet(redirect)
+})
+onUnmounted(() => {
+  uni.$off('cityChanged', refreshStats)
+  uni.$off('profileLoginRequest', onProfileLoginRequest)
+})
 
-function onLogin() {
+function openLoginSheet(redirect = '') {
+  loginRedirect.value = redirect
   tempAvatar.value = userProfile.value?.avatar || ''
   tempName.value   = userProfile.value?.name   || ''
   showLoginSheet.value = true
 }
 
+function onLogin() { openLoginSheet() }
+
+function onProfileLoginRequest(payload = {}) {
+  if (userProfile.value) {
+    if (payload.redirect) uni.navigateTo({ url: payload.redirect })
+    return
+  }
+  openLoginSheet(payload.redirect || '')
+}
+
 function onChooseAvatar(e) {
   const tempUrl = e.detail.avatarUrl
-  if (!tempUrl) return
+  if (!tempUrl) {
+    // chooseAvatar 可能因微信下载头像时网络被重置(ECONNRESET)而拿不到，提示重试
+    uni.showToast({ title: '头像获取失败，请重试', icon: 'none' })
+    return
+  }
   // #ifdef MP-WEIXIN
-  // chooseAvatar 返回的是临时路径，需持久化保存，否则重启后头像失效
-  uni.saveFile({
-    tempFilePath: tempUrl,
-    success: (res) => { tempAvatar.value = res.savedFilePath },
-    fail: () => { tempAvatar.value = tempUrl },
-  })
+  // 持久化头像临时文件(重启会失效)；用新版 FileSystemManager.saveFile 替代已废弃的 wx.saveFile
+  try {
+    wx.getFileSystemManager().saveFile({
+      tempFilePath: tempUrl,
+      success: (res) => { tempAvatar.value = res.savedFilePath },
+      fail: () => { tempAvatar.value = tempUrl },
+    })
+  } catch (_) {
+    tempAvatar.value = tempUrl
+  }
   // #endif
   // #ifndef MP-WEIXIN
   tempAvatar.value = tempUrl
@@ -169,20 +194,29 @@ function onChooseAvatar(e) {
 }
 
 // #ifdef MP-WEIXIN
-// form 提交时由 e.detail.value 可靠取到 nickname，规避 change 事件未触发的情况
+// 用 form 提交可靠取到微信昵称（type=nickname）。昵称为空不阻断登录，默认"微信用户"，可在"修改资料"再改。
 function onSubmitProfile(e) {
-  const name = ((e.detail.value && e.detail.value.nickname) || tempName.value || '').trim()
-  if (!name) {
-    uni.showToast({ title: '请填写昵称', icon: 'none' })
-    return
-  }
+  const name = (((e.detail.value && e.detail.value.nickname) || tempName.value || '').trim()) || '微信用户'
   const profile = { name, avatar: tempAvatar.value, loginAt: Date.now() }
   setUserProfile(profile)
   userProfile.value = profile
-  showLoginSheet.value = false
-  uni.showToast({ title: '登录成功', icon: 'success' })
+  afterLoginSuccess()
 }
 // #endif
+
+function onNameInput(e) {
+  tempName.value = e?.detail?.value || ''
+}
+
+function afterLoginSuccess() {
+  const redirect = loginRedirect.value
+  loginRedirect.value = ''
+  showLoginSheet.value = false
+  uni.showToast({ title: '登录成功', icon: 'success' })
+  if (redirect) {
+    setTimeout(() => uni.navigateTo({ url: redirect }), 300)
+  }
+}
 
 function funcIconName(key) {
   const map = {
@@ -201,8 +235,7 @@ function saveProfile() {
   const profile = { name: tempName.value.trim(), avatar: tempAvatar.value, loginAt: Date.now() }
   setUserProfile(profile)
   userProfile.value = profile
-  showLoginSheet.value = false
-  uni.showToast({ title: '登录成功', icon: 'success' })
+  afterLoginSuccess()
 }
 
 function goSettings() { uni.navigateTo({ url: '/pages/profile/settings' }) }
@@ -250,19 +283,6 @@ function goSettings() { uni.navigateTo({ url: '/pages/profile/settings' }) }
 .cy-user-name { font-size: 36rpx; font-weight: 800; color: $cy-text; }
 .cy-user-hint { font-size: 26rpx; color: $cy-green; font-weight: 500; }
 
-.cy-settings-btn {
-  display: flex;
-  align-items: center;
-  gap: 4rpx;
-  width: 60rpx;
-  height: 60rpx;
-  border-radius: 30rpx;
-  background: rgba(255,255,255,0.6);
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.cy-settings-arrow { font-size: 30rpx; color: $cy-muted; }
 
 // ── 统计卡 ─────────────────────────────────────────────────
 .cy-stats-card {

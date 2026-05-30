@@ -85,7 +85,7 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { api } from '../../api/index.js'
-import { getUserProfile, addMyFeedback, getMyFeedback } from '../../api/storage.js'
+import { getUserProfile, addMyFeedback, getMyFeedback, setPendingLoginRedirect } from '../../api/storage.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 
 const TYPES = ['功能异常', '内容纠错', '体验建议', '其他']
@@ -101,7 +101,14 @@ onShow(() => {
   history.value = getMyFeedback()
 })
 
-function goLogin() { uni.switchTab({ url: '/pages/profile/profile' }) }
+function goLogin() {
+  const redirect = '/pages/saved/feedback'
+  setPendingLoginRedirect(redirect)
+  uni.switchTab({
+    url: '/pages/profile/profile',
+    success: () => uni.$emit('profileLoginRequest', { redirect }),
+  })
+}
 
 function chooseImages() {
   const remain = 3 - images.value.length

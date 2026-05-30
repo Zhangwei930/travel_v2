@@ -201,8 +201,9 @@ def poi_list(
         types = map_provider.amap_types_for_scene(scene) if scene else map_provider.AMAP_DEFAULT_TYPES
         scene_kw = map_provider.SCENE_KEYWORDS.get(scene or "", "")
         # 场景浏览按热度抓多页：一次返回更多、覆盖近→远全半径（再按距离重排展示）
+        # 页数随半径放大，否则大半径（15/30/50km）只铺到最近几公里就没有更多了
         sortrule = "weight" if scene else "distance"
-        pages = 3 if scene else 1
+        pages = map_provider.pages_for_radius(radius) if scene else 1
         raw = []
         if scene_kw:
             raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types,
@@ -279,8 +280,6 @@ def poi_detail(
         best_time=(kn.best_time if kn else None),
         fit_items=fit_items,
         avoid_tips=avoid_tips,
-        lat=poi.lat,
-        lng=poi.lng,
     )
 
 
