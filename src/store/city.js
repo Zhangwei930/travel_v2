@@ -63,14 +63,16 @@ export const useCityStore = defineStore('city', {
       if (lat == null || lng == null) return
       this.coords = { lat, lng }
       this.source = 'located'
-      // 坐标更新时清空 landmark，防止旧地标跟随旧城市继续显示
+      // 坐标更新时清空旧城市/地标，防止反查完成前展示 stale 文案
+      this.current = ''
       this.landmark = ''
       try {
         uni.setStorageSync(KEY_COORDS, this.coords)
         uni.setStorageSync(KEY_LOCATION_SOURCE, this.source)
+        uni.removeStorageSync(KEY_CITY)
         uni.removeStorageSync(KEY_LANDMARK)
       } catch (_) {}
-      // current 保留旧城市名，等 API 返回新城市后由 setFromLocation 更新
+      // current 等 API 返回新城市后由 setFromLocation 更新
     },
     setRadius(km) {
       const r = RADIUS_OPTIONS.includes(Number(km)) ? Number(km) : DEFAULT_RADIUS

@@ -80,6 +80,11 @@ def _location_cards(payload: AskIn, city: str, db: Session):
     return destinations, routes
 
 
+def _source_from_faq(faq: FaqKnowledge) -> AskSource:
+    label = faq.category or faq.question
+    return AskSource(k="知识库", v=label)
+
+
 def _prepare(payload: AskIn, db: Session) -> dict:
     """决定走 KB 命中还是 LLM 兜底；LLM 时一并备好 prompt 和待审核所需数据。"""
     question = payload.question.strip()
@@ -106,7 +111,7 @@ def _prepare(payload: AskIn, db: Session) -> dict:
             best, best_score = faq, s
 
     if best and best_score >= settings.kb_similarity_threshold:
-        return {"mode": "kb", "text": best.answer}
+        return {"mode": "kb", "text": best.answer, "source": _source_from_faq(best), "city": city}
 
     # 未命中：WebSearch + 组 prompt（命中位置/时间上下文）
     results = websearch.search(f"{city} {merged_query}", db)
@@ -146,26 +151,31 @@ def _prepare(payload: AskIn, db: Session) -> dict:
 
 def ask(payload: AskIn, db: Session) -> AskOut:
     p = _prepare(payload, db)
+    destinations, routes = _location_cards(payload, p["city"], db)
     if p["mode"] == "kb":
-        return AskOut(text=p["text"], sources=[], chips=[], from_kb=True,
-                      destinations=[], routes=[], kb_status="hit")
+        return AskOut(text=p["text"], sources=[p["source"]], chips=[], from_kb=True,
+                      destinations=destinations, routes=routes, kb_status="hit")
     answer = ai_provider.generate_text(p["prompt"], fallback=p["fallback"])
     websearch.create_pending(question=p["question"], answer=answer, results=p["results"],
                              city=p["city"], category="出游助手", db=db)
     return AskOut(text=answer, sources=[], chips=[], from_kb=False,
-                  destinations=[], routes=[], kb_status="miss")
+                  destinations=destinations, routes=routes, kb_status="miss")
 
 
 def ask_stream_events(payload: AskIn, db: Session):
     """流式生成器：yield (event_type, data)。KB 命中即时整段返回，未命中逐字流式。"""
     p = _prepare(payload, db)
+    destinations, routes = _location_cards(payload, p["city"], db)
+    sources = [p["source"]] if p["mode"] == "kb" else []
     if p["mode"] == "kb":
-        yield ("meta", {"from_kb": True, "kb_status": "hit"})
+        yield ("meta", {"from_kb": True, "kb_status": "hit", "sources": sources,
+                        "destinations": destinations, "routes": routes})
         yield ("text", p["text"])
         yield ("done", None)
         return
 
-    yield ("meta", {"from_kb": False, "kb_status": "miss"})
+    yield ("meta", {"from_kb": False, "kb_status": "miss", "sources": sources,
+                    "destinations": destinations, "routes": routes})
     full = ""
     if ai_provider.supports_stream():
         for delta in ai_provider.generate_stream(p["prompt"]):

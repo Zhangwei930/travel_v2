@@ -1,6 +1,6 @@
 <template>
   <view class="cy-launch">
-    <image src="/static/images/splash-map.jpg" class="cy-splash" mode="aspectFit" />
+    <image src="/static/images/splash-map.png" class="cy-splash" mode="aspectFit" />
   </view>
 </template>
 
@@ -12,6 +12,7 @@ const cityStore = useCityStore()
 
 // 用 onShow 代替 onMounted，确保页面栈已稳定再发起导航
 let bootstrapped = false
+let guard = null
 onShow(() => {
   if (bootstrapped) return
   bootstrapped = true
@@ -19,7 +20,13 @@ onShow(() => {
 })
 
 function gotoHome()     { uni.reLaunch({ url: '/pages/index/index' }) }
-function gotoLocation() { uni.reLaunch({ url: '/pages/location/index' }) }
+function gotoLocation() {
+  if (guard) {
+    clearTimeout(guard)
+    guard = null
+  }
+  uni.reLaunch({ url: '/pages/location/index' })
+}
 
 function navigate(dest) {
   // 套一层 nextTick 再导航，彻底避免 appLaunch 阶段的页面栈冲突
@@ -37,10 +44,10 @@ async function bootstrap() {
 
   let settled = false
 
-  const guard = setTimeout(() => {
+  guard = setTimeout(() => {
     if (settled) return
     settled = true
-    navigate(cityStore.hasRealLocation ? gotoHome : gotoLocation)
+    navigate(gotoLocation)
   }, 5000)
 
   uni.getLocation({
@@ -53,12 +60,7 @@ async function bootstrap() {
       cityStore.locationDenied = false
       navigate(gotoHome)
     },
-    fail: () => {
-      if (settled) return
-      settled = true
-      clearTimeout(guard)
-      navigate(cityStore.hasRealLocation ? gotoHome : gotoLocation)
-    },
+    fail: () => { gotoLocation() },
   })
 }
 </script>

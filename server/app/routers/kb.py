@@ -2,6 +2,7 @@
 import json
 
 from fastapi import APIRouter, Depends
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -20,15 +21,17 @@ def ask(payload: AskIn, db: Session = Depends(get_db)):
 
 def _ask_stream_response(payload: AskIn, db: Session):
     def line(event: dict) -> str:
-        return json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
+        return json.dumps(jsonable_encoder(event), ensure_ascii=False, separators=(",", ":")) + "\n"
 
     def events():
         for etype, data in kb_service.ask_stream_events(payload, db):
             if etype == "meta":
                 yield line({
-                    "event": "meta", "sources": [], "chips": [],
+                    "event": "meta",
+                    "sources": data.get("sources", []), "chips": [],
                     "from_kb": data.get("from_kb", False),
-                    "destinations": [], "routes": [],
+                    "destinations": data.get("destinations", []),
+                    "routes": data.get("routes", []),
                     "kb_status": data.get("kb_status", ""),
                 })
             elif etype == "chunk":
