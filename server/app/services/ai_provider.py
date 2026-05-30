@@ -4,6 +4,8 @@ OpenAI 兼容的云模型（z-ai GLM 经 NVIDIA NIM、MiMo）优先；其次 Dif
 6.4 Prompt 约束：不得编造营业时间、票价、实时交通；价格/营业/耗时需提示以实时信息为准。
 默认 stub 不依赖任何模型，按模板生成文案，保证零配置可运行。
 """
+import json
+
 import httpx
 
 from app.config import settings
@@ -35,6 +37,8 @@ def generate_text(prompt: str, *, fallback: str = "") -> str:
             return _generate_openai_compatible(
                 base=settings.zai_api_base, api_key=settings.zai_api_key,
                 model=settings.zai_model, prompt=prompt, fallback=fallback,
+                # GLM-5.1 是推理模型，关闭思考链可提速 ~35%，问答场景无需深度推理
+                extra={"chat_template_kwargs": {"thinking": False}},
             )
         if provider == "mimo":
             return _generate_openai_compatible(
@@ -56,25 +60,82 @@ def generate_text(prompt: str, *, fallback: str = "") -> str:
     return fallback
 
 
+def supports_stream() -> bool:
+    """当前 provider 是否支持流式（OpenAI 兼容的 zai / mimo）。"""
+    return _provider() in ("zai", "mimo")
+
+
+def generate_stream(prompt: str):
+    """流式生成，逐段 yield 文本增量。仅 zai/mimo 支持；其他直接返回（调用方走非流式兜底）。"""
+    provider = _provider()
+    if provider == "zai":
+        base, key, model = settings.zai_api_base, settings.zai_api_key, settings.zai_model
+        extra = {"chat_template_kwargs": {"thinking": False}}
+    elif provider == "mimo":
+        base, key, model = settings.mimo_api_base, settings.mimo_api_key, settings.mimo_model
+        extra = {}
+    else:
+        return
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": PROMPT_RULES},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": 600,
+        "temperature": 0.7,
+        "stream": True,
+    }
+    body.update(extra)
+    try:
+        with httpx.stream(
+            "POST", f"{base.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json=body, timeout=120.0,
+        ) as resp:
+            resp.raise_for_status()
+            for raw in resp.iter_lines():
+                if not raw:
+                    continue
+                line = raw.decode() if isinstance(raw, bytes) else raw
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    delta = json.loads(data)["choices"][0]["delta"].get("content")
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+                if delta:
+                    yield delta
+    except httpx.HTTPError:
+        return
+
+
 def _generate_openai_compatible(*, base: str, api_key: str, model: str,
-                                prompt: str, fallback: str) -> str:
+                                prompt: str, fallback: str,
+                                extra: dict | None = None) -> str:
     """OpenAI 兼容 /chat/completions 调用（z-ai GLM、MiMo 等共用）。"""
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": PROMPT_RULES},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": 600,
+        "temperature": 0.7,
+    }
+    if extra:
+        body.update(extra)
     resp = httpx.post(
         f"{base.rstrip('/')}/chat/completions",
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": PROMPT_RULES},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": 1024,
-            "temperature": 0.7,
-        },
-        timeout=60.0,
+        json=body,
+        timeout=90.0,
     )
     resp.raise_for_status()
     choices = resp.json().get("choices", [])

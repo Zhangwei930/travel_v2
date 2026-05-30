@@ -80,7 +80,8 @@ def _location_cards(payload: AskIn, city: str, db: Session):
     return destinations, routes
 
 
-def ask(payload: AskIn, db: Session) -> AskOut:
+def _prepare(payload: AskIn, db: Session) -> dict:
+    """决定走 KB 命中还是 LLM 兜底；LLM 时一并备好 prompt 和待审核所需数据。"""
     question = payload.question.strip()
     city = payload.city or settings.default_city
     time_now = _time_slot()
@@ -89,12 +90,9 @@ def ask(payload: AskIn, db: Session) -> AskOut:
     history = [t for t in (payload.history or []) if (t.text or "").strip()]
     if not history and payload.context:
         history = [ChatTurn(role="user", text=payload.context.strip())]
-    # 取最近 6 条；只保留 user/bot 两种角色
     history = [t for t in history[-6:] if t.role in ("user", "bot")]
 
-    # 合并查询：拼最近 user 消息 + 当前问题 → 让 FAQ 匹配 / WebSearch 有完整语境
-    # 例「温江景点」+「适合带孩子吗？」→ 合并查询包含"温江"，
-    # 避免「适合带孩子吗？」单独命中通用 FAQ「成都带孩子玩什么」。
+    # 合并查询：拼最近 user 消息 + 当前问题，让 FAQ 匹配 / WebSearch 有完整语境
     user_history = [t.text.strip() for t in history if t.role == "user"]
     merged_query = (" ".join(user_history[-2:]) + " " + question).strip() if user_history else question
 
@@ -107,31 +105,21 @@ def ask(payload: AskIn, db: Session) -> AskOut:
         if s > best_score:
             best, best_score = faq, s
 
-    # 命中知识库：直接回答
     if best and best_score >= settings.kb_similarity_threshold:
-        return AskOut(
-            text=best.answer,
-            sources=[],
-            chips=[],
-            from_kb=True,
-            destinations=[],
-            routes=[],
-            kb_status="hit",
-        )
+        return {"mode": "kb", "text": best.answer}
 
-    # 未命中：WebSearch + AI 总结（结合位置和时间），结果写入待审核
+    # 未命中：WebSearch + 组 prompt（命中位置/时间上下文）
     results = websearch.search(f"{city} {merged_query}", db)
     snippets = "\n".join(f"- {r['title']}：{r['snippet']}" for r in results[:5])
     fallback = "抱歉，暂时找不到相关信息，请换个说法再试试。"
 
-    location_ctx = ""
     if payload.lat and payload.lng:
         location_ctx = f"用户当前位于{city}（坐标 {payload.lat:.4f}, {payload.lng:.4f}）。"
     elif city:
         location_ctx = f"用户当前在{city}。"
-
+    else:
+        location_ctx = ""
     weather_ctx = f"当前天气：{payload.weather}。" if payload.weather else ""
-
     if history:
         lines = [f"  {'用户' if t.role == 'user' else '助手'}：{t.text.strip()}" for t in history]
         context_block = "对话历史：\n" + "\n".join(lines) + "\n\n"
@@ -152,19 +140,40 @@ def ask(payload: AskIn, db: Session) -> AskOut:
         f"用户问题：{question}\n"
         f"参考资料：\n{snippets or '（无搜索结果）'}"
     )
-    answer = ai_provider.generate_text(prompt, fallback=fallback)
+    return {"mode": "llm", "prompt": prompt, "fallback": fallback,
+            "results": results, "question": question, "city": city}
 
-    websearch.create_pending(
-        question=question, answer=answer, results=results,
-        city=city, category="出游助手", db=db,
-    )
 
-    return AskOut(
-        text=answer,
-        sources=[],
-        chips=[],
-        from_kb=False,
-        destinations=[],
-        routes=[],
-        kb_status="miss",
-    )
+def ask(payload: AskIn, db: Session) -> AskOut:
+    p = _prepare(payload, db)
+    if p["mode"] == "kb":
+        return AskOut(text=p["text"], sources=[], chips=[], from_kb=True,
+                      destinations=[], routes=[], kb_status="hit")
+    answer = ai_provider.generate_text(p["prompt"], fallback=p["fallback"])
+    websearch.create_pending(question=p["question"], answer=answer, results=p["results"],
+                             city=p["city"], category="出游助手", db=db)
+    return AskOut(text=answer, sources=[], chips=[], from_kb=False,
+                  destinations=[], routes=[], kb_status="miss")
+
+
+def ask_stream_events(payload: AskIn, db: Session):
+    """流式生成器：yield (event_type, data)。KB 命中即时整段返回，未命中逐字流式。"""
+    p = _prepare(payload, db)
+    if p["mode"] == "kb":
+        yield ("meta", {"from_kb": True, "kb_status": "hit"})
+        yield ("text", p["text"])
+        yield ("done", None)
+        return
+
+    yield ("meta", {"from_kb": False, "kb_status": "miss"})
+    full = ""
+    if ai_provider.supports_stream():
+        for delta in ai_provider.generate_stream(p["prompt"]):
+            full += delta
+            yield ("chunk", delta)
+    answer = full.strip() or ai_provider.generate_text(p["prompt"], fallback=p["fallback"])
+    if not full.strip():
+        yield ("text", answer)      # 流式无输出时补发整段（兜底）
+    websearch.create_pending(question=p["question"], answer=answer, results=p["results"],
+                             city=p["city"], category="出游助手", db=db)
+    yield ("done", None)

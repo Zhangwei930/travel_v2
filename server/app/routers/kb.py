@@ -19,25 +19,30 @@ def ask(payload: AskIn, db: Session = Depends(get_db)):
 
 
 def _ask_stream_response(payload: AskIn, db: Session):
-    result = kb_service.ask(payload, db)
-
     def line(event: dict) -> str:
         return json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
 
     def events():
-        yield line({
-            "event": "meta",
-            "sources": [s.model_dump() for s in result.sources],
-            "chips": result.chips,
-            "from_kb": result.from_kb,
-            "destinations": [d.model_dump() for d in result.destinations],
-            "routes": [r.model_dump() for r in result.routes],
-            "kb_status": result.kb_status,
-        })
-        yield line({"event": "text", "text": result.text})
-        yield line({"event": "done"})
+        for etype, data in kb_service.ask_stream_events(payload, db):
+            if etype == "meta":
+                yield line({
+                    "event": "meta", "sources": [], "chips": [],
+                    "from_kb": data.get("from_kb", False),
+                    "destinations": [], "routes": [],
+                    "kb_status": data.get("kb_status", ""),
+                })
+            elif etype == "chunk":
+                yield line({"event": "chunk", "text": data})
+            elif etype == "text":
+                yield line({"event": "text", "text": data})
+            elif etype == "done":
+                yield line({"event": "done"})
 
-    return StreamingResponse(events(), media_type="application/x-ndjson")
+    # X-Accel-Buffering=no：让 nginx 等反向代理不缓冲，逐块下发
+    return StreamingResponse(
+        events(), media_type="application/x-ndjson",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 
 @router.post("/kb/ask_stream")
