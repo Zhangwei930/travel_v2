@@ -17,7 +17,7 @@
       </view>
     </scroll-view>
 
-    <!-- 距离范围（全局，多页复用）+ 数量提示 -->
+    <!-- 距离范围（全局，多页复用） -->
     <view class="cy-radius-row">
       <text class="cy-radius-label">范围</text>
       <view
@@ -29,9 +29,6 @@
       >
         <text>{{ km }}km</text>
       </view>
-      <text v-if="!loading && allPois.length" class="cy-count-text">
-        共{{ allPois.length }}个<text v-if="active !== 'all'"> · 显示{{ visiblePois.length }}</text>
-      </text>
     </view>
 
     <scroll-view
@@ -39,9 +36,10 @@
       class="cy-scroll"
       :style="{ paddingBottom: tabBarH }"
       :show-scrollbar="false"
+      @scrolltolower="loadMore"
     >
       <view v-if="loading" class="cy-hint-muted"><text>加载中…</text></view>
-      <view v-else-if="!visiblePois.length" class="cy-hint-muted"><text>该筛选下暂无地点</text></view>
+      <view v-else-if="!filteredPois.length" class="cy-hint-muted"><text>该筛选下暂无地点</text></view>
 
       <view class="cy-poi-list">
         <cy-place-card
@@ -56,6 +54,10 @@
           @tap="goPoi(poi.id)"
           @img-error="onPoiImageError(poi)"
         />
+      </view>
+
+      <view v-if="filteredPois.length && visiblePois.length >= filteredPois.length" class="cy-list-end">
+        <text>— 没有更多了 —</text>
       </view>
     </scroll-view>
 
@@ -149,6 +151,9 @@ const allPois = ref([])
 const loading = ref(false)
 const brokenPoi = ref({})
 
+const PAGE_SIZE = 20
+const displayCount = ref(PAGE_SIZE)   // 已展示条数，触底自增（无分页、无总数显示）
+
 // 互斥归类：每个 POI 只归第一个命中的类目（按 filters 顺序，具体在前、兜底在后）
 function catOf(p) {
   const txt = catText(p)
@@ -157,13 +162,19 @@ function catOf(p) {
   }
   return ''   // 一个类目都不匹配，仅出现在「全部」
 }
-const visiblePois = computed(() => {
+const filteredPois = computed(() => {
   if (active.value === 'all') return allPois.value
   return allPois.value.filter(p => catOf(p) === active.value)
 })
+// 仅渲染前 displayCount 条，往下拉触底再加载更多
+const visiblePois = computed(() => filteredPois.value.slice(0, displayCount.value))
+
+function loadMore() {
+  if (displayCount.value < filteredPois.value.length) displayCount.value += PAGE_SIZE
+}
 
 function catText(p) { return ((p.cat || p.category || '') + ' ' + (p.name || '')).toLowerCase() }
-function setFilter(id) { active.value = id }
+function setFilter(id) { active.value = id; displayCount.value = PAGE_SIZE }
 function setRadius(km) {
   if (cityStore.radiusKm === km) return
   cityStore.setRadius(km)        // 写全局 + 持久化，其他页面复用
@@ -204,6 +215,7 @@ async function loadScene(id) {
   try {
     const pois = await api.getScenePois(id, cityStore.current, cityStore.coords?.lat ?? null, cityStore.coords?.lng ?? null, cityStore.radiusKm)
     allPois.value = Array.isArray(pois) ? pois : []
+    displayCount.value = PAGE_SIZE   // 重新加载后回到第一屏
   } catch (_) {
     uni.showToast({ title: '场景数据加载失败', icon: 'none' })
   } finally {
@@ -292,7 +304,13 @@ function onSearch() {
 }
 
 .cy-radius-label { font-size: 26rpx; color: $cy-muted; margin-right: 4rpx; }
-.cy-count-text { margin-left: auto; font-size: 24rpx; color: $cy-muted; }
+
+.cy-list-end {
+  text-align: center;
+  padding: 24rpx 0 8rpx;
+  font-size: 22rpx;
+  color: $cy-muted;
+}
 
 .cy-radius-chip {
   height: 52rpx;
