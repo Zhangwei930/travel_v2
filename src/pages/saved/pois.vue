@@ -32,9 +32,9 @@ onMounted(() => {
 })
 
 function viewPoi(id) { uni.navigateTo({ url: `/pages/poi/detail?id=${id}` }) }
-function thumbFor(item) { return poiImage(item, Boolean(brokenImages.value[item.id])) }
+function thumbFor(item) { return poiImage(item, brokenImages.value[item.id] || 0) }
 function onImageError(item) {
-  brokenImages.value = { ...brokenImages.value, [item.id]: true }
+  brokenImages.value = { ...brokenImages.value, [item.id]: (brokenImages.value[item.id] || 0) + 1 }
 }
 </script>
 

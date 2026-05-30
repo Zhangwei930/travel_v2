@@ -1,7 +1,6 @@
 """Simple scoring for nearby destination cards."""
 from datetime import datetime
 
-from app.config import settings
 from app.models import PoiIndex, TravelKnowledge
 from app.schemas import RecommendPoiOut, WeatherOut
 from app.services import map_provider
@@ -124,9 +123,8 @@ def score_poi(
     if scene and SCENE_LABELS.get(scene) and SCENE_LABELS[scene] not in reason:
         reason = f"{reason}，匹配{SCENE_LABELS[scene]}需求"
 
+    # 仅下发真实照片；无照片时留空，前端走 /api/poi/map-thumb 代理（不暴露 key）
     img_url = (kn.cover_image if kn else None) or poi.image or ""
-    if not img_url and poi.lat and poi.lng and settings.amap_key:
-        img_url = f"https://restapi.amap.com/v3/staticmap?location={poi.lng},{poi.lat}&zoom=15&size=400x400&markers=mid,,A:{poi.lng},{poi.lat}&key={settings.amap_key}"
 
     return RecommendPoiOut(
         id=poi.id,

@@ -103,11 +103,6 @@ def amap_reverse_geocode(lat: float, lng: float) -> dict:
         return {"city": None, "landmark": None}
 
 
-def amap_reverse_city(lat: float, lng: float) -> str | None:
-    """高德逆地理编码，只返回城市名；内部复用 amap_reverse_geocode。"""
-    return amap_reverse_geocode(lat, lng)["city"]
-
-
 def transport_hint(transport: str | None) -> str:
     """根据出行方式给出路段交通建议文案。"""
     return {

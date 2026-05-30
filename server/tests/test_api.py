@@ -115,15 +115,15 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
     def test_home_feed_uses_reversed_city_before_stale_client_city(self):
-        original_reverse = map_provider.amap_reverse_city
+        original_reverse = map_provider.amap_reverse_geocode
         try:
-            map_provider.amap_reverse_city = lambda lat, lng: "成都"
+            map_provider.amap_reverse_geocode = lambda lat, lng: {"city": "成都", "landmark": None}
             response = self.client.get(
                 "/api/home/feed",
                 params={"lat": 30.5728, "lng": 104.0668, "city": "广州"},
             )
         finally:
-            map_provider.amap_reverse_city = original_reverse
+            map_provider.amap_reverse_geocode = original_reverse
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["location"]["city"], "成都")

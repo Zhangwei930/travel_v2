@@ -82,14 +82,17 @@ function imageIndex(item, size) {
   return Math.abs(sum) % size
 }
 
-export function poiImage(item, forceFallback = false) {
+// fallback 为图片加载失败次数（也兼容旧的布尔值）：0=真实照片，1=定位地图，2+=分类插画
+export function poiImage(item, fallback = 0) {
+  const level = Number(fallback) || 0
   // 后端不同接口字段名不一：列表用 img，首页 feed/助手卡用 image
   const real = toHttps(item?.img || item?.image)
-  if (!forceFallback && real) return real
-  // 真实照片缺失或加载失败 → 用定位地图缩略（仍是真实位置），再退到分类插画
-  if (item?.lat != null && item?.lng != null && BASE_URL) {
+  if (level === 0 && real) return real
+  // 照片缺失或首次加载失败 → 定位地图缩略（仍是真实位置）
+  if (level <= 1 && item?.lat != null && item?.lng != null && BASE_URL) {
     return `${BASE_URL}/api/poi/map-thumb?lat=${item.lat}&lng=${item.lng}`
   }
+  // 地图也失败 → 分类插画兜底
   const text = textOf(item)
   const known = KNOWN_POI_IMAGES.find(entry => entry.pattern.test(text))
   if (known) return known.image

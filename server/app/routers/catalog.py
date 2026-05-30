@@ -1,8 +1,9 @@
 """目录类接口：天气、场景、地点列表/详情、路线推荐（GET）。"""
 from datetime import datetime, timedelta
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -35,9 +36,8 @@ def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
 
 
 def _poi_out(poi: PoiIndex, kn: TravelKnowledge | None, origin, dist_text: str | None = None) -> PoiOut:
+    # 仅下发真实照片；无照片时留空，前端走 /api/poi/map-thumb 代理（不暴露 key）
     img_url = (kn.cover_image if kn else None) or poi.image or ""
-    if not img_url and poi.lat and poi.lng and settings.amap_key:
-        img_url = f"https://restapi.amap.com/v3/staticmap?location={poi.lng},{poi.lat}&zoom=15&size=400x400&markers=mid,,A:{poi.lng},{poi.lat}&key={settings.amap_key}"
 
     return PoiOut(
         id=poi.id,
@@ -92,8 +92,6 @@ def _parse_amap_to_poiout(raw: list, lat: float, lng: float, city: str | None, d
         kn = kn_by_name.get(p["name"])
         dist = map_provider.format_distance(p["distance_m"] / 1000) if p["distance_m"] is not None else "—"
         img_url = (kn.cover_image if kn else None) or row.image or ""
-        if not img_url and row.lat and row.lng and settings.amap_key:
-            img_url = f"https://restapi.amap.com/v3/staticmap?location={row.lng},{row.lat}&zoom=15&size=400x400&markers=mid,,A:{row.lng},{row.lat}&key={settings.amap_key}"
         out.append(PoiOut(
             id=row.id,
             no=(kn.display_no if kn else None) or f"NO.{row.id:03d}",
@@ -148,14 +146,23 @@ def geo_city(lat: float = Query(...), lng: float = Query(...)):
 
 @router.get("/poi/map-thumb")
 def poi_map_thumb(lat: float = Query(...), lng: float = Query(...)):
-    """POI 无照片时的定位地图缩略图：302 跳转到高德静态地图（隐藏 key）。"""
-    if map_provider.provider_name() == "amap" and settings.amap_key:
-        url = (
-            f"https://restapi.amap.com/v3/staticmap?location={lng},{lat}"
-            f"&zoom=15&size=400x300&markers=mid,,A:{lng},{lat}&key={settings.amap_key}"
-        )
-        return RedirectResponse(url)
-    raise HTTPException(status_code=404, detail="map unavailable")
+    """POI 无照片时的定位地图缩略图：后端代理高德静态地图字节，key 不下发到客户端。"""
+    if not (map_provider.provider_name() == "amap" and settings.amap_key):
+        raise HTTPException(status_code=404, detail="map unavailable")
+    url = (
+        f"https://restapi.amap.com/v3/staticmap?location={lng},{lat}"
+        f"&zoom=15&size=400*300&markers=mid,,A:{lng},{lat}&key={settings.amap_key}"
+    )
+    try:
+        resp = httpx.get(url, timeout=8.0)
+        resp.raise_for_status()
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="map fetch failed")
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("content-type", "image/png"),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.get("/scene/list", response_model=list[SceneOut])

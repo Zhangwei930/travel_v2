@@ -89,7 +89,7 @@ function ratingFor(p) {
 }
 function poiThumb(poi) { return poiImage(poi, brokenPoi.value[poi?.id]) }
 function onPoiImageError(poi) {
-  if (poi?.id) brokenPoi.value = { ...brokenPoi.value, [poi.id]: true }
+  if (poi?.id) brokenPoi.value = { ...brokenPoi.value, [poi.id]: (brokenPoi.value[poi.id] || 0) + 1 }
 }
 
 onLoad((options) => {

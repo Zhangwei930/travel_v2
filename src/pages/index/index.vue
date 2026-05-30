@@ -166,7 +166,7 @@ const timeSlot = computed(() => {
 
 function poiThumb(poi) { return poiImage(poi, brokenPoi.value[poi?.id]) }
 function routeThumb(route) { return routeImage(route, brokenRoute.value[route?.id]) }
-function onPoiImageError(poi) { if (poi?.id) brokenPoi.value = { ...brokenPoi.value, [poi.id]: true } }
+function onPoiImageError(poi) { if (poi?.id) brokenPoi.value = { ...brokenPoi.value, [poi.id]: (brokenPoi.value[poi.id] || 0) + 1 } }
 function onRouteImageError(r) { if (r?.id) brokenRoute.value = { ...brokenRoute.value, [r.id]: true } }
 
 async function loadFeed(options = {}) {

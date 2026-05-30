@@ -298,8 +298,8 @@ function openRoute(route) {
 }
 
 function imgKey(item) { return String(item?.id ?? item?.name ?? item?.title ?? '') }
-function destinationThumb(poi) { return poiImage(poi, Boolean(brokenDest.value[imgKey(poi)])) }
-function onDestImgError(poi) { brokenDest.value = { ...brokenDest.value, [imgKey(poi)]: true } }
+function destinationThumb(poi) { return poiImage(poi, brokenDest.value[imgKey(poi)] || 0) }
+function onDestImgError(poi) { const k = imgKey(poi); brokenDest.value = { ...brokenDest.value, [k]: (brokenDest.value[k] || 0) + 1 } }
 function assistantRouteThumb(route) { return routeImage(route, Boolean(brokenRouteImgs.value[imgKey(route)])) }
 function onRouteImgError(route) { brokenRouteImgs.value = { ...brokenRouteImgs.value, [imgKey(route)]: true } }
 </script>

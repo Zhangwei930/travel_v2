@@ -5,7 +5,7 @@
     <scroll-view scroll-y class="cy-scroll" :style="{ paddingBottom: safeBottom }" :show-scrollbar="false">
       <!-- 英雄图 -->
       <view class="cy-hero-wrap">
-        <image :src="heroImage" class="cy-hero-img" mode="aspectFill" @error="heroBroken = true" />
+        <image :src="heroImage" class="cy-hero-img" mode="aspectFill" @error="heroBroken++" />
       </view>
 
       <!-- 主信息卡 -->
@@ -93,7 +93,7 @@ const safeBottom = ref('140rpx')
 const safeBarPadding = ref('24rpx')
 const saved = ref(false)
 const poiId = ref(0)
-const heroBroken = ref(false)
+const heroBroken = ref(0)   // 图片加载失败次数：0 照片 → 1 地图 → 2 插画
 const poiPreview = ref(null)
 
 const poi = ref({
@@ -137,7 +137,7 @@ onMounted(async () => {
     const detail = await api.getPoiDetail(poiId.value, coords.latitude, coords.longitude)
     const preview = poiPreview.value || {}
     poi.value = { ...preview, ...detail, cat: detail.cat || detail.category || preview.cat || '', img: detail.img || preview.img || '' }
-    heroBroken.value = false
+    heroBroken.value = 0
     trackVisit({ id: poi.value.id ?? poiId.value, no: poi.value.no, name: poi.value.name, cat: poi.value.cat, img: poi.value.img, dist: poi.value.dist })
     saved.value = isSavedPoi(poiId.value)
   } catch (_) {
