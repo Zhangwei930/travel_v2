@@ -131,38 +131,68 @@ SCENE_RADIUS_KM: dict[str, float] = {
     "fish": 30.0,   # 钓鱼场/湿地公园多在郊区，需更大半径
 }
 
-# 部分场景用关键词补充精确搜索（优先于类型码搜索）
+# 各场景用关键词搜索命中知名目的地（数量少、分布广），配合 weight 排序横跨全半径，
+# 避免在密集城区只召回最近 2km 的同质小场所
 SCENE_KEYWORDS: dict[str, str] = {
-    "fish": "垂钓|钓鱼|鱼塘|湿地公园|水库",
+    "family": "乐园|游乐园|动物园|海洋馆|主题公园|植物园|科技馆|博物馆|亲子",
+    "couple": "公园|湖|景区|古镇|植物园|美术馆|博物馆|观景|江滩|花海",
+    "rainy":  "博物馆|美术馆|科技馆|水族馆|海洋馆|图书馆|商场|影院",
+    "budget": "公园|绿道|博物馆|广场|湖|景区|江滩",
+    "night":  "夜市|酒吧|商业街|步行街|夜景|观景|江滩|塔",
+    "walk":   "公园|绿道|古镇|街区|步行街|湖|江滩",
+    "photo":  "古镇|景区|花海|湖|公园|植物园|美术馆|网红|打卡",
+    "fish":   "垂钓|钓鱼|鱼塘|湿地公园|水库",
+    "old":    "公园|景区|古镇|博物馆|植物园|寺|湖",
 }
 
 
 def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
                        types: str = AMAP_DEFAULT_TYPES,
-                       keyword: str = "") -> list[dict]:
-    """高德周边搜索，返回原始 POI 列表（方案 4.1 附近搜索）。失败返回 []。"""
+                       keyword: str = "", sortrule: str = "distance",
+                       pages: int = 1) -> list[dict]:
+    """高德周边搜索，返回原始 POI 列表（方案 4.1 附近搜索）。失败返回 []。
+
+    sortrule: distance（按距离，近→远）/ weight（按热度，能横跨全半径召回知名点）。
+    pages: 抓取的页数（每页 25 个），用于一次返回更多、覆盖更广距离。
+    """
     if provider_name() != "amap":
         return []
-    try:
-        params = {
-            "key": settings.amap_key,
-            "location": f"{lng},{lat}",
-            "radius": int(radius_km * 1000),
-            "types": types,
-            "offset": 25,
-            "page": 1,
-            "extensions": "all",
-        }
-        if keyword:
-            params["keywords"] = keyword
-        resp = httpx.get(f"{AMAP_BASE}/v3/place/around", params=params, timeout=8.0)
-        resp.raise_for_status()
-        data = resp.json()
-        if str(data.get("status")) != "1":
-            return []
-        return data.get("pois") or []
-    except (httpx.HTTPError, ValueError):
-        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for page in range(1, max(1, pages) + 1):
+        try:
+            params = {
+                "key": settings.amap_key,
+                "location": f"{lng},{lat}",
+                "radius": int(radius_km * 1000),
+                "types": types,
+                "offset": 25,
+                "page": page,
+                "extensions": "all",
+                "sortrule": sortrule,
+            }
+            if keyword:
+                params["keywords"] = keyword
+            resp = httpx.get(f"{AMAP_BASE}/v3/place/around", params=params, timeout=8.0)
+            resp.raise_for_status()
+            data = resp.json()
+            if str(data.get("status")) != "1":
+                break
+            pois = data.get("pois") or []
+        except (httpx.HTTPError, ValueError):
+            break
+        if not pois:
+            break
+        for p in pois:
+            pid = str(p.get("id") or "")
+            if pid and pid in seen:
+                continue
+            if pid:
+                seen.add(pid)
+            out.append(p)
+        if len(pois) < 25:        # 已到最后一页
+            break
+    return out
 
 
 def amap_driving_distances(origin: tuple[float, float],

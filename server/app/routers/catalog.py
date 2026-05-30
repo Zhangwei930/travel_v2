@@ -189,14 +189,20 @@ def poi_list(
         types = map_provider.amap_types_for_scene(scene) if scene else map_provider.AMAP_DEFAULT_TYPES
         radius = map_provider.SCENE_RADIUS_KM.get(scene or "", 15.0)
         scene_kw = map_provider.SCENE_KEYWORDS.get(scene or "", "")
+        # 场景浏览按热度抓多页：一次返回更多、覆盖近→远全半径（再按距离重排展示）
+        sortrule = "weight" if scene else "distance"
+        pages = 3 if scene else 1
         raw = []
         if scene_kw:
-            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types, keyword=scene_kw)
+            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types,
+                                                  keyword=scene_kw, sortrule="weight", pages=pages)
         if not raw:
-            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types)
+            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types,
+                                                  sortrule=sortrule, pages=pages)
         # 场景搜索无结果时，用默认类型兜底（避免只返回2条种子数据）
         if not raw and scene:
-            raw = map_provider.amap_search_around(lat, lng, radius_km=15.0, types=map_provider.AMAP_DEFAULT_TYPES)
+            raw = map_provider.amap_search_around(lat, lng, radius_km=15.0,
+                                                  types=map_provider.AMAP_DEFAULT_TYPES, pages=2)
         amap_results = _parse_amap_to_poiout(raw, lat, lng, city, db) if raw else None
         if amap_results:
             return sorted(amap_results, key=lambda p: _dist_km(p))
