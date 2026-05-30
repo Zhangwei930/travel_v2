@@ -1,5 +1,4 @@
 """目录类接口：天气、场景、地点列表/详情、路线推荐（GET）。"""
-import time
 from datetime import datetime, timedelta
 
 import httpx
@@ -17,27 +16,6 @@ from app.services.weather_provider import get_weather
 from app.taxonomy import SCENES
 
 router = APIRouter(prefix="/api", tags=["catalog"])
-
-
-# 高德搜索结果进程内缓存：key=场景+网格坐标+半径，TTL 内重复浏览不再打高德
-_SEARCH_CACHE: dict[str, tuple[float, list]] = {}
-_SEARCH_TTL = 1800.0   # 30 分钟
-
-
-def _cache_get(key: str):
-    v = _SEARCH_CACHE.get(key)
-    if v and v[0] > time.time():
-        return v[1]
-    if v:
-        _SEARCH_CACHE.pop(key, None)
-    return None
-
-
-def _cache_set(key: str, raw: list) -> None:
-    _SEARCH_CACHE[key] = (time.time() + _SEARCH_TTL, raw)
-    if len(_SEARCH_CACHE) > 300:        # 简单容量上限，删最早过期的
-        oldest = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k][0])
-        _SEARCH_CACHE.pop(oldest, None)
 
 
 def _dist_km(item: PoiOut) -> float:
@@ -217,31 +195,25 @@ def poi_list(
     radius: float | None = Query(default=None, ge=1, le=100),   # 前端可调距离（km）
     db: Session = Depends(get_db),
 ):
-    # 有坐标时走高德实时搜索
+    # 有坐标时走高德实时搜索（amap_search_around 内置 TTL 缓存，重复请求不再打高德）
     if lat is not None and lng is not None and not keyword:
         radius = radius or map_provider.SCENE_RADIUS_KM.get(scene or "", 15.0)
-        # 缓存键：场景 + ~1km 网格坐标 + 半径；命中则跳过高德，只对没有的才请求
-        cache_key = f"{scene or ''}|{round(lat, 2)}|{round(lng, 2)}|{int(radius)}"
-        raw = _cache_get(cache_key)
-        if raw is None:
-            types = map_provider.amap_types_for_scene(scene) if scene else map_provider.AMAP_DEFAULT_TYPES
-            scene_kw = map_provider.SCENE_KEYWORDS.get(scene or "", "")
-            # 场景浏览按热度抓多页：一次返回更多、覆盖近→远全半径（再按距离重排展示）
-            sortrule = "weight" if scene else "distance"
-            pages = 3 if scene else 1
-            raw = []
-            if scene_kw:
-                raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types,
-                                                      keyword=scene_kw, sortrule="weight", pages=pages)
-            if not raw:
-                raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types,
-                                                      sortrule=sortrule, pages=pages)
-            # 场景搜索无结果时，用默认类型兜底（避免只返回2条种子数据）
-            if not raw and scene:
-                raw = map_provider.amap_search_around(lat, lng, radius_km=radius,
-                                                      types=map_provider.AMAP_DEFAULT_TYPES, pages=2)
-            if raw:
-                _cache_set(cache_key, raw)
+        types = map_provider.amap_types_for_scene(scene) if scene else map_provider.AMAP_DEFAULT_TYPES
+        scene_kw = map_provider.SCENE_KEYWORDS.get(scene or "", "")
+        # 场景浏览按热度抓多页：一次返回更多、覆盖近→远全半径（再按距离重排展示）
+        sortrule = "weight" if scene else "distance"
+        pages = 3 if scene else 1
+        raw = []
+        if scene_kw:
+            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types,
+                                                  keyword=scene_kw, sortrule="weight", pages=pages)
+        if not raw:
+            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types,
+                                                  sortrule=sortrule, pages=pages)
+        # 场景搜索无结果时，用默认类型兜底（避免只返回2条种子数据）
+        if not raw and scene:
+            raw = map_provider.amap_search_around(lat, lng, radius_km=radius,
+                                                  types=map_provider.AMAP_DEFAULT_TYPES, pages=2)
         amap_results = _parse_amap_to_poiout(raw, lat, lng, city, db) if raw else None
         if amap_results:
             return sorted(amap_results, key=lambda p: _dist_km(p))

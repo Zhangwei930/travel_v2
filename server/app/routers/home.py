@@ -46,12 +46,14 @@ def _knowledge_maps(db: Session) -> tuple[dict[int, TravelKnowledge], dict[str, 
     return by_id, by_name
 
 
-def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None) -> list[tuple[PoiIndex, TravelKnowledge | None]]:
+def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None,
+               radius_km: float = NEARBY_RADIUS_KM, pages: int = 1) -> list[tuple[PoiIndex, TravelKnowledge | None]]:
     raw = map_provider.amap_search_around(
         lat,
         lng,
-        radius_km=NEARBY_RADIUS_KM,
+        radius_km=radius_km,
         types=map_provider.amap_types_for_scene(scene),
+        pages=pages,
     )
     parsed = [p for p in (map_provider.parse_amap_poi(item) for item in raw) if p and p["name"]]
     if not parsed:
@@ -158,6 +160,7 @@ def _build_home_feed(
     city: str | None,
     scene: str | None,
     db: Session,
+    radius: float | None = None,
 ) -> HomeFeedOut:
     _regeo = map_provider.amap_reverse_geocode(lat, lng)
     resolved_city = (
@@ -169,7 +172,11 @@ def _build_home_feed(
     origin = (lat, lng)
     weather = get_weather(resolved_city)
 
-    poi_rows = _amap_rows(db, lat, lng, resolved_city, scene)
+    # 附近页传 radius → 用该半径抓多页、返回更多（供下拉加载）；首页不传则保持 15km/精简
+    eff_radius = radius or NEARBY_RADIUS_KM
+    pages = 3 if radius else 1
+    nearby_limit = 60 if radius else 8
+    poi_rows = _amap_rows(db, lat, lng, resolved_city, scene, radius_km=eff_radius, pages=pages)
     if not poi_rows:
         poi_rows = _local_rows(db, resolved_city, scene)
 
@@ -178,7 +185,7 @@ def _build_home_feed(
         origin=origin,
         scene=scene,
         weather=weather,
-        limit=8,
+        limit=nearby_limit,
     )
     routes = build_home_routes(
         db,
@@ -207,9 +214,10 @@ def home_feed(
     city: str | None = Query(default=None),
     intent: str | None = Query(default=None),
     scene: str | None = Query(default=None),
+    radius: float | None = Query(default=None, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    return _build_home_feed(lat=lat, lng=lng, city=city, scene=scene, db=db)
+    return _build_home_feed(lat=lat, lng=lng, city=city, scene=scene, db=db, radius=radius)
 
 
 @router.get("/bootstrap", response_model=HomeFeedOut)

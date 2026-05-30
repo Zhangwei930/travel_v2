@@ -16,14 +16,28 @@
       </view>
     </scroll-view>
 
-    <scroll-view scroll-y class="cy-scroll" :style="{ paddingBottom: safeBottom }" :show-scrollbar="false">
+    <!-- 距离范围（全局，与场景页共用同一设置） -->
+    <view class="cy-radius-row">
+      <text class="cy-radius-label">范围</text>
+      <view
+        v-for="km in RADIUS_OPTIONS"
+        :key="km"
+        class="cy-radius-chip"
+        :class="{ 'cy-radius-chip--active': cityStore.radiusKm === km }"
+        @tap="setRadius(km)"
+      >
+        <text>{{ km }}km</text>
+      </view>
+    </view>
+
+    <scroll-view scroll-y class="cy-scroll" :style="{ paddingBottom: safeBottom }" :show-scrollbar="false" @scrolltolower="loadMore">
       <view v-if="loading && !pois.length" class="cy-hint-muted"><text>正在加载附近推荐…</text></view>
       <view v-else-if="locationError" class="cy-state-card">
         <text class="cy-state-title">需要开启定位</text>
         <text class="cy-state-sub">允许位置权限后系统才会推荐真实可去的地点</text>
         <view class="cy-state-btn" @tap="reload">重新定位</view>
       </view>
-      <view v-else-if="!visiblePois.length && !loading" class="cy-hint-muted"><text>该筛选下暂无匹配地点</text></view>
+      <view v-else-if="!filteredPois.length && !loading" class="cy-hint-muted"><text>该筛选下暂无匹配地点</text></view>
 
       <view class="cy-poi-list">
         <cy-place-card
@@ -39,6 +53,10 @@
           @img-error="onPoiImageError(poi)"
         />
       </view>
+
+      <view v-if="filteredPois.length && visiblePois.length >= filteredPois.length" class="cy-list-end">
+        <text>— 没有更多了 —</text>
+      </view>
     </scroll-view>
 
     <ZTabBar current="home" />
@@ -49,7 +67,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../api/index.js'
 import { poiImage } from '../../api/assets.js'
-import { useCityStore } from '../../store/city.js'
+import { useCityStore, RADIUS_OPTIONS } from '../../store/city.js'
 import { setAssistantContext } from '../../api/storage.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 import CyPlaceCard from '../../components/cy/cy-place-card.vue'
@@ -72,6 +90,9 @@ const loading = ref(false)
 const locationError = ref(false)
 const brokenPoi = ref({})
 
+const PAGE_SIZE = 20
+const displayCount = ref(PAGE_SIZE)
+
 function parseDistKm(text) {
   if (!text) return Number.POSITIVE_INFINITY
   const m = String(text).match(/([0-9.]+)\s*(km|m|公里|米)?/)
@@ -80,7 +101,7 @@ function parseDistKm(text) {
   return /^m|米$/i.test(m[2] || '') ? n / 1000 : n
 }
 
-const visiblePois = computed(() => {
+const filteredPois = computed(() => {
   let arr = [...pois.value]
   if (active.value === 'nearest') return arr.sort((a, b) => parseDistKm(a.distance) - parseDistKm(b.distance))
   if (active.value === 'free')    return arr.filter(p => (p.tags || []).some(t => /免费|免门票/.test(t)))
@@ -88,11 +109,21 @@ const visiblePois = computed(() => {
   if (active.value === 'recommend') return arr.filter(p => (p.score ?? 0) >= 60)
   return arr
 })
+// 仅渲染前 displayCount 条，触底再加载
+const visiblePois = computed(() => filteredPois.value.slice(0, displayCount.value))
 
+function loadMore() {
+  if (displayCount.value < filteredPois.value.length) displayCount.value += PAGE_SIZE
+}
 function isFilterActive(id) {
   return active.value === id || (active.value === 'all' && id === 'recommend')
 }
-function setFilter(id) { active.value = id }
+function setFilter(id) { active.value = id; displayCount.value = PAGE_SIZE }
+function setRadius(km) {
+  if (cityStore.radiusKm === km) return
+  cityStore.setRadius(km)        // 全局，与场景页共用
+  reload()
+}
 function ratingFor(p) {
   if (p.rating) return Number(p.rating).toFixed(1)
   return (4.3 + ((p.id ?? 0) % 10) / 20).toFixed(1)
@@ -115,9 +146,10 @@ async function reload() {
       coords = cityStore.coords
     }
     const city = cityStore.source === 'default' ? cityStore.current : ''
-    const feed = await api.getHomeFeed({ lat: coords.lat, lng: coords.lng, city, intent: 'nearby_now' })
+    const feed = await api.getHomeFeed({ lat: coords.lat, lng: coords.lng, city, intent: 'nearby_now', radius: cityStore.radiusKm })
     if (feed?.location?.city) cityStore.setFromLocation(feed.location.city)
     pois.value = (feed.nearby_now || []).filter(p => p.nav_ready && p.lat != null && p.lng != null)
+    displayCount.value = PAGE_SIZE
   } catch (_) {
     locationError.value = true
     pois.value = []
@@ -190,6 +222,30 @@ onMounted(() => {
     font-weight: 700;
   }
 }
+
+.cy-radius-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 14rpx 24rpx;
+  background: #fff;
+  border-bottom: 1rpx solid $cy-border;
+}
+.cy-radius-label { font-size: 26rpx; color: $cy-muted; margin-right: 4rpx; }
+.cy-radius-chip {
+  height: 52rpx;
+  padding: 0 28rpx;
+  border-radius: 26rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #F4F5F6;
+  font-size: 26rpx;
+  color: $cy-text-sub;
+  font-weight: 500;
+  &--active { background: $cy-green; color: #fff; font-weight: 700; }
+}
+.cy-list-end { text-align: center; padding: 24rpx 0 8rpx; font-size: 22rpx; color: $cy-muted; }
 
 .cy-hint-muted {
   text-align: center;

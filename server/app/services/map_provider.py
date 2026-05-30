@@ -4,6 +4,7 @@
 默认 stub 模式用本地坐标做 haversine 距离计算，无需密钥即可运行；
 配置 MAP_PROVIDER=amap 并填入 AMAP_KEY 后接入高德地图（周边搜索 + 真实路程）。
 """
+import time
 from math import asin, cos, radians, sin, sqrt
 
 import httpx
@@ -146,6 +147,11 @@ SCENE_KEYWORDS: dict[str, str] = {
 }
 
 
+# 周边搜索进程内缓存：场景列表与首页 feed 共用，TTL 内重复请求不再打高德
+_AROUND_CACHE: dict[str, tuple[float, list]] = {}
+_AROUND_TTL = 1800.0   # 30 分钟
+
+
 def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
                        types: str = AMAP_DEFAULT_TYPES,
                        keyword: str = "", sortrule: str = "distance",
@@ -154,9 +160,14 @@ def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
 
     sortrule: distance（按距离，近→远）/ weight（按热度，能横跨全半径召回知名点）。
     pages: 抓取的页数（每页 25 个），用于一次返回更多、覆盖更广距离。
+    结果按 ~1km 网格坐标缓存，TTL 内复用，省高德配额与延迟。
     """
     if provider_name() != "amap":
         return []
+    cache_key = f"{round(lat, 2)}|{round(lng, 2)}|{int(radius_km)}|{types}|{keyword}|{sortrule}|{pages}"
+    cached = _AROUND_CACHE.get(cache_key)
+    if cached and cached[0] > time.time():
+        return cached[1]
     out: list[dict] = []
     seen: set[str] = set()
     for page in range(1, max(1, pages) + 1):
@@ -192,6 +203,11 @@ def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
             out.append(p)
         if len(pois) < 25:        # 已到最后一页
             break
+    if out:
+        _AROUND_CACHE[cache_key] = (time.time() + _AROUND_TTL, out)
+        if len(_AROUND_CACHE) > 500:
+            oldest = min(_AROUND_CACHE, key=lambda k: _AROUND_CACHE[k][0])
+            _AROUND_CACHE.pop(oldest, None)
     return out
 
 
