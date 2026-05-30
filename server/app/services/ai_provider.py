@@ -1,6 +1,6 @@
-"""AI 生成适配器（Dify 工作流 / 本地 Ollama / stub）。
+"""AI 生成适配器（z-ai/GLM · MiMo · Dify · Ollama · stub）。
 
-方案文档第 6、7 章：Dify 编排工作流，Ollama 跑本地模型。
+OpenAI 兼容的云模型（z-ai GLM 经 NVIDIA NIM、MiMo）优先；其次 Dify 工作流、本地 Ollama。
 6.4 Prompt 约束：不得编造营业时间、票价、实时交通；价格/营业/耗时需提示以实时信息为准。
 默认 stub 不依赖任何模型，按模板生成文案，保证零配置可运行。
 """
@@ -16,6 +16,10 @@ PROMPT_RULES = (
 
 
 def _provider() -> str:
+    if settings.ai_provider == "zai" and settings.zai_api_base and settings.zai_api_key:
+        return "zai"
+    if settings.ai_provider == "mimo" and settings.mimo_api_base and settings.mimo_api_key:
+        return "mimo"
     if settings.dify_api_base and settings.dify_api_key:
         return "dify"
     if settings.ai_provider == "ollama":
@@ -24,9 +28,19 @@ def _provider() -> str:
 
 
 def generate_text(prompt: str, *, fallback: str = "") -> str:
-    """通用文本生成。Dify/Ollama 未配置时返回 fallback（不编造内容）。"""
+    """通用文本生成。优先 z-ai/GLM → MiMo → Dify → Ollama → stub。"""
     provider = _provider()
     try:
+        if provider == "zai":
+            return _generate_openai_compatible(
+                base=settings.zai_api_base, api_key=settings.zai_api_key,
+                model=settings.zai_model, prompt=prompt, fallback=fallback,
+            )
+        if provider == "mimo":
+            return _generate_openai_compatible(
+                base=settings.mimo_api_base, api_key=settings.mimo_api_key,
+                model=settings.mimo_model, prompt=prompt, fallback=fallback,
+            )
         if provider == "dify":
             return _generate_with_dify(prompt, fallback=fallback)
         if provider == "ollama":
@@ -39,6 +53,33 @@ def generate_text(prompt: str, *, fallback: str = "") -> str:
             return resp.json().get("response", "") or fallback
     except (httpx.HTTPError, ValueError):
         return fallback
+    return fallback
+
+
+def _generate_openai_compatible(*, base: str, api_key: str, model: str,
+                                prompt: str, fallback: str) -> str:
+    """OpenAI 兼容 /chat/completions 调用（z-ai GLM、MiMo 等共用）。"""
+    resp = httpx.post(
+        f"{base.rstrip('/')}/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": PROMPT_RULES},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": 1024,
+            "temperature": 0.7,
+        },
+        timeout=60.0,
+    )
+    resp.raise_for_status()
+    choices = resp.json().get("choices", [])
+    if choices:
+        return choices[0].get("message", {}).get("content", "") or fallback
     return fallback
 
 

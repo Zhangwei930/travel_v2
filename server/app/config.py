@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     admin_token: str = "change-me"
     weather_api_key: str = ""
 
+    mimo_api_base: str = ""
+    mimo_api_key: str = ""
+    mimo_model: str = "mimo-v2.5-pro"
+
+    # z-ai / GLM（经 NVIDIA NIM，OpenAI 兼容接口）
+    zai_api_base: str = "https://integrate.api.nvidia.com/v1"
+    zai_api_key: str = ""
+    zai_model: str = "z-ai/glm-5.1"
+
     @property
     def cors_origin_list(self) -> list[str]:
         if self.cors_origins.strip() == "*":
