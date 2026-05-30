@@ -91,12 +91,12 @@ const DEFAULT_FILTERS = [
 // 各场景定制子类目，让筛选更贴合（无定制则用默认）
 const SCENE_FILTERS = {
   family: [ALL,
-    { id: 'amuse',  label: '乐园',   re: /乐园|游乐|主题/ },
     { id: 'ocean',  label: '海洋馆', re: /海洋|水族|海底/ },
     { id: 'science',label: '科技馆', re: /科技|科学|天文/ },
     { id: 'zoo',    label: '动植物', re: /动物园|植物园|生态/ },
     { id: 'park',   label: '公园',   re: /公园|绿地/ },
-    { id: 'indoor', label: '室内',   re: /室内|商场|儿童|乐高/ }],
+    { id: 'indoor', label: '室内',   re: /室内|商场|乐高/ },
+    { id: 'amuse',  label: '乐园',   re: /乐园|游乐|主题|儿童/ }],
   couple: [ALL,
     { id: 'park',   label: '公园',   re: /公园|绿地/ },
     { id: 'water',  label: '湖景',   re: /湖|江|河|湿地|滨/ },
@@ -149,10 +149,17 @@ const allPois = ref([])
 const loading = ref(false)
 const brokenPoi = ref({})
 
+// 互斥归类：每个 POI 只归第一个命中的类目（按 filters 顺序，具体在前、兜底在后）
+function catOf(p) {
+  const txt = catText(p)
+  for (const f of filters.value) {
+    if (f.re && f.re.test(txt)) return f.id
+  }
+  return ''   // 一个类目都不匹配，仅出现在「全部」
+}
 const visiblePois = computed(() => {
-  const f = filters.value.find(x => x.id === active.value) || filters.value[0]
-  if (!f.re) return allPois.value
-  return allPois.value.filter(p => f.re.test(catText(p)))
+  if (active.value === 'all') return allPois.value
+  return allPois.value.filter(p => catOf(p) === active.value)
 })
 
 function catText(p) { return ((p.cat || p.category || '') + ' ' + (p.name || '')).toLowerCase() }
