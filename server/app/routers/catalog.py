@@ -50,6 +50,8 @@ def _poi_out(poi: PoiIndex, kn: TravelKnowledge | None, origin, dist_text: str |
         tags=(kn.scene_tags if kn else None) or [],
         img=img_url,
         reason=(kn.recommend_reason if kn else None) or "",
+        lat=poi.lat,
+        lng=poi.lng,
     )
 
 
@@ -103,6 +105,8 @@ def _parse_amap_to_poiout(raw: list, lat: float, lng: float, city: str | None, d
             tags=(kn.scene_tags if kn else None) or p["type_tags"],
             img=img_url,
             reason=(kn.recommend_reason if kn else None) or (row.address or ""),
+            lat=row.lat,
+            lng=row.lng,
         ))
     db.commit()
     return out

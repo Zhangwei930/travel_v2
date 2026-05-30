@@ -33,6 +33,8 @@ class PoiOut(BaseModel):
     tags: list[str]
     img: str
     reason: str
+    lat: float | None = None      # 供前端无照片时拼 /api/poi/map-thumb 定位图
+    lng: float | None = None
 
 
 class FitItem(BaseModel):
