@@ -36,6 +36,31 @@
               <text user-select>{{ msg.text }}</text>
             </view>
 
+            <view v-if="msg.destinations && msg.destinations.length" class="cy-dest-cards">
+              <view
+                v-for="poi in msg.destinations"
+                :key="imgKey(poi)"
+                class="cy-dest-card"
+                @tap="goPoi(poi.id, poi)"
+              >
+                <image
+                  class="cy-dest-thumb"
+                  :src="destinationThumb(poi)"
+                  mode="aspectFill"
+                  lazy-load
+                  @error="onDestImgError(poi)"
+                />
+                <view class="cy-dest-info">
+                  <text class="cy-dest-name">{{ poi.name }}</text>
+                  <text class="cy-dest-meta">{{ poi.distance || poi.category || '附近地点' }}</text>
+                  <text class="cy-dest-reason">{{ poi.reason }}</text>
+                </view>
+                <view class="cy-dest-nav" @tap.stop="openNav(poi)">
+                  <text>导航</text>
+                </view>
+              </view>
+            </view>
+
             <!-- 建议气泡 chips（仅欢迎消息） -->
             <view v-if="msg.chips && msg.isWelcome" class="cy-chips-list">
               <view
@@ -261,7 +286,10 @@ function sendMsg(text) {
   // #endif
 
   streamAsk(payload, {
-    onMeta: () => {
+    onMeta: (meta) => {
+      botMsg.sources = meta?.sources || null
+      botMsg.destinations = meta?.destinations || null
+      botMsg.routes = meta?.routes || null
       typing.value = false
       messages.value.push(botMsg)
       started = true
@@ -278,7 +306,13 @@ function fallbackNonStream(payload) {
   api.ask(payload)
     .then((res) => {
       typing.value = false
-      messages.value.push({ role: 'bot', text: res.text || '抱歉，这次没有获取到回复，请换个说法再试。' })
+      messages.value.push({
+        role: 'bot',
+        text: res.text || '抱歉，这次没有获取到回复，请换个说法再试。',
+        sources: res.sources || null,
+        destinations: res.destinations || null,
+        routes: res.routes || null,
+      })
       scrollToBottom()
     })
     .catch(() => {
