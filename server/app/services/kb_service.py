@@ -176,6 +176,10 @@ def ask(payload: AskIn, db: Session) -> AskOut:
         return AskOut(text=p["text"], sources=[p["source"]], chips=[], from_kb=True,
                       destinations=destinations, routes=routes, kb_status="hit")
     answer = ai_provider.generate_text(p["prompt"], fallback=p["fallback"])
+    # 卡片只保留答案里实际推荐到的地点：推荐几个就显示几个，不随机多塞
+    picked = [d for d in destinations if d.name and d.name in answer]
+    if picked:
+        destinations = picked
     websearch.create_pending(question=p["question"], answer=answer, results=p["results"],
                              city=p["city"], category="出游助手", db=db)
     return AskOut(text=answer, sources=[], chips=[], from_kb=False,
