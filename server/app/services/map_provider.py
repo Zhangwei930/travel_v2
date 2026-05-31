@@ -162,6 +162,11 @@ HIKE_NEGATIVE_TERMS = (
     "购物", "商业街", "小区", "学校", "医院", "车站", "停车场", "湿地",
     "水库", "湖", "滨河", "江滩", "游乐园", "水上乐园", "寺", "庙",
     "道观", "禅院", "禅林", "清真寺", "教堂", "楼", "塔", "遗址",
+    # 公司/机构/服务类（非出游目的地，避免"爬山虎人力资源/登山协会/汽修"误召回）
+    "爬山虎", "人力资源", "公司", "企业", "集团", "协会", "俱乐部", "中介",
+    "汽车", "汽修", "维修", "4S", "培训", "教育", "装饰", "建材", "五金",
+    "超市", "便利店", "银行", "营业厅", "办公", "物业", "美容", "健身",
+    "经营部", "服务部", "商行", "门市", "工作室", "事务所", "诊所", "药房",
 )
 
 
@@ -179,6 +184,28 @@ def is_hike_destination(name: str | None,
     if "公园" in text and not any(term in visible_text for term in ("森林公园", "国家森林公园", "自然保护区")):
         return False
     return any(term in visible_text for term in HIKE_POSITIVE_TERMS)
+
+
+# 通用"非出游目的地"过滤：去类型搜索后会混进餐馆/公司/汽修等，按高德顶级类别+名称剔除
+_NON_DEST_CATEGORIES = ("公司企业", "汽车", "金融", "保险", "医疗", "政府")
+_NON_DEST_NAME_TERMS = (
+    "米铺", "米线", "面馆", "牛肉", "餐厅", "饭店", "餐馆", "小吃", "火锅",
+    "烧烤", "串串", "烤肉", "快餐", "食府", "茶楼", "网吧", "棋牌", "KTV",
+    "4S", "汽修", "汽配", "维修", "装饰", "建材", "五金", "超市", "便利店",
+    "药房", "药店", "诊所", "美容", "美发", "理发", "人力资源", "协会",
+    "俱乐部", "中介", "事务所", "工作室", "经营部", "服务部", "门市", "商行",
+    "物业", "培训", "健身房", "爬山虎", "公司", "营业厅",
+)
+
+
+def is_outing_destination(name: str | None, category: str | None = None,
+                          tags: list[str] | None = None, address: str | None = None) -> bool:
+    """通用过滤：剔除餐馆/公司/汽修/服务类等非出游目的地（所有场景共用）。"""
+    cat = category or ""
+    if any(c in cat for c in _NON_DEST_CATEGORIES):
+        return False
+    text = " ".join([name or "", cat, " ".join(tags or [])])
+    return not any(t in text for t in _NON_DEST_NAME_TERMS)
 
 
 def pages_for_radius(radius_km: float) -> int:

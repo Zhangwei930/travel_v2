@@ -209,6 +209,11 @@ def poi_list(
         def parsed_within_radius(raw_rows: list) -> list[PoiOut]:
             amap_rows = _parse_amap_to_poiout(raw_rows, lat, lng, city, db) if raw_rows else []
             rows = [p for p in amap_rows if _dist_km(p) <= radius]
+            # 通用过滤：去类型搜索会混进餐馆/公司/汽修等，所有场景都剔除
+            rows = [
+                p for p in rows
+                if map_provider.is_outing_destination(p.name, p.cat, p.tags, p.reason)
+            ]
             if scene == "hike":
                 rows = [
                     p for p in rows
