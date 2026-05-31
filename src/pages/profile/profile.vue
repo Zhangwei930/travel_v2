@@ -46,22 +46,14 @@
     </scroll-view>
 
     <!-- 登录底栏 -->
-    <view v-if="showLoginSheet" class="cy-sheet-mask" @tap.self="showLoginSheet = false">
+    <view v-if="showLoginSheet" class="cy-sheet-mask">
       <view class="cy-sheet">
         <view class="cy-sheet-handle" />
         <text class="cy-sheet-title">微信授权登录</text>
-        <text class="cy-sheet-sub">①点头像选微信头像 ②点昵称栏一键填入微信昵称 ③完成登录（仅存本机）</text>
+        <text class="cy-sheet-sub">点一下即可登录，使用微信头像和昵称（仅存本机）</text>
 
         <!-- #ifdef MP-WEIXIN -->
-        <!-- 昵称用 type=nickname，必须靠 form 提交才能稳定取到（input 事件时序会丢值） -->
-        <form class="cy-sheet-form" @submit="onSubmitProfile">
-          <button class="cy-avatar-btn-lg" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
-            <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" />
-            <text class="cy-avatar-tip">{{ tempAvatar ? '点击更换头像' : '点击选择微信头像' }}</text>
-          </button>
-          <input class="cy-name-input" type="nickname" name="nickname" :value="tempName" placeholder="点这里一键填入微信昵称" placeholder-style="color:#9CA3AF" @input="onNameInput" @blur="onNameInput" />
-          <button class="cy-save-btn" form-type="submit">完成登录</button>
-        </form>
+        <button class="cy-save-btn" @tap="oneClickLogin">微信一键登录</button>
         <!-- #endif -->
 
         <!-- #ifdef H5 -->
@@ -215,8 +207,9 @@ async function onChooseAvatar(e) {
     uni.showToast({ title: '头像获取失败，请重试', icon: 'none' })
     return
   }
-  tempAvatar.value = tempUrl
-  tempAvatar.value = await cacheAvatarFile(tempUrl)
+  tempAvatar.value = tempUrl                      // 立即显示临时头像
+  const cached = await cacheAvatarFile(tempUrl)   // 持久化；失败则保留临时路径(仍可显示)
+  if (cached && !isRemoteAvatarFile(cached)) tempAvatar.value = cached
 }
 
 // #ifdef MP-WEIXIN
@@ -228,7 +221,8 @@ async function onSubmitProfile(e) {
     return
   }
   const cachedAvatar = await cacheAvatarFile(tempAvatar.value)
-  const avatar = isRemoteAvatarFile(cachedAvatar) ? '' : cachedAvatar
+  // 存可显示的本地/临时路径；不再因远程而把头像清空
+  const avatar = (cachedAvatar && !isRemoteAvatarFile(cachedAvatar)) ? cachedAvatar : (tempAvatar.value || '')
   const profile = { name, avatar, loginAt: Date.now() }
   setUserProfile(profile)
   userProfile.value = profile
@@ -240,6 +234,27 @@ async function onSubmitProfile(e) {
 function onNameInput(e) {
   tempName.value = e?.detail?.value || ''
 }
+
+// #ifdef MP-WEIXIN
+// 微信一键登录：getUserProfile 一步拿头像昵称（平台限制下可能返回默认灰头像/“微信用户”）
+function oneClickLogin() {
+  uni.getUserProfile({
+    desc: '用于完善出游资料',
+    success: async (res) => {
+      const info = res.userInfo || {}
+      let avatar = info.avatarUrl || ''
+      const cached = await cacheAvatarFile(avatar)
+      if (cached && !isRemoteAvatarFile(cached)) avatar = cached
+      const profile = { name: info.nickName || '微信用户', avatar, loginAt: Date.now() }
+      setUserProfile(profile)
+      userProfile.value = profile
+      avatarBroken.value = false
+      afterLoginSuccess()
+    },
+    fail: () => {},
+  })
+}
+// #endif
 
 function afterLoginSuccess() {
   const redirect = loginRedirect.value
