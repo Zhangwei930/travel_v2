@@ -37,8 +37,8 @@ def generate_text(prompt: str, *, fallback: str = "") -> str:
             return _generate_openai_compatible(
                 base=settings.zai_api_base, api_key=settings.zai_api_key,
                 model=settings.zai_model, prompt=prompt, fallback=fallback,
-                # GLM-5.1 是推理模型，关闭思考链可提速 ~35%，问答场景无需深度推理
-                extra={"chat_template_kwargs": {"thinking": False}},
+                # 关思考链仅 GLM 推理模型支持/需要；换其他模型(如 qwen)不发该参数，避免 NIM 400
+                extra=({"chat_template_kwargs": {"thinking": False}} if "glm" in settings.zai_model.lower() else {}),
             )
         if provider == "mimo":
             return _generate_openai_compatible(
@@ -70,7 +70,8 @@ def generate_stream(prompt: str):
     provider = _provider()
     if provider == "zai":
         base, key, model = settings.zai_api_base, settings.zai_api_key, settings.zai_model
-        extra = {"chat_template_kwargs": {"thinking": False}}
+        # 关思考链仅 GLM 支持；其他模型(如 qwen)不发，避免 NIM 400
+        extra = {"chat_template_kwargs": {"thinking": False}} if "glm" in model.lower() else {}
     elif provider == "mimo":
         base, key, model = settings.mimo_api_base, settings.mimo_api_key, settings.mimo_model
         extra = {}
