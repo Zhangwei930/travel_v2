@@ -154,9 +154,24 @@ def _prepare(payload: AskIn, db: Session) -> dict:
             "results": results, "question": question, "city": city}
 
 
+def _inject_destinations(prompt_info: dict, destinations) -> None:
+    """把卡片用的真实附近地点注入 prompt，让 LLM 只从这些点里推荐，
+    保证文字推荐与下方卡片一致（避免文字推甲、卡片显示乙的"乱推"）。"""
+    if prompt_info.get("mode") != "llm" or not destinations:
+        return
+    lines = "\n".join(f"- {d.name}（{d.distance}·{d.category}）" for d in destinations)
+    prompt_info["prompt"] += (
+        "\n\n【可推荐的附近地点——下方卡片就是这几个】\n"
+        f"{lines}\n"
+        "请只从上面这些地点里挑 2-3 个推荐，逐个说明为何适合（人群/距离/当前时段），"
+        "不要推荐列表以外的地方。"
+    )
+
+
 def ask(payload: AskIn, db: Session) -> AskOut:
     p = _prepare(payload, db)
     destinations, routes = _location_cards(payload, p["city"], db)
+    _inject_destinations(p, destinations)
     if p["mode"] == "kb":
         return AskOut(text=p["text"], sources=[p["source"]], chips=[], from_kb=True,
                       destinations=destinations, routes=routes, kb_status="hit")
@@ -171,6 +186,7 @@ def ask_stream_events(payload: AskIn, db: Session):
     """流式生成器：yield (event_type, data)。KB 命中即时整段返回，未命中逐字流式。"""
     p = _prepare(payload, db)
     destinations, routes = _location_cards(payload, p["city"], db)
+    _inject_destinations(p, destinations)
     sources = [p["source"]] if p["mode"] == "kb" else []
     if p["mode"] == "kb":
         yield ("meta", {"from_kb": True, "kb_status": "hit", "sources": sources,
