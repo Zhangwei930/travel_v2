@@ -88,8 +88,6 @@ const statusBarH = ref(44)
 const userProfile    = ref(null)
 const showLoginSheet = ref(false)
 const showOfflineSheet = ref(false)
-const tempAvatar = ref('')
-const tempName   = ref('')
 const loginRedirect = ref('')
 const avatarBroken = ref(false)
 let avatarRepairing = false
@@ -145,10 +143,7 @@ onUnmounted(() => {
 })
 
 function openLoginSheet(redirect = '') {
-  const avatar = userProfile.value?.avatar || ''
   loginRedirect.value = redirect
-  tempAvatar.value = isRemoteAvatarFile(avatar) ? '' : avatar
-  tempName.value   = userProfile.value?.name   || ''
   showLoginSheet.value = true
 }
 
@@ -187,44 +182,8 @@ async function repairRemoteUserAvatar() {
   const nextProfile = { ...profile, avatar: cachedAvatar }
   setUserProfile(nextProfile)
   userProfile.value = nextProfile
-  if (tempAvatar.value === avatar) tempAvatar.value = cachedAvatar
   avatarBroken.value = false
   return cachedAvatar
-}
-
-async function onChooseAvatar(e) {
-  const tempUrl = e.detail.avatarUrl
-  if (!tempUrl) {
-    // chooseAvatar 可能因微信下载头像时网络被重置(ECONNRESET)而拿不到，提示重试
-    uni.showToast({ title: '头像获取失败，请重试', icon: 'none' })
-    return
-  }
-  tempAvatar.value = tempUrl                      // 立即显示临时头像
-  const cached = await cacheAvatarFile(tempUrl)   // 持久化；失败则保留临时路径(仍可显示)
-  if (cached && !isRemoteAvatarFile(cached)) tempAvatar.value = cached
-}
-
-// #ifdef MP-WEIXIN
-// 用 form 提交可靠取到微信昵称（type=nickname）；用户需要点击键盘上方建议或手动输入。
-async function onSubmitProfile(e) {
-  const name = ((e.detail.value?.nickname || tempName.value || '').trim())
-  if (!name) {
-    uni.showToast({ title: '请填写昵称', icon: 'none' })
-    return
-  }
-  const cachedAvatar = await cacheAvatarFile(tempAvatar.value)
-  // 存可显示的本地/临时路径；不再因远程而把头像清空
-  const avatar = (cachedAvatar && !isRemoteAvatarFile(cachedAvatar)) ? cachedAvatar : (tempAvatar.value || '')
-  const profile = { name, avatar, loginAt: Date.now() }
-  setUserProfile(profile)
-  userProfile.value = profile
-  avatarBroken.value = false
-  afterLoginSuccess()
-}
-// #endif
-
-function onNameInput(e) {
-  tempName.value = e?.detail?.value || ''
 }
 
 // 一键登录：直接用系统默认头像 + 默认昵称（微信拿不到真实头像昵称，不再请求）
@@ -262,17 +221,6 @@ function funcIconName(key) {
     settings: 'gear-green',
   }
   return map[key] || 'star-line-green'
-}
-
-async function saveProfile() {
-  if (!tempName.value.trim()) return
-  const cachedAvatar = await cacheAvatarFile(tempAvatar.value)
-  const avatar = isRemoteAvatarFile(cachedAvatar) ? '' : cachedAvatar
-  const profile = { name: tempName.value.trim(), avatar, loginAt: Date.now() }
-  setUserProfile(profile)
-  userProfile.value = profile
-  avatarBroken.value = false
-  afterLoginSuccess()
 }
 
 function goSettings() { uni.navigateTo({ url: '/pages/profile/settings' }) }

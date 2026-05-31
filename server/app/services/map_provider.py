@@ -189,11 +189,11 @@ def is_hike_destination(name: str | None,
     return any(term in visible_text for term in HIKE_POSITIVE_TERMS)
 
 
-# 美食场景：通用过滤之外再剔除纯饮品/连锁奶茶咖啡/便利店，突出正餐与特色馆子
+# 美食场景：通用过滤之外再剔除纯饮品/连锁奶茶咖啡，突出正餐与特色馆子
+# （便利店/超市已由 _NON_DEST_SERVICE_TERMS 在 is_outing_destination 里剔除，不重复）
 _FOOD_NOISE_TERMS = (
     "星巴克", "瑞幸", "蜜雪冰城", "喜茶", "奈雪", "古茗", "茶百道", "霸王茶姬",
     "书亦", "益禾堂", "沪上阿姨", "1点点", "coco", "奶茶", "茶饮", "饮品",
-    "便利店", "超市",
 )
 
 

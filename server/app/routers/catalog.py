@@ -284,10 +284,7 @@ def poi_list(
             if map_provider.is_hike_destination(p.name, p.cat, p.tags, p.reason)
         ]
 
-    if sort == "hot":
-        out.sort(key=lambda p: -(getattr(p, "rating", 0) or 0))
-    else:
-        out.sort(key=_dist_km)
+    out.sort(key=_dist_km)   # 种子/无定位路径无热度信号，统一按距离（hot 仅在高德实时分支生效）
     return out
 
 
