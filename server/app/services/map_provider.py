@@ -108,6 +108,27 @@ def amap_reverse_geocode(lat: float, lng: float) -> dict:
         return {"city": None, "landmark": None}
 
 
+def amap_geocode(address: str, city: str | None = None) -> tuple[float, float] | None:
+    """高德正向地理编码：地址（如"成都温江区"）→ (lat, lng)。失败返回 None。"""
+    if provider_name() != "amap" or not address:
+        return None
+    try:
+        params = {"key": settings.amap_key, "address": address}
+        if city:
+            params["city"] = city
+        resp = httpx.get(f"{AMAP_BASE}/v3/geocode/geo", params=params, timeout=5.0)
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return None
+        geocodes = data.get("geocodes") or []
+        loc = (geocodes[0].get("location") if geocodes else "") or ""  # "lng,lat"
+        lng_s, lat_s = loc.split(",")
+        return (float(lat_s), float(lng_s))
+    except (httpx.HTTPError, ValueError, KeyError, IndexError):
+        return None
+
+
 def transport_hint(transport: str | None) -> str:
     """根据出行方式给出路段交通建议文案。"""
     return {

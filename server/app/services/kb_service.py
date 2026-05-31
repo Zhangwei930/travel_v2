@@ -45,14 +45,57 @@ def _score(question: str, faq: FaqKnowledge) -> float:
     return hit / len(keywords)
 
 
+_AREA_RE = re.compile(r"([一-龥]{2,5}?(?:区|县|镇|新区))")
+
+
+def _area_in_question(question: str | None) -> str:
+    """问题里提到的区/县/镇（如"温江区"），用于把推荐定位到那里而非用户当前位置。"""
+    if not question:
+        return ""
+    m = _AREA_RE.search(question)
+    return m.group(1) if m else ""
+
+
+# 自由文本里推断场景，让卡片搜对类型（带孩子→亲子点，而非通用/酒吧）
+_SCENE_HINTS = [
+    ("family", ("带孩子", "亲子", "小孩", "儿童", "娃", "宝宝")),
+    ("fish", ("钓鱼", "垂钓")),
+    ("hike", ("登山", "爬山", "徒步", "山")),
+    ("food", ("美食", "好吃", "餐厅", "吃饭", "馆子", "火锅")),
+    ("photo", ("拍照", "打卡", "出片")),
+    ("couple", ("情侣", "约会")),
+    ("rainy", ("雨天", "下雨", "室内")),
+    ("night", ("夜市", "夜游", "夜景")),
+]
+
+
+def _infer_scene(question: str | None) -> str | None:
+    if not question:
+        return None
+    for scene, kws in _SCENE_HINTS:
+        if any(k in question for k in kws):
+            return scene
+    return None
+
+
 def _location_cards(payload: AskIn, city: str, db: Session):
-    if payload.lat is None or payload.lng is None:
+    # 用户问到某个区/县/镇时，把搜索点定位到那里；否则用用户当前位置
+    search_lat, search_lng = payload.lat, payload.lng
+    area = _area_in_question(payload.question)
+    if area:
+        coords = map_provider.amap_geocode(f"{city}{area}", city=city)
+        if coords:
+            search_lat, search_lng = coords
+    if search_lat is None or search_lng is None:
         return [], []
+
+    # 自由文本无 scene 时，从问题推断（带孩子→亲子点），让候选与意图一致
+    eff_scene = payload.scene or _infer_scene(payload.question)
 
     # 优先实时高德召回附近点（带场景类型、按热度横跨半径，单页控延迟）；
     # stub/无 key 或无结果时回落到种子库 POI。
     from app.routers.home import _amap_rows  # 局部 import，避免 service↔router 顶层耦合
-    rows = _amap_rows(db, payload.lat, payload.lng, city, payload.scene,
+    rows = _amap_rows(db, search_lat, search_lng, city, eff_scene,
                       radius_km=15.0, pages=1, sortrule="weight")
     if not rows:
         kn_rows = db.query(TravelKnowledge).filter(TravelKnowledge.review_status == "approved").all()
@@ -63,23 +106,27 @@ def _location_cards(payload: AskIn, city: str, db: Session):
             if map_provider.normalize_city(poi.city) != map_provider.normalize_city(city):
                 continue
             kn = kn_by_id.get(poi.id)
-            if payload.scene and not (kn and payload.scene in (kn.scene_ids or [])):
+            if eff_scene and not (kn and eff_scene in (kn.scene_ids or [])):
                 continue
             rows.append((poi, kn))
 
     weather = get_weather(city)
+    # 距离仍以用户当前位置为准；无定位时退回搜索点
+    dist_origin = ((payload.lat, payload.lng)
+                   if payload.lat is not None and payload.lng is not None
+                   else (search_lat, search_lng))
     destinations = recommend_pois(
         rows,
-        origin=(payload.lat, payload.lng),
-        scene=payload.scene,
+        origin=dist_origin,
+        scene=eff_scene,
         weather=weather,
         limit=3,
     )
     routes = build_home_routes(
         db,
         city=city,
-        scene=payload.scene,
-        origin=(payload.lat, payload.lng),
+        scene=eff_scene,
+        origin=dist_origin,
         recommended=destinations,
         limit=2,
     )
@@ -188,10 +235,8 @@ def ask(payload: AskIn, db: Session) -> AskOut:
         return AskOut(text=p["text"], sources=[p["source"]], chips=[], from_kb=True,
                       destinations=destinations, routes=routes, kb_status="hit")
     answer = ai_provider.generate_text(p["prompt"], fallback=p["fallback"])
-    # 卡片只保留答案里实际推荐到的地点：推荐几个就显示几个，不随机多塞
-    picked = [d for d in destinations if _mentioned(answer, d.name)]
-    if picked:
-        destinations = picked
+    # 卡片只保留答案里实际推荐到的地点：文字没提到的不展示，杜绝"文字推甲、卡片显示乙"
+    destinations = [d for d in destinations if _mentioned(answer, d.name)]
     websearch.create_pending(question=p["question"], answer=answer, results=p["results"],
                              city=p["city"], category="出游助手", db=db)
     return AskOut(text=answer, sources=[], chips=[], from_kb=False,
