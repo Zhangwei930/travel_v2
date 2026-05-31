@@ -49,18 +49,10 @@
     <view v-if="showLoginSheet" class="cy-sheet-mask">
       <view class="cy-sheet">
         <view class="cy-sheet-handle" />
-        <text class="cy-sheet-title">微信授权登录</text>
-        <text class="cy-sheet-sub">点一下即可登录，使用微信头像和昵称（仅存本机）</text>
+        <text class="cy-sheet-title">登录</text>
+        <text class="cy-sheet-sub">使用默认头像和昵称快速登录，资料仅存本机</text>
 
-        <!-- #ifdef MP-WEIXIN -->
-        <button class="cy-save-btn" @tap="oneClickLogin">微信一键登录</button>
-        <!-- #endif -->
-
-        <!-- #ifdef H5 -->
-        <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" />
-        <input class="cy-name-input" :value="tempName" placeholder="输入昵称" placeholder-style="color:#9CA3AF" @input="e => tempName = e.detail.value" />
-        <button class="cy-save-btn" :disabled="!tempName" @tap="saveProfile">确认授权</button>
-        <!-- #endif -->
+        <button class="cy-save-btn" @tap="oneClickLogin">一键登录</button>
 
         <text class="cy-cancel-link" @tap="showLoginSheet = false">取消</text>
       </view>
@@ -235,26 +227,18 @@ function onNameInput(e) {
   tempName.value = e?.detail?.value || ''
 }
 
-// #ifdef MP-WEIXIN
-// 微信一键登录：getUserProfile 一步拿头像昵称（平台限制下可能返回默认灰头像/“微信用户”）
+// 一键登录：直接用系统默认头像 + 默认昵称（微信拿不到真实头像昵称，不再请求）
 function oneClickLogin() {
-  uni.getUserProfile({
-    desc: '用于完善出游资料',
-    success: async (res) => {
-      const info = res.userInfo || {}
-      let avatar = info.avatarUrl || ''
-      const cached = await cacheAvatarFile(avatar)
-      if (cached && !isRemoteAvatarFile(cached)) avatar = cached
-      const profile = { name: info.nickName || '微信用户', avatar, loginAt: Date.now() }
-      setUserProfile(profile)
-      userProfile.value = profile
-      avatarBroken.value = false
-      afterLoginSuccess()
-    },
-    fail: () => {},
-  })
+  const profile = {
+    name: '出游者' + Math.floor(1000 + Math.random() * 9000),
+    avatar: '/static/images/avatar-default.svg',
+    loginAt: Date.now(),
+  }
+  setUserProfile(profile)
+  userProfile.value = profile
+  avatarBroken.value = false
+  afterLoginSuccess()
 }
-// #endif
 
 function afterLoginSuccess() {
   const redirect = loginRedirect.value
