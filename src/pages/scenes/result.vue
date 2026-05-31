@@ -17,7 +17,7 @@
       </view>
     </scroll-view>
 
-    <!-- 距离范围（全局，多页复用） -->
+    <!-- 距离范围 -->
     <view class="cy-radius-row">
       <text class="cy-radius-label">范围</text>
       <view
@@ -147,10 +147,9 @@ const SCENE_FILTERS = {
 }
 
 const filters = computed(() => SCENE_FILTERS[sceneId.value] || DEFAULT_FILTERS)
-const HIKE_RADIUS_OPTIONS = [...RADIUS_OPTIONS, 150]
-const sceneRadius = ref(null)
+const HIKE_RADIUS_OPTIONS = [150]
 const radiusOptions = computed(() => sceneId.value === 'hike' ? HIKE_RADIUS_OPTIONS : RADIUS_OPTIONS)
-const activeRadius = computed(() => sceneId.value === 'hike' ? (sceneRadius.value ?? cityStore.radiusKm) : cityStore.radiusKm)
+const activeRadius = computed(() => sceneId.value === 'hike' ? 150 : cityStore.radiusKm)
 
 const active = ref('all')
 const allPois = ref([])
@@ -184,12 +183,7 @@ function setFilter(id) { active.value = id; displayCount.value = PAGE_SIZE }
 function setRadius(km) {
   const next = Number(km)
   if (activeRadius.value === next) return
-  if (sceneId.value === 'hike' && next === 150) {
-    sceneRadius.value = next
-  } else {
-    sceneRadius.value = null
-    cityStore.setRadius(next)    // 15/30/50 仍写全局 + 持久化，其他页面复用
-  }
+  if (sceneId.value !== 'hike') cityStore.setRadius(next)    // 15/30/50 仍写全局 + 持久化，其他页面复用
   if (sceneId.value) loadScene(sceneId.value)
 }
 function ratingFor(p) {
