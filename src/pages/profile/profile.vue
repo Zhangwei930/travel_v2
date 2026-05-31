@@ -229,8 +229,10 @@ function onNameInput(e) {
 
 // 一键登录：直接用系统默认头像 + 默认昵称（微信拿不到真实头像昵称，不再请求）
 function oneClickLogin() {
+  // 昵称仅本机显示，非账号标识；用时间戳后5位+1位随机，基本不会重
+  const suffix = String(Date.now()).slice(-5) + Math.floor(Math.random() * 10)
   const profile = {
-    name: '出游者' + Math.floor(1000 + Math.random() * 9000),
+    name: '出游者' + suffix,
     avatar: '/static/images/avatar-default.svg',
     loginAt: Date.now(),
   }
