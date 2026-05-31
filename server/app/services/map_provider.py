@@ -6,7 +6,7 @@
 """
 import concurrent.futures
 import time
-from math import asin, cos, radians, sin, sqrt
+from math import asin, atan2, cos, degrees, radians, sin, sqrt
 
 import httpx
 
@@ -329,6 +329,52 @@ def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
         if len(_AROUND_CACHE) > 500:
             oldest = min(_AROUND_CACHE, key=lambda k: _AROUND_CACHE[k][0])
             _AROUND_CACHE.pop(oldest, None)
+    return out
+
+
+def _offset_latlng(lat: float, lng: float, dist_km: float, bearing_deg: float) -> tuple[float, float]:
+    """从 (lat,lng) 沿 bearing 方向偏移 dist_km，返回新坐标。"""
+    r = 6371.0
+    br = radians(bearing_deg)
+    lat1, lng1 = radians(lat), radians(lng)
+    dr = dist_km / r
+    lat2 = asin(sin(lat1) * cos(dr) + cos(lat1) * sin(dr) * cos(br))
+    lng2 = lng1 + atan2(sin(br) * sin(dr) * cos(lat1), cos(dr) - sin(lat1) * sin(lat2))
+    return degrees(lat2), degrees(lng2)
+
+
+def amap_search_spread(lat: float, lng: float, radius_km: float,
+                       types: str = AMAP_DEFAULT_TYPES, sortrule: str = "weight",
+                       pages: int = 1) -> list[dict]:
+    """距离分段采样：中心搜近处热门点 + 在 ~0.6R 处一圈偏移中心并发各搜一圈，
+    把郊区远点也召回。密集城区只在中心搜会全堆在 2-4km，这样能铺满整个半径。
+    radius<=8km 退化为普通中心搜索。"""
+    tasks: list[tuple[float, float, float, int]] = [(lat, lng, min(radius_km, 8.0), pages)]
+    if radius_km > 8:
+        ring = radius_km * 0.6
+        band = max(radius_km * 0.5, 6.0)
+        for bearing in (0, 72, 144, 216, 288):
+            olat, olng = _offset_latlng(lat, lng, ring, bearing)
+            tasks.append((olat, olng, band, 1))
+
+    def run(t: tuple) -> list[dict]:
+        return amap_search_around(t[0], t[1], radius_km=t[2], types=types,
+                                  sortrule=sortrule, pages=t[3])
+
+    if len(tasks) == 1:
+        return run(tasks[0])
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(tasks), 6)) as ex:
+        results = list(ex.map(run, tasks))
+    out: list[dict] = []
+    seen: set[str] = set()
+    for items in results:
+        for p in items:
+            pid = str(p.get("id") or "")
+            if pid and pid in seen:
+                continue
+            if pid:
+                seen.add(pid)
+            out.append(p)
     return out
 
 

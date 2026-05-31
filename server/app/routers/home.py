@@ -48,15 +48,15 @@ def _knowledge_maps(db: Session) -> tuple[dict[int, TravelKnowledge], dict[str, 
 
 def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None,
                radius_km: float = NEARBY_RADIUS_KM, pages: int = 1,
-               sortrule: str = "distance") -> list[tuple[PoiIndex, TravelKnowledge | None]]:
-    raw = map_provider.amap_search_around(
-        lat,
-        lng,
-        radius_km=radius_km,
-        types=map_provider.amap_types_for_scene(scene),
-        pages=pages,
-        sortrule=sortrule,
-    )
+               sortrule: str = "distance", spread: bool = False) -> list[tuple[PoiIndex, TravelKnowledge | None]]:
+    types = map_provider.amap_types_for_scene(scene)
+    if spread:
+        # 距离分段采样：偏移中心一圈，把远处郊区点也召回（附近页大半径避免只堆市中心 2-4km）
+        raw = map_provider.amap_search_spread(lat, lng, radius_km=radius_km, types=types,
+                                              pages=pages, sortrule=sortrule)
+    else:
+        raw = map_provider.amap_search_around(lat, lng, radius_km=radius_km, types=types,
+                                              pages=pages, sortrule=sortrule)
     parsed = [p for p in (map_provider.parse_amap_poi(item) for item in raw) if p and p["name"]]
     if not parsed:
         return []
@@ -183,7 +183,8 @@ def _build_home_feed(
     pages = map_provider.pages_for_radius(eff_radius) if radius else 1
     nearby_limit = pages * 25 if radius else 8
     sortrule = "weight" if radius else "distance"
-    poi_rows = _amap_rows(db, lat, lng, resolved_city, scene, radius_km=eff_radius, pages=pages, sortrule=sortrule)
+    poi_rows = _amap_rows(db, lat, lng, resolved_city, scene, radius_km=eff_radius,
+                          pages=pages, sortrule=sortrule, spread=bool(radius))
     if not poi_rows:
         poi_rows = _local_rows(db, resolved_city, scene)
 

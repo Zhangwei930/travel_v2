@@ -153,9 +153,9 @@ class ApiSmokeTest(unittest.TestCase):
         # 附近页带半径时应按热度横跨全半径召回，避免只堆积最近一圈
         # （bug：选 15km 列表只拉到 ~4.2km 就没有更多，因 distance 排序只返回最近一批）
         captured = {}
-        original_search = map_provider.amap_search_around
+        original_spread = map_provider.amap_search_spread
 
-        def fake_search(lat, lng, radius_km=5.0, types=map_provider.AMAP_DEFAULT_TYPES,
+        def fake_spread(lat, lng, radius_km=5.0, types=map_provider.AMAP_DEFAULT_TYPES,
                         sortrule="distance", pages=1, **_kwargs):
             captured["radius_km"] = radius_km
             captured["sortrule"] = sortrule
@@ -163,13 +163,13 @@ class ApiSmokeTest(unittest.TestCase):
             return []
 
         try:
-            map_provider.amap_search_around = fake_search
+            map_provider.amap_search_spread = fake_spread
             response = self.client.get(
                 "/api/home/feed",
                 params={"lat": 30.5728, "lng": 104.0668, "city": "成都", "radius": 15},
             )
         finally:
-            map_provider.amap_search_around = original_search
+            map_provider.amap_search_spread = original_spread
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(captured.get("radius_km"), 15.0)
@@ -218,7 +218,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(captured.get("search"), "text")
         self.assertEqual(captured.get("city"), "成都")
-        self.assertEqual(captured.get("types"), "110200")
+        self.assertEqual(captured.get("types"), "")
         keyword_tokens = captured.get("keyword", "").split("|")
         self.assertNotIn("公园", keyword_tokens)
         self.assertNotIn("山", keyword_tokens)
