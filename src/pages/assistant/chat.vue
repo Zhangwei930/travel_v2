@@ -107,9 +107,10 @@
           confirm-type="send"
           @confirm="sendMsg(inputText)"
         />
-        <view class="cy-input-tool" @tap="chooseImage">
+        <!-- 拍照识别功能已暂时关闭 -->
+        <!-- <view class="cy-input-tool" @tap="chooseImage">
           <CyIcon name="camera" :size="44" />
-        </view>
+        </view> -->
         <view class="cy-send-btn" :class="{ 'cy-send-btn--active': inputText.length > 0 }" @tap="sendMsg(inputText)">
           <CyIcon name="send-green" :size="40" />
         </view>
