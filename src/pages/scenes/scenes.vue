@@ -49,6 +49,7 @@ const META = {
   photo:  { iconType: 'photo',  bg: '#FAE2E7' },
   fish:   { iconType: 'fish',   bg: '#DCEDE0' },
   old:    { iconType: 'old',    bg: '#F0E8DC' },
+  hike:   { iconType: 'hike',   bg: '#DCEDE0' },
 }
 
 const scenesWithMeta = computed(() =>
