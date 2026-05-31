@@ -48,18 +48,23 @@ def _location_cards(payload: AskIn, city: str, db: Session):
     if payload.lat is None or payload.lng is None:
         return [], []
 
-    kn_rows = db.query(TravelKnowledge).filter(TravelKnowledge.review_status == "approved").all()
-    kn_by_id = {kn.poi_id: kn for kn in kn_rows if kn.poi_id}
-    rows = []
-    for poi in db.query(PoiIndex).filter(PoiIndex.provider != "amap").all():
-        if poi.lat is None or poi.lng is None:
-            continue
-        if map_provider.normalize_city(poi.city) != map_provider.normalize_city(city):
-            continue
-        kn = kn_by_id.get(poi.id)
-        if payload.scene and not (kn and payload.scene in (kn.scene_ids or [])):
-            continue
-        rows.append((poi, kn))
+    # 优先实时高德召回附近点（带场景类型、按热度横跨半径，单页控延迟）；
+    # stub/无 key 或无结果时回落到种子库 POI。
+    from app.routers.home import _amap_rows  # 局部 import，避免 service↔router 顶层耦合
+    rows = _amap_rows(db, payload.lat, payload.lng, city, payload.scene,
+                      radius_km=15.0, pages=1, sortrule="weight")
+    if not rows:
+        kn_rows = db.query(TravelKnowledge).filter(TravelKnowledge.review_status == "approved").all()
+        kn_by_id = {kn.poi_id: kn for kn in kn_rows if kn.poi_id}
+        for poi in db.query(PoiIndex).filter(PoiIndex.provider != "amap").all():
+            if poi.lat is None or poi.lng is None:
+                continue
+            if map_provider.normalize_city(poi.city) != map_provider.normalize_city(city):
+                continue
+            kn = kn_by_id.get(poi.id)
+            if payload.scene and not (kn and payload.scene in (kn.scene_ids or [])):
+                continue
+            rows.append((poi, kn))
 
     weather = get_weather(city)
     destinations = recommend_pois(
