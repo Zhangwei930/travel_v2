@@ -11,6 +11,7 @@ SCENES: list[dict] = [
     {"id": "walk", "no": "08", "label": "Citywalk", "icon": "walk", "color": "#84CC16", "desc": "慢走·人文"},
     {"id": "old", "no": "09", "label": "适老", "icon": "old", "color": "#F4B942", "desc": "轻量·无障碍"},
     {"id": "hike", "no": "10", "label": "登山", "icon": "hike", "color": "#2F855A", "desc": "山峰·徒步"},
+    {"id": "food", "no": "11", "label": "美食", "icon": "food", "color": "#E8732C", "desc": "本地味·馆子"},
 ]
 
 SCENE_LABELS: dict[str, str] = {s["id"]: s["label"] for s in SCENES}
@@ -31,5 +32,6 @@ GEAR_BY_SCENE: dict[str, list[str]] = {
     "walk":   ["舒适运动鞋", "保温水壶", "防晒霜", "小背包"],
     "old":    ["保温水壶", "常用药", "防滑鞋", "折叠凳"],
     "hike":   ["登山鞋", "登山杖", "双肩包", "饮用水", "能量补给", "防晒霜", "外套", "创可贴"],
+    "food":   ["手机支付/现金", "纸巾", "肠胃药", "排队的耐心"],
 }
 DEFAULT_GEAR: list[str] = ["身份证", "充电宝", "保温水壶", "纸巾", "常用药品"]

@@ -27,6 +27,7 @@ AMAP_TYPES_BY_SCENE: dict[str, str] = {
     "walk": "061000|110000|140000",
     "old": "110000|140100|060100",
     "hike": "",
+    "food": "050000",
 }
 
 # 各城市中心点（请求未带定位时的兜底原点）
@@ -149,6 +150,7 @@ SCENE_KEYWORDS: dict[str, str] = {
     "fish":   "钓鱼场|垂钓|钓鱼园|渔场|钓场",
     "old":    "公园|景区|古镇|博物馆|植物园|寺|湖",
     "hike":   "登山|爬山|徒步|山峰|山地|国家森林公园|森林公园|风景区",
+    "food":   "美食|火锅|川菜|特色菜|小吃|本地菜|苍蝇馆子|老字号",
 }
 
 HIKE_POSITIVE_TERMS = (
@@ -187,26 +189,49 @@ def is_hike_destination(name: str | None,
     return any(term in visible_text for term in HIKE_POSITIVE_TERMS)
 
 
+# 美食场景：通用过滤之外再剔除纯饮品/连锁奶茶咖啡/便利店，突出正餐与特色馆子
+_FOOD_NOISE_TERMS = (
+    "星巴克", "瑞幸", "蜜雪冰城", "喜茶", "奈雪", "古茗", "茶百道", "霸王茶姬",
+    "书亦", "益禾堂", "沪上阿姨", "1点点", "coco", "奶茶", "茶饮", "饮品",
+    "便利店", "超市",
+)
+
+
+def is_food_destination(name: str | None, category: str | None = None,
+                        tags: list[str] | None = None) -> bool:
+    """美食场景过滤：剔除纯饮品/连锁奶茶咖啡店，让正餐/特色馆子先行。"""
+    text = " ".join([name or "", category or "", " ".join(tags or [])])
+    return not any(t in text for t in _FOOD_NOISE_TERMS)
+
+
 # 通用"非出游目的地"过滤：去类型搜索后会混进餐馆/公司/汽修等，按高德顶级类别+名称剔除
 _NON_DEST_CATEGORIES = ("公司企业", "汽车", "金融", "保险", "医疗", "政府")
-_NON_DEST_NAME_TERMS = (
+# 餐饮类词：一般场景算噪声剔除，但「美食」场景下这些正是目的地 → allow_food 豁免
+_NON_DEST_FOOD_TERMS = (
     "米铺", "米线", "面馆", "牛肉", "餐厅", "饭店", "餐馆", "小吃", "火锅",
-    "烧烤", "串串", "烤肉", "快餐", "食府", "茶楼", "网吧", "棋牌", "KTV",
-    "4S", "汽修", "汽配", "维修", "装饰", "建材", "五金", "超市", "便利店",
-    "药房", "药店", "诊所", "美容", "美发", "理发", "人力资源", "协会",
-    "俱乐部", "中介", "事务所", "工作室", "经营部", "服务部", "门市", "商行",
-    "物业", "培训", "健身房", "爬山虎", "公司", "营业厅",
+    "烧烤", "串串", "烤肉", "快餐", "食府", "茶楼",
+)
+# 服务/商业类词：任何出游场景都不是目的地，始终剔除
+_NON_DEST_SERVICE_TERMS = (
+    "网吧", "棋牌", "KTV", "4S", "汽修", "汽配", "维修", "装饰", "建材", "五金",
+    "超市", "便利店", "药房", "药店", "诊所", "美容", "美发", "理发", "人力资源",
+    "协会", "俱乐部", "中介", "事务所", "工作室", "经营部", "服务部", "门市",
+    "商行", "物业", "培训", "健身房", "爬山虎", "公司", "营业厅",
 )
 
 
 def is_outing_destination(name: str | None, category: str | None = None,
-                          tags: list[str] | None = None, address: str | None = None) -> bool:
-    """通用过滤：剔除餐馆/公司/汽修/服务类等非出游目的地（所有场景共用）。"""
+                          tags: list[str] | None = None, address: str | None = None,
+                          allow_food: bool = False) -> bool:
+    """通用过滤：剔除餐馆/公司/汽修/服务类等非出游目的地（所有场景共用）。
+    allow_food=True（美食场景）时保留餐饮类，只剔除服务/商业类。"""
     cat = category or ""
     if any(c in cat for c in _NON_DEST_CATEGORIES):
         return False
     text = " ".join([name or "", cat, " ".join(tags or [])])
-    return not any(t in text for t in _NON_DEST_NAME_TERMS)
+    if not allow_food and any(t in text for t in _NON_DEST_FOOD_TERMS):
+        return False
+    return not any(t in text for t in _NON_DEST_SERVICE_TERMS)
 
 
 def pages_for_radius(radius_km: float) -> int:

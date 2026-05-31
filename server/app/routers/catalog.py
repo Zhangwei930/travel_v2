@@ -212,13 +212,16 @@ def poi_list(
             # 通用过滤：去类型搜索会混进餐馆/公司/汽修等，所有场景都剔除
             rows = [
                 p for p in rows
-                if map_provider.is_outing_destination(p.name, p.cat, p.tags, p.reason)
+                if map_provider.is_outing_destination(p.name, p.cat, p.tags, p.reason,
+                                                      allow_food=(scene == "food"))
             ]
             if scene == "hike":
                 rows = [
                     p for p in rows
                     if map_provider.is_hike_destination(p.name, p.cat, p.tags, p.reason)
                 ]
+            if scene == "food":
+                rows = [p for p in rows if map_provider.is_food_destination(p.name, p.cat, p.tags)]
             return rows
 
         if scene == "hike" and radius > map_provider.AMAP_AROUND_MAX_RADIUS_KM:

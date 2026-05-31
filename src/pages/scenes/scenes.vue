@@ -50,6 +50,7 @@ const META = {
   fish:   { iconType: 'fish',   bg: '#DCEDE0' },
   old:    { iconType: 'old',    bg: '#F0E8DC' },
   hike:   { iconType: 'hike',   bg: '#DCEDE0' },
+  food:   { iconType: 'food',   bg: '#FAE2D6' },
 }
 
 const scenesWithMeta = computed(() =>
