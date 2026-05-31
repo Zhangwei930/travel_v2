@@ -138,6 +138,8 @@ assert(/downloadFile/.test(avatarHelper) && /saveFile/.test(avatarHelper), 'remo
 assert(/cacheAvatarFile/.test(profilePage), 'profile login must cache chosen avatars before saving user profile')
 assert(/repairRemoteUserAvatar/.test(profilePage), 'profile page must repair previously saved remote avatar URLs on real devices')
 assert(/onAvatarError[\s\S]*repairRemoteUserAvatar/.test(profilePage), 'avatar image errors must trigger a cache repair before falling back')
+assert(/profileAvatarSrc/.test(profilePage) && /isRemoteAvatarFile/.test(profilePage), 'profile page must not render remote avatar URLs before local caching')
+assert(!/微信用户/.test(profilePage), 'profile login must not silently save an empty nickname as default text')
 assert(!/saveFile\(\{\s*tempFilePath:\s*tempUrl/.test(profilePage), 'profile login must not pass a remote qlogo URL directly to saveFile')
 
 console.log('known bug checks passed')

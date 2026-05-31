@@ -6,7 +6,7 @@
       <view class="cy-user-card" :style="{ paddingTop: statusBarH + 'px' }">
         <view class="cy-user-main" @tap="onLogin">
           <view class="cy-avatar">
-            <image v-if="userProfile?.avatar && !avatarBroken" :src="userProfile.avatar" class="cy-avatar-img" mode="aspectFill" @error="onAvatarError" />
+            <image v-if="profileAvatarSrc && !avatarBroken" :src="profileAvatarSrc" class="cy-avatar-img" mode="aspectFill" @error="onAvatarError" />
             <CyIcon v-else name="user-fill-muted" :size="88" />
           </view>
           <view class="cy-user-info">
@@ -53,7 +53,7 @@
         <text class="cy-sheet-sub">①点头像选微信头像 ②点昵称栏一键填入微信昵称 ③完成登录（仅存本机）</text>
 
         <!-- #ifdef MP-WEIXIN -->
-        <!-- 昵称用 type=nickname，必须靠 form 提交才能稳定取到（input 事件时序会丢值）；昵称为空不阻断，默认"微信用户" -->
+        <!-- 昵称用 type=nickname，必须靠 form 提交才能稳定取到（input 事件时序会丢值） -->
         <form class="cy-sheet-form" @submit="onSubmitProfile">
           <button class="cy-avatar-btn-lg" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
             <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" />
@@ -92,7 +92,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { cacheAvatarFile, isRemoteAvatarFile } from '../../api/avatar.js'
 import { consumePendingLoginRedirect, getProfileStats, getUserProfile, setUserProfile } from '../../api/storage.js'
@@ -109,6 +109,11 @@ const tempName   = ref('')
 const loginRedirect = ref('')
 const avatarBroken = ref(false)
 let avatarRepairing = false
+
+const profileAvatarSrc = computed(() => {
+  const avatar = userProfile.value?.avatar || ''
+  return avatar && !isRemoteAvatarFile(avatar) ? avatar : ''
+})
 
 const stats = ref([
   { num: '0', label: '收藏',  onTap: () => uni.navigateTo({ url: '/pages/saved/pois' }) },
@@ -156,8 +161,9 @@ onUnmounted(() => {
 })
 
 function openLoginSheet(redirect = '') {
+  const avatar = userProfile.value?.avatar || ''
   loginRedirect.value = redirect
-  tempAvatar.value = userProfile.value?.avatar || ''
+  tempAvatar.value = isRemoteAvatarFile(avatar) ? '' : avatar
   tempName.value   = userProfile.value?.name   || ''
   showLoginSheet.value = true
 }
@@ -214,10 +220,15 @@ async function onChooseAvatar(e) {
 }
 
 // #ifdef MP-WEIXIN
-// 用 form 提交可靠取到微信昵称（type=nickname）。昵称为空不阻断登录，默认"微信用户"，可在"修改资料"再改。
+// 用 form 提交可靠取到微信昵称（type=nickname）；用户需要点击键盘上方建议或手动输入。
 async function onSubmitProfile(e) {
-  const name = (((e.detail.value && e.detail.value.nickname) || tempName.value || '').trim()) || '微信用户'
-  const avatar = await cacheAvatarFile(tempAvatar.value)
+  const name = ((e.detail.value?.nickname || tempName.value || '').trim())
+  if (!name) {
+    uni.showToast({ title: '请填写昵称', icon: 'none' })
+    return
+  }
+  const cachedAvatar = await cacheAvatarFile(tempAvatar.value)
+  const avatar = isRemoteAvatarFile(cachedAvatar) ? '' : cachedAvatar
   const profile = { name, avatar, loginAt: Date.now() }
   setUserProfile(profile)
   userProfile.value = profile
@@ -254,7 +265,8 @@ function funcIconName(key) {
 
 async function saveProfile() {
   if (!tempName.value.trim()) return
-  const avatar = await cacheAvatarFile(tempAvatar.value)
+  const cachedAvatar = await cacheAvatarFile(tempAvatar.value)
+  const avatar = isRemoteAvatarFile(cachedAvatar) ? '' : cachedAvatar
   const profile = { name: tempName.value.trim(), avatar, loginAt: Date.now() }
   setUserProfile(profile)
   userProfile.value = profile
