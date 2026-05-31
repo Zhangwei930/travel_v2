@@ -313,24 +313,23 @@ function openRoute(route) {
 }
 
 .cy-route-title {
-  display: block;
   font-size: 32rpx;
   font-weight: 800;
   color: $cy-text;
+  line-height: 1.3;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;     /* 长标题(首站-末站)最多两行，不再一行截断 */
+  -webkit-box-orient: vertical;
 }
 
 .cy-route-sub {
-  display: block;
   font-size: 24rpx;
   color: $cy-text-sub;
   line-height: 1.5;
   overflow: hidden;
-  text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;     /* 收到 1 行，把空间让给可能两行的标题 */
   -webkit-box-orient: vertical;
   flex: 1;
   margin: 8rpx 0;
