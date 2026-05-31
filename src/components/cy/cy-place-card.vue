@@ -11,7 +11,13 @@
       <text v-if="desc" class="cy-place-desc">{{ desc }}</text>
       <view class="cy-place-row3">
         <view class="cy-place-tags">
-          <view v-for="tag in (tags || []).slice(0, 3)" :key="tag" class="cy-ptag">{{ tag }}</view>
+          <view
+            v-for="(tag, idx) in displayTags"
+            :key="`${tag}-${idx}`"
+            class="cy-ptag"
+          >
+            {{ tag }}
+          </view>
         </view>
         <view v-if="rating" class="cy-place-rating">
           <CyIcon name="star-yellow" :size="24" />
@@ -23,9 +29,10 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import CyIcon from './cy-icon.vue'
 
-defineProps({
+const props = defineProps({
   name:     { type: String, default: '' },
   distance: { type: String, default: '' },
   desc:     { type: String, default: '' },
@@ -34,6 +41,17 @@ defineProps({
   tags:     { type: Array, default: () => [] },
 })
 defineEmits(['tap', 'imgError'])
+
+const displayTags = computed(() => {
+  const seen = new Set()
+  return (props.tags || [])
+    .filter((tag) => {
+      if (!tag || seen.has(tag)) return false
+      seen.add(tag)
+      return true
+    })
+    .slice(0, 3)
+})
 </script>
 
 <style lang="scss">
