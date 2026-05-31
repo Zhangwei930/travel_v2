@@ -29,7 +29,7 @@ export function request(path, { method = 'GET', data, header } = {}) {
       url: isAbs ? path : (BASE_URL + path),
       method,
       data,
-      timeout: 40000,
+      timeout: 60000,
       header: { 'Content-Type': 'application/json', ...header },
       success: (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {

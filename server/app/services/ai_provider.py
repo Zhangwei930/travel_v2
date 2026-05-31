@@ -83,7 +83,7 @@ def generate_stream(prompt: str):
             {"role": "system", "content": PROMPT_RULES},
             {"role": "user", "content": prompt},
         ],
-        "max_tokens": 600,
+        "max_tokens": 400,
         "temperature": 0.7,
         "stream": True,
     }
@@ -124,7 +124,7 @@ def _generate_openai_compatible(*, base: str, api_key: str, model: str,
             {"role": "system", "content": PROMPT_RULES},
             {"role": "user", "content": prompt},
         ],
-        "max_tokens": 600,
+        "max_tokens": 400,
         "temperature": 0.7,
     }
     if extra:

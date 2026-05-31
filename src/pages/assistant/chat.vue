@@ -629,6 +629,8 @@ function onRouteImgError(route) { brokenRouteImgs.value = { ...brokenRouteImgs.v
   align-items: center;
   justify-content: center;
   background: transparent;
+  margin-left: auto;     /* 强制贴右：mp-weixin input 的 flex:1 偶尔不撑开 */
+  flex-shrink: 0;
   transition: background 0.15s;
 
   &--active { background: $cy-green-l; }
