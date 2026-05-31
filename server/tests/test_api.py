@@ -241,6 +241,101 @@ class ApiSmokeTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
 
+    def test_hike_scene_filters_non_mountain_and_over_150km_results(self):
+        original_text = map_provider.amap_search_text
+        original_around = map_provider.amap_search_around
+
+        def fake_text(*_args, **_kwargs):
+            return [
+                {
+                    "id": "qingcheng-filter-test",
+                    "name": "青城山风景区",
+                    "type": "风景名胜;风景名胜;风景名胜",
+                    "address": "都江堰市青城山镇",
+                    "location": "103.5683,30.9052",
+                    "photos": [],
+                },
+                {
+                    "id": "pier-filter-test",
+                    "name": "麓湖码头",
+                    "type": "风景名胜;风景名胜;码头",
+                    "address": "天府新区",
+                    "location": "104.0810,30.4100",
+                    "photos": [],
+                },
+                {
+                    "id": "restaurant-filter-test",
+                    "name": "氿山天妇罗",
+                    "type": "餐饮服务;外国餐厅;日本料理",
+                    "address": "成都市锦江区",
+                    "location": "104.0820,30.6500",
+                    "photos": [],
+                },
+                {
+                    "id": "park-filter-test",
+                    "name": "城市生态公园",
+                    "type": "风景名胜;公园广场;公园",
+                    "address": "成都市高新区",
+                    "location": "104.0700,30.5700",
+                    "photos": [],
+                },
+                {
+                    "id": "mosque-filter-test",
+                    "name": "凤凰山清真寺",
+                    "type": "风景名胜;风景名胜;寺庙道观",
+                    "address": "成都市金牛区",
+                    "location": "104.0800,30.7300",
+                    "photos": [],
+                },
+                {
+                    "id": "tower-park-filter-test",
+                    "name": "塔子山公园-九天楼",
+                    "type": "风景名胜;公园广场;公园",
+                    "address": "成都市锦江区",
+                    "location": "104.1200,30.6400",
+                    "photos": [],
+                },
+                {
+                    "id": "forest-park-filter-test",
+                    "name": "龙泉山城市森林公园合江景区",
+                    "type": "风景名胜;风景名胜;风景名胜",
+                    "address": "天府新区",
+                    "location": "104.1900,30.3800",
+                    "photos": [],
+                },
+                {
+                    "id": "temple-address-filter-test",
+                    "name": "应天寺",
+                    "type": "风景名胜;风景名胜;寺庙道观",
+                    "address": "龙泉山城市森林公园附近",
+                    "location": "104.2600,30.5500",
+                    "photos": [],
+                },
+                {
+                    "id": "far-mountain-filter-test",
+                    "name": "远山风景区",
+                    "type": "风景名胜;风景名胜;风景名胜",
+                    "address": "远郊",
+                    "location": "104.0668,32.6000",
+                    "photos": [],
+                },
+            ]
+
+        try:
+            map_provider.amap_search_text = fake_text
+            map_provider.amap_search_around = lambda *_args, **_kwargs: []
+            response = self.client.get(
+                "/api/poi/list",
+                params={"scene": "hike", "city": "成都", "lat": 30.5728, "lng": 104.0668, "radius": 150},
+            )
+        finally:
+            map_provider.amap_search_text = original_text
+            map_provider.amap_search_around = original_around
+
+        self.assertEqual(response.status_code, 200)
+        names = [item["name"] for item in response.json()]
+        self.assertEqual(names, ["龙泉山城市森林公园合江景区", "青城山风景区"])
+
     def test_weather_uses_amap_live_api_when_key_configured(self):
         calls = []
         original_key = weather_provider.settings.amap_key

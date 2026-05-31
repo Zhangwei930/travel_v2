@@ -208,7 +208,13 @@ def poi_list(
 
         def parsed_within_radius(raw_rows: list) -> list[PoiOut]:
             amap_rows = _parse_amap_to_poiout(raw_rows, lat, lng, city, db) if raw_rows else []
-            return [p for p in amap_rows if _dist_km(p) <= radius]
+            rows = [p for p in amap_rows if _dist_km(p) <= radius]
+            if scene == "hike":
+                rows = [
+                    p for p in rows
+                    if map_provider.is_hike_destination(p.name, p.cat, p.tags, p.reason)
+                ]
+            return rows
 
         if scene == "hike" and radius > map_provider.AMAP_AROUND_MAX_RADIUS_KM:
             raw = map_provider.amap_search_text(
@@ -260,6 +266,14 @@ def poi_list(
         if keyword and keyword not in poi.name and keyword not in (poi.category or ""):
             continue
         out.append(_poi_out(poi, kn, origin, dist_text=real_dist.get(poi.id)))
+
+    if lat is not None and lng is not None and radius:
+        out = [p for p in out if _dist_km(p) <= radius]
+    if scene == "hike":
+        out = [
+            p for p in out
+            if map_provider.is_hike_destination(p.name, p.cat, p.tags, p.reason)
+        ]
 
     out.sort(key=_dist_km)
     return out

@@ -151,6 +151,35 @@ SCENE_KEYWORDS: dict[str, str] = {
     "hike":   "登山|爬山|徒步|山峰|山地|国家森林公园|森林公园|风景区",
 }
 
+HIKE_POSITIVE_TERMS = (
+    "山", "峰", "岭", "峡", "谷", "岩", "崖", "坡", "峪", "沟",
+    "登山", "爬山", "徒步", "步道", "栈道", "古道", "山地",
+    "森林公园", "国家森林公园", "自然保护区",
+)
+HIKE_NEGATIVE_TERMS = (
+    "码头", "渡口", "游船", "港", "餐厅", "饭店", "美食", "火锅", "串串",
+    "天妇罗", "咖啡", "茶馆", "酒吧", "酒店", "民宿", "客栈", "商场",
+    "购物", "商业街", "小区", "学校", "医院", "车站", "停车场", "湿地",
+    "水库", "湖", "滨河", "江滩", "游乐园", "水上乐园", "寺", "庙",
+    "道观", "禅院", "禅林", "清真寺", "教堂", "楼", "塔", "遗址",
+)
+
+
+def is_hike_destination(name: str | None,
+                        category: str | None = None,
+                        tags: list[str] | None = None,
+                        address: str | None = None) -> bool:
+    """登山场景只保留山岳/徒步类目的地，剔除码头、餐饮、普通公园等误召回。"""
+    visible_text = " ".join([name or "", category or "", " ".join(tags or [])])
+    text = " ".join([visible_text, address or ""])
+    if not text.strip():
+        return False
+    if any(term in text for term in HIKE_NEGATIVE_TERMS):
+        return False
+    if "公园" in text and not any(term in visible_text for term in ("森林公园", "国家森林公园", "自然保护区")):
+        return False
+    return any(term in visible_text for term in HIKE_POSITIVE_TERMS)
+
 
 def pages_for_radius(radius_km: float) -> int:
     """半径越大抓越多页（每页25个POI），让结果横跨整个半径而非只堆最近一圈。
