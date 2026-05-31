@@ -50,6 +50,10 @@
           <text>已按{{ cityStore.current || '成都' }}生成默认推荐，开启定位可获得附近真实推荐</text>
           <view class="cy-hint-btn" @tap="retryLocation">重新定位</view>
         </view>
+        <view v-else-if="feedError" class="cy-hint-card">
+          <text>附近推荐加载失败，请检查网络后重试</text>
+          <view class="cy-hint-btn" @tap="retryLocation">重新加载</view>
+        </view>
         <view class="cy-nearby-card">
           <view v-if="feedLoading && !nearbyVisible.length" class="cy-hint-muted"><text>正在加载附近推荐…</text></view>
           <view v-else-if="!nearbyVisible.length && !feedLoading" class="cy-hint-muted"><text>附近暂无可推荐地点</text></view>
@@ -125,6 +129,7 @@ const feedLoading = ref(false)
 const loaded = ref(false)
 const fallbackUsed = ref(false)
 const locationError = ref(false)
+const feedError = ref(false)   // 定位成功但 feed 请求失败（网络/超时），区别于定位失败
 const brokenPoi = ref({})
 const landmark = ref('')
 
@@ -176,6 +181,7 @@ async function loadFeed(options = {}) {
   cityStore.locating = true
   feedLoading.value = true
   locationError.value = false
+  feedError.value = false
   fallbackUsed.value = options.useDefault === true
   try {
     let coords
@@ -210,6 +216,8 @@ async function loadFeed(options = {}) {
     if (!options.useDefault && !cityStore.hasRealLocation) {
       locationError.value = true
       cityStore.locationDenied = true
+    } else {
+      feedError.value = true   // 已有定位但 feed 请求失败 → 给重试入口，别静默空白
     }
     nearby.value = []
   } finally {
