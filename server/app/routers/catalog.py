@@ -192,7 +192,7 @@ def poi_list(
     lat: float | None = Query(default=None),
     lng: float | None = Query(default=None),
     keyword: str | None = Query(default=None),
-    radius: float | None = Query(default=None, ge=1, le=100),   # 前端可调距离（km）
+    radius: float | None = Query(default=None, ge=1, le=150),   # 前端可调距离（km）
     db: Session = Depends(get_db),
 ):
     # 有坐标时走高德实时搜索（amap_search_around 内置 TTL 缓存，重复请求不再打高德）
@@ -204,18 +204,35 @@ def poi_list(
         # 页数随半径放大，否则大半径（15/30/50km）只铺到最近几公里就没有更多了
         sortrule = "weight" if scene else "distance"
         pages = map_provider.pages_for_radius(radius) if scene else 1
+        around_radius = min(radius, map_provider.AMAP_AROUND_MAX_RADIUS_KM)
+
+        def parsed_within_radius(raw_rows: list) -> list[PoiOut]:
+            amap_rows = _parse_amap_to_poiout(raw_rows, lat, lng, city, db) if raw_rows else []
+            return [p for p in amap_rows if _dist_km(p) <= radius]
+
+        if scene == "hike" and radius > map_provider.AMAP_AROUND_MAX_RADIUS_KM:
+            raw = map_provider.amap_search_text(
+                city or map_provider.nearest_city(lat, lng),
+                types=types,
+                keyword=scene_kw,
+                pages=pages,
+            )
+            amap_results = parsed_within_radius(raw)
+            if amap_results:
+                return sorted(amap_results, key=lambda p: _dist_km(p))
+
         raw = []
         if scene_kw:
-            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types,
+            raw = map_provider.amap_search_around(lat, lng, radius_km=around_radius, types=types,
                                                   keyword=scene_kw, sortrule="weight", pages=pages)
         if not raw:
-            raw = map_provider.amap_search_around(lat, lng, radius_km=radius, types=types,
+            raw = map_provider.amap_search_around(lat, lng, radius_km=around_radius, types=types,
                                                   sortrule=sortrule, pages=pages)
         # 场景搜索无结果时，用默认类型兜底（避免只返回2条种子数据）
         if not raw and scene:
-            raw = map_provider.amap_search_around(lat, lng, radius_km=radius,
+            raw = map_provider.amap_search_around(lat, lng, radius_km=around_radius,
                                                   types=map_provider.AMAP_DEFAULT_TYPES, pages=2)
-        amap_results = _parse_amap_to_poiout(raw, lat, lng, city, db) if raw else None
+        amap_results = parsed_within_radius(raw)
         if amap_results:
             return sorted(amap_results, key=lambda p: _dist_km(p))
 

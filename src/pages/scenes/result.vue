@@ -21,10 +21,10 @@
     <view class="cy-radius-row">
       <text class="cy-radius-label">范围</text>
       <view
-        v-for="km in RADIUS_OPTIONS"
+        v-for="km in radiusOptions"
         :key="km"
         class="cy-radius-chip"
-        :class="{ 'cy-radius-chip--active': cityStore.radiusKm === km }"
+        :class="{ 'cy-radius-chip--active': activeRadius === km }"
         @tap="setRadius(km)"
       >
         <text>{{ km }}km</text>
@@ -147,6 +147,10 @@ const SCENE_FILTERS = {
 }
 
 const filters = computed(() => SCENE_FILTERS[sceneId.value] || DEFAULT_FILTERS)
+const HIKE_RADIUS_OPTIONS = [...RADIUS_OPTIONS, 150]
+const sceneRadius = ref(null)
+const radiusOptions = computed(() => sceneId.value === 'hike' ? HIKE_RADIUS_OPTIONS : RADIUS_OPTIONS)
+const activeRadius = computed(() => sceneId.value === 'hike' ? (sceneRadius.value ?? cityStore.radiusKm) : cityStore.radiusKm)
 
 const active = ref('all')
 const allPois = ref([])
@@ -178,8 +182,14 @@ function loadMore() {
 function catText(p) { return ((p.cat || p.category || '') + ' ' + (p.name || '')).toLowerCase() }
 function setFilter(id) { active.value = id; displayCount.value = PAGE_SIZE }
 function setRadius(km) {
-  if (cityStore.radiusKm === km) return
-  cityStore.setRadius(km)        // 写全局 + 持久化，其他页面复用
+  const next = Number(km)
+  if (activeRadius.value === next) return
+  if (sceneId.value === 'hike' && next === 150) {
+    sceneRadius.value = next
+  } else {
+    sceneRadius.value = null
+    cityStore.setRadius(next)    // 15/30/50 仍写全局 + 持久化，其他页面复用
+  }
   if (sceneId.value) loadScene(sceneId.value)
 }
 function ratingFor(p) {
@@ -215,7 +225,7 @@ async function loadScene(id) {
   if (!id) return
   loading.value = true
   try {
-    const pois = await api.getScenePois(id, cityStore.current, cityStore.coords?.lat ?? null, cityStore.coords?.lng ?? null, cityStore.radiusKm)
+    const pois = await api.getScenePois(id, cityStore.current, cityStore.coords?.lat ?? null, cityStore.coords?.lng ?? null, activeRadius.value)
     allPois.value = Array.isArray(pois) ? pois : []
     displayCount.value = PAGE_SIZE   // 重新加载后回到第一屏
   } catch (_) {

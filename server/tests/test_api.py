@@ -177,6 +177,70 @@ class ApiSmokeTest(unittest.TestCase):
         # 大半径需抓多页才能拉到远处，固定 3 页只够最近一圈
         self.assertGreaterEqual(captured.get("pages"), 5)
 
+    def test_hike_scene_defaults_to_150km_city_search(self):
+        captured = {}
+        original_around = map_provider.amap_search_around
+        original_text = getattr(map_provider, "amap_search_text", None)
+
+        def fake_text(city, types=map_provider.AMAP_DEFAULT_TYPES, keyword="", pages=1):
+            captured["search"] = "text"
+            captured["city"] = city
+            captured["types"] = types
+            captured["keyword"] = keyword
+            captured["pages"] = pages
+            return [{
+                "id": "qingcheng-test",
+                "name": "青城山风景区",
+                "type": "风景名胜;风景名胜;风景名胜",
+                "address": "都江堰市青城山镇",
+                "location": "103.5683,30.9052",
+                "photos": [],
+            }]
+
+        def fake_around(*_args, **_kwargs):
+            captured["search"] = "around"
+            return []
+
+        try:
+            map_provider.amap_search_text = fake_text
+            map_provider.amap_search_around = fake_around
+            response = self.client.get(
+                "/api/poi/list",
+                params={"scene": "hike", "city": "成都", "lat": 30.5728, "lng": 104.0668},
+            )
+        finally:
+            map_provider.amap_search_around = original_around
+            if original_text is None:
+                delattr(map_provider, "amap_search_text")
+            else:
+                map_provider.amap_search_text = original_text
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured.get("search"), "text")
+        self.assertEqual(captured.get("city"), "成都")
+        self.assertEqual(captured.get("types"), "110200")
+        keyword_tokens = captured.get("keyword", "").split("|")
+        self.assertNotIn("公园", keyword_tokens)
+        self.assertNotIn("山", keyword_tokens)
+        names = [item["name"] for item in response.json()]
+        self.assertIn("青城山风景区", names)
+
+    def test_hike_scene_accepts_explicit_150km_radius(self):
+        original_text = getattr(map_provider, "amap_search_text", None)
+        try:
+            map_provider.amap_search_text = lambda *_args, **_kwargs: []
+            response = self.client.get(
+                "/api/poi/list",
+                params={"scene": "hike", "city": "成都", "lat": 30.5728, "lng": 104.0668, "radius": 150},
+            )
+        finally:
+            if original_text is None:
+                delattr(map_provider, "amap_search_text")
+            else:
+                map_provider.amap_search_text = original_text
+
+        self.assertEqual(response.status_code, 200)
+
     def test_weather_uses_amap_live_api_when_key_configured(self):
         calls = []
         original_key = weather_provider.settings.amap_key

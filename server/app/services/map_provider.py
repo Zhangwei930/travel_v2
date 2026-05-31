@@ -13,6 +13,7 @@ import httpx
 from app.config import settings
 
 AMAP_BASE = "https://restapi.amap.com"
+AMAP_AROUND_MAX_RADIUS_KM = 50.0
 # 高德 POI 类型码：风景名胜大类(含公园/动植物园) / 博物馆 / 展览馆 / 美术馆 / 科技馆
 AMAP_DEFAULT_TYPES = "110000|140100|140200|140400|140600"
 AMAP_TYPES_BY_SCENE: dict[str, str] = {
@@ -25,7 +26,7 @@ AMAP_TYPES_BY_SCENE: dict[str, str] = {
     "night": "050000|060100|061000|080600",
     "walk": "061000|110000|140000",
     "old": "110000|140100|060100",
-    "hike": "110000|110200|110100",
+    "hike": "110200",
 }
 
 # 各城市中心点（请求未带定位时的兜底原点）
@@ -132,7 +133,7 @@ def amap_types_for_scene(scene: str | None) -> str:
 
 SCENE_RADIUS_KM: dict[str, float] = {
     "fish": 30.0,   # 钓鱼场/湿地公园多在郊区，需更大半径
-    "hike": 30.0,   # 山峰/景区多在郊区，需更大半径
+    "hike": 150.0,  # 山峰/景区多在远郊，周边搜索需切换到广域关键词搜索
 }
 
 # 各场景用关键词搜索命中知名目的地（数量少、分布广），配合 weight 排序横跨全半径，
@@ -147,7 +148,7 @@ SCENE_KEYWORDS: dict[str, str] = {
     "photo":  "古镇|景区|花海|湖|公园|植物园|美术馆|网红|打卡",
     "fish":   "垂钓|钓鱼|鱼塘|湿地公园|水库",
     "old":    "公园|景区|古镇|博物馆|植物园|寺|湖",
-    "hike":   "登山|山|山峰|徒步|爬山|景区|森林公园|风景区",
+    "hike":   "登山|爬山|徒步|山峰|山地|国家森林公园|森林公园|风景区",
 }
 
 
@@ -169,7 +170,7 @@ def _fetch_around_page(page: int, lat: float, lng: float, radius_km: float,
     params = {
         "key": settings.amap_key,
         "location": f"{lng},{lat}",
-        "radius": int(radius_km * 1000),
+        "radius": int(min(radius_km, AMAP_AROUND_MAX_RADIUS_KM) * 1000),
         "types": types,
         "offset": 25,
         "page": page,
@@ -187,6 +188,72 @@ def _fetch_around_page(page: int, lat: float, lng: float, radius_km: float,
         return data.get("pois") or []
     except (httpx.HTTPError, ValueError):
         return []
+
+
+def _fetch_text_page(page: int, city: str | None, types: str, keyword: str) -> list[dict]:
+    """抓取关键字搜索单页，失败/无结果返回 []。用于超过周边搜索半径上限的场景。"""
+    params = {
+        "key": settings.amap_key,
+        "types": types,
+        "offset": 25,
+        "page": page,
+        "extensions": "all",
+        "citylimit": "false",
+    }
+    if keyword:
+        params["keywords"] = keyword
+    if city:
+        params["city"] = normalize_city(city)
+    try:
+        resp = httpx.get(f"{AMAP_BASE}/v3/place/text", params=params, timeout=8.0)
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return []
+        return data.get("pois") or []
+    except (httpx.HTTPError, ValueError):
+        return []
+
+
+def amap_search_text(city: str | None,
+                     types: str = AMAP_DEFAULT_TYPES,
+                     keyword: str = "",
+                     pages: int = 1) -> list[dict]:
+    """高德关键字搜索，返回原始 POI 列表。用于 50km 以上的广域场景搜索。"""
+    if provider_name() != "amap":
+        return []
+    pages_n = max(1, pages)
+    cache_key = f"text|{normalize_city(city)}|{types}|{keyword}|{pages_n}"
+    cached = _AROUND_CACHE.get(cache_key)
+    if cached and cached[0] > time.time():
+        return cached[1]
+
+    if pages_n == 1:
+        page_lists = [_fetch_text_page(1, city, types, keyword)]
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(pages_n, 6)) as ex:
+            futures = [
+                ex.submit(_fetch_text_page, p, city, types, keyword)
+                for p in range(1, pages_n + 1)
+            ]
+            page_lists = [f.result() for f in futures]
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for pois in page_lists:
+        for p in pois:
+            pid = str(p.get("id") or "")
+            if pid and pid in seen:
+                continue
+            if pid:
+                seen.add(pid)
+            out.append(p)
+    if out:
+        _AROUND_CACHE[cache_key] = (time.time() + _AROUND_TTL, out)
+        if len(_AROUND_CACHE) > 500:
+            oldest = min(_AROUND_CACHE, key=lambda k: _AROUND_CACHE[k][0])
+            _AROUND_CACHE.pop(oldest, None)
+    return out
 
 
 def amap_search_around(lat: float, lng: float, radius_km: float = 15.0,
