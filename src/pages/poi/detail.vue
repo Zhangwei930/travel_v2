@@ -21,7 +21,7 @@
 
         <!-- 类型 | 费用 | 距离 -->
         <text class="cy-poi-meta">
-          <text style="color: #1A8870;">{{ poi.cat || '景点' }} | {{ poi.budget || '免费' }} | {{ poi.dist || '' }}</text>
+          <text style="color: #1A8870;">{{ poi.cat || '景点' }} | {{ poi.budget || '以官方为准' }} | {{ poi.dist || '' }}</text>
         </text>
 
         <!-- 描述 -->
@@ -44,7 +44,7 @@
           </view>
           <view class="cy-info-row">
             <text class="cy-info-label">门票费用</text>
-            <text class="cy-info-val">{{ poi.budget || '免费' }}</text>
+            <text class="cy-info-val">{{ poi.budget || '以官方为准' }}</text>
           </view>
           <view class="cy-info-row" v-if="fitItems[0]">
             <text class="cy-info-label">适合人群</text>

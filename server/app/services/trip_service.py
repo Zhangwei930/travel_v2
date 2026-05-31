@@ -107,7 +107,7 @@ def generate_plan(payload: TripGenerateIn, db: Session) -> TripPlanOut:
             continue
         kn = db.query(TravelKnowledge).filter(TravelKnowledge.poi_id == pid).first()
         stay = (kn.play_duration if kn else None) or "1-2h"
-        budget = (kn.budget_level if kn else None) or "免费"
+        budget = (kn.budget_level if kn else None) or "以官方为准"
         reason = (kn.recommend_reason if kn else None) or "顺路安排，体验本地玩法"
         tip = (kn.avoid_tips if kn else None) or "营业、票价以官方实时信息为准"
         stops.append(PlanStop(
