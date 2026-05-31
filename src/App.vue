@@ -1,6 +1,8 @@
 <script>
+import { ensureDefaultProfile } from './api/storage.js'
+
 export default {
-  onLaunch() {},
+  onLaunch() { ensureDefaultProfile() },   // 进小程序即自动以默认头像+昵称登录
   onShow() {},
   onHide() {},
 }

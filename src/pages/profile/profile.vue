@@ -4,14 +4,14 @@
 
       <!-- 用户头部卡 -->
       <view class="cy-user-card" :style="{ paddingTop: statusBarH + 'px' }">
-        <view class="cy-user-main" @tap="onLogin">
+        <view class="cy-user-main">
           <view class="cy-avatar">
             <image v-if="profileAvatarSrc && !avatarBroken" :src="profileAvatarSrc" class="cy-avatar-img" mode="aspectFill" @error="onAvatarError" />
             <CyIcon v-else name="user-fill-muted" :size="88" />
           </view>
           <view class="cy-user-info">
             <text class="cy-user-name">{{ userProfile?.name || '游客用户' }}</text>
-            <text class="cy-user-hint">{{ userProfile ? '点击修改资料' : '点击登录/注册' }}</text>
+            <text class="cy-user-hint">资料仅存本机</text>
           </view>
         </view>
       </view>
@@ -45,19 +45,6 @@
       <view style="height: 32rpx;" />
     </scroll-view>
 
-    <!-- 登录底栏 -->
-    <view v-if="showLoginSheet" class="cy-sheet-mask">
-      <view class="cy-sheet">
-        <view class="cy-sheet-handle" />
-        <text class="cy-sheet-title">登录</text>
-        <text class="cy-sheet-sub">使用默认头像和昵称快速登录，资料仅存本机</text>
-
-        <button class="cy-save-btn" @tap="oneClickLogin">一键登录</button>
-
-        <text class="cy-cancel-link" @tap="showLoginSheet = false">取消</text>
-      </view>
-    </view>
-
     <!-- 离线地图引导 -->
     <view v-if="showOfflineSheet" class="cy-sheet-mask" @tap.self="showOfflineSheet = false">
       <view class="cy-sheet">
@@ -78,24 +65,17 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { cacheAvatarFile, isRemoteAvatarFile } from '../../api/avatar.js'
-import { consumePendingLoginRedirect, getProfileStats, getUserProfile, setUserProfile } from '../../api/storage.js'
+import { ensureDefaultProfile, getProfileStats } from '../../api/storage.js'
 import { setTabBarSelected } from '../../api/tabbar.js'
 import CyIcon from '../../components/cy/cy-icon.vue'
 
 const tabBarH    = ref('80px')
 const statusBarH = ref(44)
 const userProfile    = ref(null)
-const showLoginSheet = ref(false)
 const showOfflineSheet = ref(false)
-const loginRedirect = ref('')
 const avatarBroken = ref(false)
-let avatarRepairing = false
 
-const profileAvatarSrc = computed(() => {
-  const avatar = userProfile.value?.avatar || ''
-  return avatar && !isRemoteAvatarFile(avatar) ? avatar : ''
-})
+const profileAvatarSrc = computed(() => userProfile.value?.avatar || '')
 
 const stats = ref([
   { num: '0', label: '收藏',  onTap: () => uni.navigateTo({ url: '/pages/saved/pois' }) },
@@ -124,91 +104,24 @@ onMounted(() => {
     statusBarH.value = sys.statusBarHeight || 44
     tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
   } catch (_) {}
-  loadUserProfile(true)
+  loadUserProfile()
   refreshStats()
   uni.$on('cityChanged', refreshStats)
-  uni.$on('profileLoginRequest', onProfileLoginRequest)
 })
 
 onShow(() => {
   setTabBarSelected(3)
   refreshStats()
-  loadUserProfile(true)
-  const redirect = consumePendingLoginRedirect()
-  if (redirect && !userProfile.value) openLoginSheet(redirect)
+  loadUserProfile()
 })
 onUnmounted(() => {
   uni.$off('cityChanged', refreshStats)
-  uni.$off('profileLoginRequest', onProfileLoginRequest)
 })
 
-function openLoginSheet(redirect = '') {
-  loginRedirect.value = redirect
-  showLoginSheet.value = true
-}
-
-function onLogin() { openLoginSheet() }
-
-function onProfileLoginRequest(payload = {}) {
-  if (userProfile.value) {
-    if (payload.redirect) uni.navigateTo({ url: payload.redirect })
-    return
-  }
-  openLoginSheet(payload.redirect || '')
-}
-
-function loadUserProfile(shouldRepair = false) {
-  userProfile.value = getUserProfile()
+// 进页面即确保有默认档（默认头像 + 默认昵称），无需任何登录操作
+function loadUserProfile() {
+  userProfile.value = ensureDefaultProfile()
   avatarBroken.value = false
-  if (shouldRepair) repairRemoteUserAvatar()
-}
-
-async function repairRemoteUserAvatar() {
-  const profile = userProfile.value
-  const avatar = profile?.avatar || ''
-  if (avatarRepairing || !isRemoteAvatarFile(avatar)) return avatar
-
-  avatarRepairing = true
-  let cachedAvatar = ''
-  try {
-    cachedAvatar = await cacheAvatarFile(avatar)
-  } finally {
-    avatarRepairing = false
-  }
-
-  if (userProfile.value?.avatar !== avatar) return userProfile.value?.avatar || ''
-  if (!cachedAvatar || cachedAvatar === avatar) return avatar
-
-  const nextProfile = { ...profile, avatar: cachedAvatar }
-  setUserProfile(nextProfile)
-  userProfile.value = nextProfile
-  avatarBroken.value = false
-  return cachedAvatar
-}
-
-// 一键登录：直接用系统默认头像 + 默认昵称（微信拿不到真实头像昵称，不再请求）
-function oneClickLogin() {
-  // 昵称仅本机显示，非账号标识；用时间戳后5位+1位随机，基本不会重
-  const suffix = String(Date.now()).slice(-5) + Math.floor(Math.random() * 10)
-  const profile = {
-    name: '出游者' + suffix,
-    avatar: '/static/images/avatar-default.svg',
-    loginAt: Date.now(),
-  }
-  setUserProfile(profile)
-  userProfile.value = profile
-  avatarBroken.value = false
-  afterLoginSuccess()
-}
-
-function afterLoginSuccess() {
-  const redirect = loginRedirect.value
-  loginRedirect.value = ''
-  showLoginSheet.value = false
-  uni.showToast({ title: '登录成功', icon: 'success' })
-  if (redirect) {
-    setTimeout(() => uni.navigateTo({ url: redirect }), 300)
-  }
 }
 
 function funcIconName(key) {
@@ -224,10 +137,7 @@ function funcIconName(key) {
 }
 
 function goSettings() { uni.navigateTo({ url: '/pages/profile/settings' }) }
-async function onAvatarError() {
-  const avatar = userProfile.value?.avatar || ''
-  const repaired = await repairRemoteUserAvatar()
-  if (repaired && repaired !== avatar) return
+function onAvatarError() {
   avatarBroken.value = true
 }
 </script>

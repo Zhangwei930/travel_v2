@@ -93,6 +93,16 @@ export function getUserProfile() {
 export function setUserProfile(p) {
   try { uni.setStorageSync(KEY_USER, p) } catch (_) {}
 }
+// 无登录态时自动建一个默认档（默认头像 + 默认昵称），进小程序即"已登录"
+export function ensureDefaultProfile() {
+  let p = getUserProfile()
+  if (!p) {
+    const suffix = String(Date.now()).slice(-5) + Math.floor(Math.random() * 10)
+    p = { name: '出游者' + suffix, avatar: '', loginAt: Date.now() }
+    setUserProfile(p)
+  }
+  return p
+}
 export function clearUserProfile() {
   try { uni.removeStorageSync(KEY_USER) } catch (_) {}
 }
