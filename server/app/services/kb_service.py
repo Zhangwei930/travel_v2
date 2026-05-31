@@ -3,6 +3,7 @@
 命中 FAQ/知识库 → 直接回答；未命中 → WebSearch + AI 总结 → 写入 kb_pending 待审核。
 """
 import datetime
+import re
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -154,6 +155,17 @@ def _prepare(payload: AskIn, db: Session) -> dict:
             "results": results, "question": question, "city": city}
 
 
+def _mentioned(answer: str, name: str) -> bool:
+    """答案里是否提到该地点。卡名常带后缀(如"锦城公园-林坡花韵")，
+    答案里多用主名("锦城公园")，故按主名(去掉 -/（/· 等后缀)匹配。"""
+    if not name:
+        return False
+    if name in answer:
+        return True
+    core = re.split(r"[-（(·•|/]", name)[0].strip()
+    return len(core) >= 3 and core in answer
+
+
 def _inject_destinations(prompt_info: dict, destinations) -> None:
     """把卡片用的真实附近地点注入 prompt，让 LLM 只从这些点里推荐，
     保证文字推荐与下方卡片一致（避免文字推甲、卡片显示乙的"乱推"）。"""
@@ -177,7 +189,7 @@ def ask(payload: AskIn, db: Session) -> AskOut:
                       destinations=destinations, routes=routes, kb_status="hit")
     answer = ai_provider.generate_text(p["prompt"], fallback=p["fallback"])
     # 卡片只保留答案里实际推荐到的地点：推荐几个就显示几个，不随机多塞
-    picked = [d for d in destinations if d.name and d.name in answer]
+    picked = [d for d in destinations if _mentioned(answer, d.name)]
     if picked:
         destinations = picked
     websearch.create_pending(question=p["question"], answer=answer, results=p["results"],
