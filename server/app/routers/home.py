@@ -48,7 +48,8 @@ def _knowledge_maps(db: Session) -> tuple[dict[int, TravelKnowledge], dict[str, 
 
 def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None,
                radius_km: float = NEARBY_RADIUS_KM, pages: int = 1,
-               sortrule: str = "distance", spread: bool = False) -> list[tuple[PoiIndex, TravelKnowledge | None]]:
+               sortrule: str = "distance", spread: bool = False,
+               keyword: str = "") -> list[tuple[PoiIndex, TravelKnowledge | None]]:
     types = map_provider.amap_types_for_scene(scene)
     if spread:
         # 距离分段采样：偏移中心一圈，把远处郊区点也召回（附近页大半径避免只堆市中心 2-4km）
@@ -56,7 +57,7 @@ def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None
                                               pages=pages, sortrule=sortrule)
     else:
         raw = map_provider.amap_search_around(lat, lng, radius_km=radius_km, types=types,
-                                              pages=pages, sortrule=sortrule)
+                                              keyword=keyword, pages=pages, sortrule=sortrule)
     parsed = [p for p in (map_provider.parse_amap_poi(item) for item in raw) if p and p["name"]]
     if not parsed:
         return []
