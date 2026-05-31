@@ -1,9 +1,10 @@
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-DB_PATH = Path("/private/tmp/zhoumi_test_api.sqlite")
+DB_PATH = Path(tempfile.gettempdir()) / "zhoumi_test_api.sqlite"
 try:
     DB_PATH.unlink()
 except FileNotFoundError:
