@@ -34,7 +34,7 @@
     <scroll-view
       scroll-y
       class="cy-scroll"
-      :style="{ paddingBottom: tabBarH }"
+      :style="{ height: scrollH ? scrollH + 'px' : '70vh', paddingBottom: tabBarH }"
       :show-scrollbar="false"
       @scrolltolower="loadMore"
     >
@@ -72,12 +72,14 @@ import { api } from '../../api/index.js'
 import { poiImage } from '../../api/assets.js'
 import { useCityStore, RADIUS_OPTIONS } from '../../store/city.js'
 import { setAssistantContext } from '../../api/storage.js'
+import { useScrollHeight } from '../../composables/useScrollHeight.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 import CyPlaceCard from '../../components/cy/cy-place-card.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 
 const cityStore = useCityStore()
 const tabBarH = ref('80px')
+const { height: scrollH, measure: measureScroll } = useScrollHeight('.cy-scroll')
 const sceneId = ref('')
 const scenes  = ref([])
 const currentScene = computed(() => scenes.value.find(s => s.id === sceneId.value) || null)
@@ -231,6 +233,7 @@ onMounted(async () => {
   await ensureLocation()
   try { scenes.value = await api.getScenes() } catch (_) {}
   if (sceneId.value) loadScene(sceneId.value)
+  measureScroll()
 })
 
 function goPoi(id) { uni.navigateTo({ url: `/pages/poi/detail?id=${id}` }) }

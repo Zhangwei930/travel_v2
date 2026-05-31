@@ -16,7 +16,7 @@
       </view>
     </view>
 
-    <scroll-view scroll-y class="cy-scroll" :show-scrollbar="false" @scrolltolower="loadMore">
+    <scroll-view scroll-y class="cy-scroll" :style="{ height: scrollH ? scrollH + 'px' : '70vh' }" :show-scrollbar="false" @scrolltolower="loadMore">
       <view v-if="loading" class="cy-hint-muted"><text>加载中…</text></view>
       <view v-else-if="locationError" class="cy-state-card">
         <text class="cy-state-title">需要开启定位</text>
@@ -70,16 +70,18 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../api/index.js'
 import { routeImage } from '../../api/assets.js'
 import { getHomeFeedCache } from '../../api/storage.js'
 import { useCityStore } from '../../store/city.js'
+import { useScrollHeight } from '../../composables/useScrollHeight.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 import CyIcon from '../../components/cy/cy-icon.vue'
 
 const cityStore = useCityStore()
+const { height: scrollH, measure: measureScroll } = useScrollHeight('.cy-scroll')
 const loading = ref(false)
 const locationError = ref(false)
 const allRoutes = ref([])
@@ -137,6 +139,8 @@ onLoad((query = {}) => {
   if (tabs.some(t => t.id === query.duration)) active.value = query.duration
   loadFeed(false)
 })
+
+onMounted(() => measureScroll())
 
 async function loadFeed(forceLocation) {
   loading.value = true

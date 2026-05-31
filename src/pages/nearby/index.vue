@@ -30,7 +30,7 @@
       </view>
     </view>
 
-    <scroll-view scroll-y class="cy-scroll" :style="{ paddingBottom: safeBottom }" :show-scrollbar="false" @scrolltolower="loadMore">
+    <scroll-view scroll-y class="cy-scroll" :style="{ height: scrollH ? scrollH + 'px' : '70vh', paddingBottom: safeBottom }" :show-scrollbar="false" @scrolltolower="loadMore">
       <view v-if="loading && !pois.length" class="cy-hint-muted"><text>正在加载附近推荐…</text></view>
       <view v-else-if="locationError" class="cy-state-card">
         <text class="cy-state-title">需要开启定位</text>
@@ -69,12 +69,14 @@ import { api } from '../../api/index.js'
 import { poiImage } from '../../api/assets.js'
 import { useCityStore, RADIUS_OPTIONS } from '../../store/city.js'
 import { setAssistantContext } from '../../api/storage.js'
+import { useScrollHeight } from '../../composables/useScrollHeight.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 import CyPlaceCard from '../../components/cy/cy-place-card.vue'
 import ZTabBar from '../../components/ZTabBar.vue'
 
 const cityStore = useCityStore()
 const safeBottom = ref('40rpx')
+const { height: scrollH, measure: measureScroll } = useScrollHeight('.cy-scroll')
 
 const filters = [
   { id: 'all',       label: '全部' },
@@ -179,6 +181,7 @@ onMounted(() => {
     safeBottom.value = (Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 84) + 'px'
   } catch (_) {}
   reload()
+  measureScroll()
 })
 </script>
 
