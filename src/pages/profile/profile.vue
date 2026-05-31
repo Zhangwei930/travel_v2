@@ -6,7 +6,7 @@
       <view class="cy-user-card" :style="{ paddingTop: statusBarH + 'px' }">
         <view class="cy-user-main" @tap="onLogin">
           <view class="cy-avatar">
-            <image v-if="userProfile?.avatar" :src="userProfile.avatar" class="cy-avatar-img" mode="aspectFill" />
+            <image v-if="userProfile?.avatar && !avatarBroken" :src="userProfile.avatar" class="cy-avatar-img" mode="aspectFill" @error="onAvatarError" />
             <CyIcon v-else name="user-fill-muted" :size="88" />
           </view>
           <view class="cy-user-info">
@@ -56,7 +56,7 @@
         <!-- 昵称用 type=nickname，必须靠 form 提交才能稳定取到（input 事件时序会丢值）；昵称为空不阻断，默认"微信用户" -->
         <form class="cy-sheet-form" @submit="onSubmitProfile">
           <button class="cy-avatar-btn-lg" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
-            <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" />
+            <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" @error="onTempAvatarError" />
             <text class="cy-avatar-tip">{{ tempAvatar ? '点击更换头像' : '点击选择微信头像' }}</text>
           </button>
           <input class="cy-name-input" type="nickname" name="nickname" :value="tempName" placeholder="点这里一键填入微信昵称" placeholder-style="color:#9CA3AF" @input="onNameInput" @blur="onNameInput" />
@@ -94,6 +94,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { cacheAvatarFile } from '../../api/avatar.js'
 import { consumePendingLoginRedirect, getProfileStats, getUserProfile, setUserProfile } from '../../api/storage.js'
 import { setTabBarSelected } from '../../api/tabbar.js'
 import CyIcon from '../../components/cy/cy-icon.vue'
@@ -106,6 +107,7 @@ const showOfflineSheet = ref(false)
 const tempAvatar = ref('')
 const tempName   = ref('')
 const loginRedirect = ref('')
+const avatarBroken = ref(false)
 
 const stats = ref([
   { num: '0', label: '收藏',  onTap: () => uni.navigateTo({ url: '/pages/saved/pois' }) },
@@ -135,6 +137,7 @@ onMounted(() => {
     tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
   } catch (_) {}
   userProfile.value = getUserProfile()
+  avatarBroken.value = false
   refreshStats()
   uni.$on('cityChanged', refreshStats)
   uni.$on('profileLoginRequest', onProfileLoginRequest)
@@ -144,6 +147,7 @@ onShow(() => {
   setTabBarSelected(3)
   refreshStats()
   userProfile.value = getUserProfile()
+  avatarBroken.value = false
   const redirect = consumePendingLoginRedirect()
   if (redirect && !userProfile.value) openLoginSheet(redirect)
 })
@@ -169,37 +173,26 @@ function onProfileLoginRequest(payload = {}) {
   openLoginSheet(payload.redirect || '')
 }
 
-function onChooseAvatar(e) {
+async function onChooseAvatar(e) {
   const tempUrl = e.detail.avatarUrl
   if (!tempUrl) {
     // chooseAvatar 可能因微信下载头像时网络被重置(ECONNRESET)而拿不到，提示重试
     uni.showToast({ title: '头像获取失败，请重试', icon: 'none' })
     return
   }
-  // #ifdef MP-WEIXIN
-  // 持久化头像临时文件(重启会失效)；用新版 FileSystemManager.saveFile 替代已废弃的 wx.saveFile
-  try {
-    wx.getFileSystemManager().saveFile({
-      tempFilePath: tempUrl,
-      success: (res) => { tempAvatar.value = res.savedFilePath },
-      fail: () => { tempAvatar.value = tempUrl },
-    })
-  } catch (_) {
-    tempAvatar.value = tempUrl
-  }
-  // #endif
-  // #ifndef MP-WEIXIN
   tempAvatar.value = tempUrl
-  // #endif
+  tempAvatar.value = await cacheAvatarFile(tempUrl)
 }
 
 // #ifdef MP-WEIXIN
 // 用 form 提交可靠取到微信昵称（type=nickname）。昵称为空不阻断登录，默认"微信用户"，可在"修改资料"再改。
-function onSubmitProfile(e) {
+async function onSubmitProfile(e) {
   const name = (((e.detail.value && e.detail.value.nickname) || tempName.value || '').trim()) || '微信用户'
-  const profile = { name, avatar: tempAvatar.value, loginAt: Date.now() }
+  const avatar = await cacheAvatarFile(tempAvatar.value)
+  const profile = { name, avatar, loginAt: Date.now() }
   setUserProfile(profile)
   userProfile.value = profile
+  avatarBroken.value = false
   afterLoginSuccess()
 }
 // #endif
@@ -230,15 +223,19 @@ function funcIconName(key) {
   return map[key] || 'star-line-green'
 }
 
-function saveProfile() {
+async function saveProfile() {
   if (!tempName.value.trim()) return
-  const profile = { name: tempName.value.trim(), avatar: tempAvatar.value, loginAt: Date.now() }
+  const avatar = await cacheAvatarFile(tempAvatar.value)
+  const profile = { name: tempName.value.trim(), avatar, loginAt: Date.now() }
   setUserProfile(profile)
   userProfile.value = profile
+  avatarBroken.value = false
   afterLoginSuccess()
 }
 
 function goSettings() { uni.navigateTo({ url: '/pages/profile/settings' }) }
+function onAvatarError() { avatarBroken.value = true }
+function onTempAvatarError() { tempAvatar.value = '' }
 </script>
 
 <style lang="scss">

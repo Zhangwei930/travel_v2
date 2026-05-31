@@ -130,5 +130,11 @@ assert(resultPage.includes('<!-- 数据源标签 -->') && resultPage.includes('<
 assert(/export \{ api \} from '\.\/client\.js'/.test(read('src/api/index.js')), 'api/index.js must be the page-facing API import')
 assert(/function poiImage/.test(read('src/api/assets.js')) && /function routeImage/.test(read('src/api/assets.js')), 'image rendering must use deterministic local fallbacks')
 assert(!/require\(['"]\.\/request\.js['"]\)/.test(read('src/api/assets.js')), 'image fallback helpers must not use runtime require')
+assert(exists('src/api/avatar.js'), 'wechat avatar URLs must be cached through a dedicated avatar helper')
+const avatarHelper = exists('src/api/avatar.js') ? read('src/api/avatar.js') : ''
+assert(/export\s+(async\s+)?function\s+cacheAvatarFile/.test(avatarHelper), 'avatar helper must export cacheAvatarFile')
+assert(/downloadFile/.test(avatarHelper) && /saveFile/.test(avatarHelper), 'remote wechat avatars must be downloaded before saving locally')
+assert(/cacheAvatarFile/.test(profilePage), 'profile login must cache chosen avatars before saving user profile')
+assert(!/saveFile\(\{\s*tempFilePath:\s*tempUrl/.test(profilePage), 'profile login must not pass a remote qlogo URL directly to saveFile')
 
 console.log('known bug checks passed')
