@@ -1,4 +1,4 @@
-function isRemoteFile(path) {
+export function isRemoteAvatarFile(path) {
   return /^https?:\/\//.test(path || '') && !/^https?:\/\/tmp\//.test(path || '')
 }
 
@@ -39,11 +39,27 @@ function downloadAvatarFile(url) {
   })
 }
 
+function getAvatarInfoFile(url) {
+  if (!url || typeof uni === 'undefined' || typeof uni.getImageInfo !== 'function') {
+    return Promise.resolve('')
+  }
+
+  return new Promise((resolve) => {
+    uni.getImageInfo({
+      src: url,
+      success: (res) => resolve(res.path || ''),
+      fail: () => resolve(''),
+    })
+  })
+}
+
 export async function cacheAvatarFile(path) {
   if (!path) return ''
   if (!canUseWechatFileApi()) return path
 
-  const tempFilePath = isRemoteFile(path) ? await downloadAvatarFile(path) : path
+  const tempFilePath = isRemoteAvatarFile(path)
+    ? ((await downloadAvatarFile(path)) || (await getAvatarInfoFile(path)))
+    : path
   if (!tempFilePath) return path
   return saveAvatarFile(tempFilePath)
 }

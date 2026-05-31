@@ -133,8 +133,11 @@ assert(!/require\(['"]\.\/request\.js['"]\)/.test(read('src/api/assets.js')), 'i
 assert(exists('src/api/avatar.js'), 'wechat avatar URLs must be cached through a dedicated avatar helper')
 const avatarHelper = exists('src/api/avatar.js') ? read('src/api/avatar.js') : ''
 assert(/export\s+(async\s+)?function\s+cacheAvatarFile/.test(avatarHelper), 'avatar helper must export cacheAvatarFile')
+assert(/export\s+function\s+isRemoteAvatarFile/.test(avatarHelper), 'avatar helper must expose remote avatar detection for old profile repair')
 assert(/downloadFile/.test(avatarHelper) && /saveFile/.test(avatarHelper), 'remote wechat avatars must be downloaded before saving locally')
 assert(/cacheAvatarFile/.test(profilePage), 'profile login must cache chosen avatars before saving user profile')
+assert(/repairRemoteUserAvatar/.test(profilePage), 'profile page must repair previously saved remote avatar URLs on real devices')
+assert(/onAvatarError[\s\S]*repairRemoteUserAvatar/.test(profilePage), 'avatar image errors must trigger a cache repair before falling back')
 assert(!/saveFile\(\{\s*tempFilePath:\s*tempUrl/.test(profilePage), 'profile login must not pass a remote qlogo URL directly to saveFile')
 
 console.log('known bug checks passed')

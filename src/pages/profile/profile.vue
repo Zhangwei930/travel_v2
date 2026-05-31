@@ -56,7 +56,7 @@
         <!-- 昵称用 type=nickname，必须靠 form 提交才能稳定取到（input 事件时序会丢值）；昵称为空不阻断，默认"微信用户" -->
         <form class="cy-sheet-form" @submit="onSubmitProfile">
           <button class="cy-avatar-btn-lg" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
-            <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" @error="onTempAvatarError" />
+            <image class="cy-avatar-preview" :src="tempAvatar || '/static/images/avatar-default.svg'" mode="aspectFill" />
             <text class="cy-avatar-tip">{{ tempAvatar ? '点击更换头像' : '点击选择微信头像' }}</text>
           </button>
           <input class="cy-name-input" type="nickname" name="nickname" :value="tempName" placeholder="点这里一键填入微信昵称" placeholder-style="color:#9CA3AF" @input="onNameInput" @blur="onNameInput" />
@@ -94,7 +94,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { cacheAvatarFile } from '../../api/avatar.js'
+import { cacheAvatarFile, isRemoteAvatarFile } from '../../api/avatar.js'
 import { consumePendingLoginRedirect, getProfileStats, getUserProfile, setUserProfile } from '../../api/storage.js'
 import { setTabBarSelected } from '../../api/tabbar.js'
 import CyIcon from '../../components/cy/cy-icon.vue'
@@ -108,6 +108,7 @@ const tempAvatar = ref('')
 const tempName   = ref('')
 const loginRedirect = ref('')
 const avatarBroken = ref(false)
+let avatarRepairing = false
 
 const stats = ref([
   { num: '0', label: '收藏',  onTap: () => uni.navigateTo({ url: '/pages/saved/pois' }) },
@@ -136,8 +137,7 @@ onMounted(() => {
     statusBarH.value = sys.statusBarHeight || 44
     tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
   } catch (_) {}
-  userProfile.value = getUserProfile()
-  avatarBroken.value = false
+  loadUserProfile(true)
   refreshStats()
   uni.$on('cityChanged', refreshStats)
   uni.$on('profileLoginRequest', onProfileLoginRequest)
@@ -146,8 +146,7 @@ onMounted(() => {
 onShow(() => {
   setTabBarSelected(3)
   refreshStats()
-  userProfile.value = getUserProfile()
-  avatarBroken.value = false
+  loadUserProfile(true)
   const redirect = consumePendingLoginRedirect()
   if (redirect && !userProfile.value) openLoginSheet(redirect)
 })
@@ -171,6 +170,36 @@ function onProfileLoginRequest(payload = {}) {
     return
   }
   openLoginSheet(payload.redirect || '')
+}
+
+function loadUserProfile(shouldRepair = false) {
+  userProfile.value = getUserProfile()
+  avatarBroken.value = false
+  if (shouldRepair) repairRemoteUserAvatar()
+}
+
+async function repairRemoteUserAvatar() {
+  const profile = userProfile.value
+  const avatar = profile?.avatar || ''
+  if (avatarRepairing || !isRemoteAvatarFile(avatar)) return avatar
+
+  avatarRepairing = true
+  let cachedAvatar = ''
+  try {
+    cachedAvatar = await cacheAvatarFile(avatar)
+  } finally {
+    avatarRepairing = false
+  }
+
+  if (userProfile.value?.avatar !== avatar) return userProfile.value?.avatar || ''
+  if (!cachedAvatar || cachedAvatar === avatar) return avatar
+
+  const nextProfile = { ...profile, avatar: cachedAvatar }
+  setUserProfile(nextProfile)
+  userProfile.value = nextProfile
+  if (tempAvatar.value === avatar) tempAvatar.value = cachedAvatar
+  avatarBroken.value = false
+  return cachedAvatar
 }
 
 async function onChooseAvatar(e) {
@@ -234,8 +263,12 @@ async function saveProfile() {
 }
 
 function goSettings() { uni.navigateTo({ url: '/pages/profile/settings' }) }
-function onAvatarError() { avatarBroken.value = true }
-function onTempAvatarError() { tempAvatar.value = '' }
+async function onAvatarError() {
+  const avatar = userProfile.value?.avatar || ''
+  const repaired = await repairRemoteUserAvatar()
+  if (repaired && repaired !== avatar) return
+  avatarBroken.value = true
+}
 </script>
 
 <style lang="scss">
