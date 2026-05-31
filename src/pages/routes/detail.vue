@@ -9,7 +9,7 @@
       </view>
     </scroll-view>
 
-    <scroll-view scroll-y class="cy-scroll" :style="{ paddingBottom: safeBottomPx }" :show-scrollbar="false">
+    <scroll-view scroll-y class="cy-scroll" :style="{ height: scrollH ? scrollH + 'px' : '70vh', paddingBottom: safeBottomPx }" :show-scrollbar="false">
       <!-- 描述 -->
       <view class="cy-summary" v-if="route?.summary">
         <text>{{ route.summary }}</text>
@@ -87,9 +87,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
+import { useScrollHeight } from '../../composables/useScrollHeight.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 import CyIcon from '../../components/cy/cy-icon.vue'
 
+const { height: scrollH, measure: measureScroll } = useScrollHeight('.cy-scroll')
 const safeBottomPx = ref('140rpx')
 const safeBottomBarPx = ref('24rpx')
 const route = ref(null)
@@ -223,6 +225,7 @@ onMounted(() => {
     const cached = uni.getStorageSync('currentRoute')
     if (cached && cached.id != null) route.value = cached
   } catch (_) {}
+  measureScroll()
 })
 </script>
 

@@ -304,18 +304,21 @@ function goNav() {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 4rpx;
   flex-shrink: 0;
   width: 80rpx;
+  height: 88rpx;        /* 收藏(view) 与 分享(button) 固定同高，避免一高一矮 */
 }
 
-.cy-act-icon-label { font-size: 20rpx; color: $cy-text-sub; }
+.cy-act-icon-label { font-size: 20rpx; line-height: 1.2; color: $cy-text-sub; }
 
 .cy-share-btn {
   background: transparent;
   border: none;
   padding: 0;
   margin: 0;
+  font-size: 20rpx;     /* 抵消 button 默认 18px 字号对盒高的影响 */
   line-height: 1;
   &::after { border: none; }
 }

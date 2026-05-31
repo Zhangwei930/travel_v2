@@ -34,6 +34,8 @@ export function addPlanHistory(plan) {
   set(KEY_PLANS, list.slice(0, 50))
 }
 export function getPlanHistory() { return get(KEY_PLANS) }
+export function removePlanHistory(no) { set(KEY_PLANS, get(KEY_PLANS).filter(p => p.no !== no)) }
+export function clearPlanHistory() { set(KEY_PLANS, []) }
 
 // 收藏 POI
 export function toggleSavedPoi(poi) {
@@ -45,6 +47,8 @@ export function toggleSavedPoi(poi) {
 }
 export function isSavedPoi(id) { return get(KEY_POIS).some(p => p.id === id) }
 export function getSavedPois() { return get(KEY_POIS) }
+export function removeSavedPoi(id) { set(KEY_POIS, get(KEY_POIS).filter(p => p.id !== id)) }
+export function clearSavedPois() { set(KEY_POIS, []) }
 
 // 足迹（存完整 POI 对象，便于足迹页渲染；按 id 去重）
 export function trackVisit(poi) {
@@ -59,6 +63,8 @@ export function trackVisit(poi) {
 }
 export function getVisitedList()  { return get(KEY_VISITED) }
 export function getVisitedCount() { return get(KEY_VISITED).length }
+export function removeVisited(id) { set(KEY_VISITED, get(KEY_VISITED).filter(p => p.id !== id)) }
+export function clearVisited() { set(KEY_VISITED, []) }
 
 // 收藏方案（心形按钮手动操作，区别于自动追加的历史）
 export function toggleSavedPlan(plan) {
