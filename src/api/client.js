@@ -27,8 +27,8 @@ export const api = {
     request('/api/scene/list'),
   getNearby: (lat, lng, city) =>
     request('/api/poi/list' + q({ lat, lng, city })),
-  getScenePois: (sceneId, city, lat, lng, radius) =>
-    request('/api/poi/list' + q({ scene: sceneId, city, lat, lng, radius })),
+  getScenePois: (sceneId, city, lat, lng, radius, sort) =>
+    request('/api/poi/list' + q({ scene: sceneId, city, lat, lng, radius, sort })),
   getPoiDetail: (id, lat, lng) =>
     request('/api/poi/detail' + q({ id, lat, lng })),
   getRoutes: (city, scene) =>

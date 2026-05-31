@@ -31,6 +31,20 @@
       </view>
     </view>
 
+    <!-- 排序方式 -->
+    <view class="cy-radius-row">
+      <text class="cy-radius-label">排序</text>
+      <view
+        v-for="opt in SORT_OPTIONS"
+        :key="opt.id"
+        class="cy-radius-chip"
+        :class="{ 'cy-radius-chip--active': sortMode === opt.id }"
+        @tap="setSort(opt.id)"
+      >
+        <text>{{ opt.label }}</text>
+      </view>
+    </view>
+
     <scroll-view
       scroll-y
       class="cy-scroll"
@@ -151,6 +165,9 @@ const HIKE_RADIUS_OPTIONS = [150]
 const radiusOptions = computed(() => sceneId.value === 'hike' ? HIKE_RADIUS_OPTIONS : RADIUS_OPTIONS)
 const activeRadius = computed(() => sceneId.value === 'hike' ? 150 : cityStore.radiusKm)
 
+const SORT_OPTIONS = [{ id: 'distance', label: '距离' }, { id: 'hot', label: '热度' }]
+const sortMode = ref('distance')
+
 const active = ref('all')
 const allPois = ref([])
 const loading = ref(false)
@@ -186,6 +203,11 @@ function setRadius(km) {
   if (sceneId.value !== 'hike') cityStore.setRadius(next)    // 15/30/50 仍写全局 + 持久化，其他页面复用
   if (sceneId.value) loadScene(sceneId.value)
 }
+function setSort(mode) {
+  if (sortMode.value === mode) return
+  sortMode.value = mode
+  if (sceneId.value) loadScene(sceneId.value)
+}
 function ratingFor(p) {
   if (p.rating) return Number(p.rating).toFixed(1)
   return (4.2 + ((p.id ?? 0) % 10) / 20).toFixed(1)
@@ -219,7 +241,7 @@ async function loadScene(id) {
   if (!id) return
   loading.value = true
   try {
-    const pois = await api.getScenePois(id, cityStore.current, cityStore.coords?.lat ?? null, cityStore.coords?.lng ?? null, activeRadius.value)
+    const pois = await api.getScenePois(id, cityStore.current, cityStore.coords?.lat ?? null, cityStore.coords?.lng ?? null, activeRadius.value, sortMode.value)
     allPois.value = Array.isArray(pois) ? pois : []
     displayCount.value = PAGE_SIZE   // 重新加载后回到第一屏
   } catch (_) {

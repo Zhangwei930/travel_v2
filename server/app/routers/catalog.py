@@ -193,6 +193,7 @@ def poi_list(
     lng: float | None = Query(default=None),
     keyword: str | None = Query(default=None),
     radius: float | None = Query(default=None, ge=1, le=150),   # 前端可调距离（km）
+    sort: str = Query(default="distance"),                      # distance=按距离 / hot=按热度
     db: Session = Depends(get_db),
 ):
     # 有坐标时走高德实时搜索（amap_search_around 内置 TTL 缓存，重复请求不再打高德）
@@ -233,7 +234,7 @@ def poi_list(
             )
             amap_results = parsed_within_radius(raw)
             if amap_results:
-                return sorted(amap_results, key=lambda p: _dist_km(p))
+                return amap_results if sort == "hot" else sorted(amap_results, key=lambda p: _dist_km(p))
 
         raw = []
         if scene_kw:
@@ -248,7 +249,7 @@ def poi_list(
                                                   types=map_provider.AMAP_DEFAULT_TYPES, pages=2)
         amap_results = parsed_within_radius(raw)
         if amap_results:
-            return sorted(amap_results, key=lambda p: _dist_km(p))
+            return amap_results if sort == "hot" else sorted(amap_results, key=lambda p: _dist_km(p))
 
     # 知识库分支：仅取种子/精编 POI（不含高德实时缓存）
     origin = map_provider.resolve_origin(city or settings.default_city, lat, lng)
@@ -283,7 +284,10 @@ def poi_list(
             if map_provider.is_hike_destination(p.name, p.cat, p.tags, p.reason)
         ]
 
-    out.sort(key=_dist_km)
+    if sort == "hot":
+        out.sort(key=lambda p: -(getattr(p, "rating", 0) or 0))
+    else:
+        out.sort(key=_dist_km)
     return out
 
 
