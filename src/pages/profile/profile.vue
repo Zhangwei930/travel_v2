@@ -95,7 +95,7 @@ import CyIcon from '../../components/cy/cy-icon.vue'
 
 const tabBarH    = ref('80px')
 const statusBarH = ref(44)
-const safeBottom = ref('40px')   // 弹窗底部留安全区，避免保存按钮被 home 指示条挡住
+const safeBottom = ref('56px')   // 弹窗底部留安全区，避免按钮被 home 指示条挡住
 const userProfile    = ref(null)
 const showOfflineSheet = ref(false)
 const showEditSheet = ref(false)
@@ -132,7 +132,8 @@ onMounted(() => {
     const sys = uni.getWindowInfo()
     statusBarH.value = sys.statusBarHeight || 44
     tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
-    safeBottom.value = ((sys.safeAreaInsets?.bottom || 0) + 32) + 'px'
+    const sheetBottom = Math.max((sys.safeAreaInsets?.bottom || 0) + 40, 56)
+    safeBottom.value = sheetBottom + 'px'
   } catch (_) {}
   loadUserProfile()
   refreshStats()
@@ -387,7 +388,7 @@ function onAvatarError() {
   width: 100%; height: 96rpx; border-radius: 48rpx;
   background: $cy-green; color: #fff; font-size: 32rpx; font-weight: 600;
   display: flex; align-items: center; justify-content: center;
-  border: none; margin-top: 8rpx;
+  border: none; margin-top: 8rpx; padding: 0; line-height: 1; box-sizing: border-box;
   &[disabled] { opacity: 0.45; }
 }
 
