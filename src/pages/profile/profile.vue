@@ -337,7 +337,7 @@ function onAvatarError() {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.45);
-  z-index: 999;
+  z-index: 1001;
   display: flex;
   align-items: flex-end;
 }
