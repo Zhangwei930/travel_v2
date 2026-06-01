@@ -101,22 +101,44 @@ def _infer_scene(question: str | None) -> str | None:
     return None
 
 
+_MAX_KM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:公里|千米|km|KM|Km)")
+
+
+def _max_km_in_question(question: str | None) -> float | None:
+    """问题里的距离上限（如"附近10公里内"→10.0）；"X公里外"不算上限。"""
+    if not question:
+        return None
+    m = _MAX_KM_RE.search(question)
+    if not m or question[m.end():m.end() + 1] == "外":
+        return None
+    try:
+        km = float(m.group(1))
+    except ValueError:
+        return None
+    return km if 0 < km <= 100 else None
+
+
 def _location_cards(payload: AskIn, city: str, db: Session):
     # 用户问到某个区/县/镇/地标时，把搜索点定位到那里；否则用用户当前位置
     search_lat, search_lng = payload.lat, payload.lng
-    search_radius, search_pages = 15.0, 2
     area = _area_in_question(payload.question)
     if area:
         coords = map_provider.amap_geocode(f"{city}{area}", city=city)
         if coords:
             search_lat, search_lng = coords
-            # 问到某片区域（如"温江金马河附近"）时放大半径，覆盖整片而非定位点周边
-            search_radius = 20.0
     if search_lat is None or search_lng is None:
         return [], []
 
-    # 自由文本无 scene 时，从问题推断（带孩子→亲子点），让候选与意图一致
+    # "X公里内"显式上限优先；否则问到区域用 20km 覆盖整片、就近用 15km
+    max_km = _max_km_in_question(payload.question)
+    search_radius = max_km or (20.0 if area else 15.0)
+    search_pages = 2
+
+    # 场景：当前问句优先；当前没说则看上文（"附近露营"→"10公里内"沿用露营）
     eff_scene = payload.scene or _infer_scene(payload.question)
+    if not eff_scene:
+        hist_text = " ".join((t.text or "") for t in (payload.history or []) if t.role == "user")
+        eff_scene = _infer_scene(hist_text)
 
     # 优先实时高德召回附近点（带场景类型、按热度横跨半径，单页控延迟）；
     # stub/无 key 或无结果时回落到种子库 POI。
@@ -141,10 +163,8 @@ def _location_cards(payload: AskIn, city: str, db: Session):
             rows.append((poi, kn))
 
     weather = get_weather(city)
-    # 距离仍以用户当前位置为准；无定位时退回搜索点
-    dist_origin = ((payload.lat, payload.lng)
-                   if payload.lat is not None and payload.lng is not None
-                   else (search_lat, search_lng))
+    # 距离以搜索点为准（就近=用户位置，问到区域=该区域），与"X公里内"过滤口径一致
+    dist_origin = (search_lat, search_lng)
     destinations = recommend_pois(
         rows,
         origin=dist_origin,
@@ -152,6 +172,7 @@ def _location_cards(payload: AskIn, city: str, db: Session):
         weather=weather,
         limit=6,
         preserve_order=from_amap,
+        max_km=max_km,
     )
     routes = build_home_routes(
         db,
