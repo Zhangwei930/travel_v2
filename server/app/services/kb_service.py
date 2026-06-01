@@ -119,9 +119,15 @@ def _max_km_in_question(question: str | None) -> float | None:
 
 
 def _location_cards(payload: AskIn, city: str, db: Session):
+    # 上文里的用户消息（多轮上下文：场景/地点可沿用）
+    hist_user = " ".join((t.text or "") for t in (payload.history or []) if t.role == "user")
+
     # 用户问到某个区/县/镇/地标时，把搜索点定位到那里；否则用用户当前位置
     search_lat, search_lng = payload.lat, payload.lng
     area = _area_in_question(payload.question)
+    # 当前没说地点、也没说"附近/这边"时，沿用上文提到的地点（温江金马河露营→"10公里内呢"）
+    if not area and not any(s in (payload.question or "") for s in ("附近", "周边", "身边", "这边", "我这")):
+        area = _area_in_question(hist_user)
     if area:
         coords = map_provider.amap_geocode(f"{city}{area}", city=city)
         if coords:
@@ -135,10 +141,7 @@ def _location_cards(payload: AskIn, city: str, db: Session):
     search_pages = 2
 
     # 场景：当前问句优先；当前没说则看上文（"附近露营"→"10公里内"沿用露营）
-    eff_scene = payload.scene or _infer_scene(payload.question)
-    if not eff_scene:
-        hist_text = " ".join((t.text or "") for t in (payload.history or []) if t.role == "user")
-        eff_scene = _infer_scene(hist_text)
+    eff_scene = payload.scene or _infer_scene(payload.question) or _infer_scene(hist_user)
 
     # 优先实时高德召回附近点（带场景类型、按热度横跨半径，单页控延迟）；
     # stub/无 key 或无结果时回落到种子库 POI。
