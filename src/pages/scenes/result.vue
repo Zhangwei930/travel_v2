@@ -172,6 +172,11 @@ const SCENE_FILTERS = {
     { id: 'lake',     label: '环湖',   re: /环湖|湖/ },
     { id: 'river',    label: '江滩',   re: /江|河|滨/ },
     { id: 'suburb',   label: '郊野',   re: /郊野|湿地|公园/ }],
+  camp: [ALL,
+    { id: 'site',   label: '营地',   re: /营地|露营|帐篷|房车/ },
+    { id: 'lawn',   label: '草坪',   re: /草坪|草地|绿地/ },
+    { id: 'suburb', label: '郊野',   re: /郊野|湿地|森林/ },
+    { id: 'water',  label: '水边',   re: /湖|江|河|滨/ }],
 }
 
 const filters = computed(() => SCENE_FILTERS[sceneId.value] || DEFAULT_FILTERS)

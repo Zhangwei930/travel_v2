@@ -29,6 +29,7 @@ AMAP_TYPES_BY_SCENE: dict[str, str] = {
     "hike": "",
     "food": "050000",
     "cycle": "",
+    "camp": "",
 }
 
 # 各城市中心点（请求未带定位时的兜底原点）
@@ -174,6 +175,7 @@ SCENE_KEYWORDS: dict[str, str] = {
     "hike":   "登山|爬山|徒步|山峰|山地|国家森林公园|森林公园|风景区",
     "food":   "美食|火锅|川菜|特色菜|小吃|本地菜|苍蝇馆子|老字号",
     "cycle":  "绿道|骑行道|自行车道|碧道|健身步道|绿道驿站|环湖路",
+    "camp":   "露营|营地|帐篷|野餐|草坪|郊野公园|户外基地|房车营地",
 }
 
 HIKE_POSITIVE_TERMS = (
@@ -247,6 +249,26 @@ def is_cycle_destination(name: str | None, category: str | None = None,
     if any(t in text for t in CYCLE_NEGATIVE_TERMS):
         return False
     return any(t in text for t in CYCLE_POSITIVE_TERMS)
+
+
+# 露营场景：只保留营地/草坪/户外，剔除装备店/夏令营培训/设施等不相关内容
+CAMP_POSITIVE_TERMS = (
+    "露营", "营地", "帐篷", "野餐", "草坪", "草地", "郊野", "户外", "房车营",
+)
+CAMP_NEGATIVE_TERMS = (
+    "店", "销售", "批发", "厂", "专卖", "用品", "装备", "器材", "租赁",
+    "夏令营", "拓展", "驾校", "公交", "地铁", "停车", "雕塑", "售楼",
+    "楼盘", "出租", "出售", "厕所", "公厕", "管理处",
+)
+
+
+def is_camp_destination(name: str | None, category: str | None = None,
+                        tags: list[str] | None = None) -> bool:
+    """露营场景：只保留营地/草坪/户外点，剔除装备店/夏令营/设施等不相关内容。"""
+    text = " ".join([name or "", category or "", " ".join(tags or [])])
+    if any(t in text for t in CAMP_NEGATIVE_TERMS):
+        return False
+    return any(t in text for t in CAMP_POSITIVE_TERMS)
 
 
 # 通用"非出游目的地"过滤：去类型搜索后会混进餐馆/公司/汽修等，按高德顶级类别+名称剔除

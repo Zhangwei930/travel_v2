@@ -52,6 +52,7 @@ const META = {
   hike:   { iconType: 'hike',   bg: '#DCEDE0' },
   food:   { iconType: 'food',   bg: '#FAE2D6' },
   cycle:  { iconType: 'cycle',  bg: '#D6EAF0' },
+  camp:   { iconType: 'camp',   bg: '#F5E6D3' },
 }
 
 const scenesWithMeta = computed(() =>
