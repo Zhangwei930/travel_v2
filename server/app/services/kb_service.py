@@ -209,17 +209,21 @@ def _prepare(payload: AskIn, db: Session) -> dict:
     user_history = [t.text.strip() for t in history if t.role == "user"]
     merged_query = (" ".join(user_history[-2:]) + " " + question).strip() if user_history else question
 
-    rows = db.query(FaqKnowledge).filter(FaqKnowledge.review_status == "approved").all()
-    faqs = [faq for faq in rows if _city_matches(faq.city, city)]
-    best: FaqKnowledge | None = None
-    best_score = 0.0
-    for faq in faqs:
-        s = _score(merged_query, faq)
-        if s > best_score:
-            best, best_score = faq, s
-
-    if best and best_score >= settings.kb_similarity_threshold:
-        return {"mode": "kb", "text": best.answer, "source": _source_from_faq(best), "city": city}
+    # 能推断出场景的问题（露营/钓鱼/带孩子/雨天…）走 LLM + 实时卡片，不让 FAQ 抢答；
+    # FAQ 只接非场景的资讯类问题（门票/停车/怎么去），且只用当前问句匹配，
+    # 避免历史污染（之前问过"雨天去哪"串进"周末露营"问句 → 答非所问）。
+    q_scene = _infer_scene(question) or _infer_scene(" ".join(user_history))
+    if not q_scene:
+        rows = db.query(FaqKnowledge).filter(FaqKnowledge.review_status == "approved").all()
+        faqs = [faq for faq in rows if _city_matches(faq.city, city)]
+        best: FaqKnowledge | None = None
+        best_score = 0.0
+        for faq in faqs:
+            s = _score(question, faq)
+            if s > best_score:
+                best, best_score = faq, s
+        if best and best_score >= settings.kb_similarity_threshold:
+            return {"mode": "kb", "text": best.answer, "source": _source_from_faq(best), "city": city}
 
     # 未命中：WebSearch + 组 prompt（命中位置/时间上下文）
     results = websearch.search(f"{city} {merged_query}", db)
