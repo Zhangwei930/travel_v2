@@ -85,10 +85,11 @@ _SCENE_HINTS = [
     ("hike", ("登山", "爬山", "徒步", "爬坡")),
     ("food", ("美食", "好吃", "餐厅", "吃饭", "馆子", "火锅")),
     ("photo", ("拍照", "打卡", "出片")),
+    ("walk", ("散步", "走走", "citywalk", "遛弯", "漫步", "逛公园", "压马路")),
     ("family", ("带孩子", "亲子", "小孩", "儿童", "娃", "宝宝")),
     ("couple", ("情侣", "约会")),
     ("rainy", ("雨天", "下雨", "室内")),
-    ("night", ("夜市", "夜游", "夜景")),
+    ("night", ("夜市", "夜游", "夜景", "晚上", "夜晚", "夜里")),
 ]
 
 
@@ -221,7 +222,7 @@ def _location_cards(payload: AskIn, city: str, db: Session):
         weather=weather,
         limit=6,
         preserve_order=from_amap,
-        max_km=max_km,
+        max_km=max_km or search_radius,   # 没给显式上限也按搜索半径卡死，别漏出半径外的远点
     )
     routes = build_home_routes(
         db,
