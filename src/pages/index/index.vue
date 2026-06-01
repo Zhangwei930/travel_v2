@@ -46,13 +46,13 @@
             <view class="cy-hint-btn cy-hint-btn--ghost" @tap="useDefaultFeed">使用默认城市</view>
           </view>
         </view>
-        <view v-else-if="fallbackUsed" class="cy-hint-card">
-          <text>已按{{ cityStore.current || '成都' }}生成默认推荐，开启定位可获得附近真实推荐</text>
-          <view class="cy-hint-btn" @tap="retryLocation">重新定位</view>
-        </view>
         <view v-else-if="feedError" class="cy-hint-card">
           <text>附近推荐加载失败，请检查网络后重试</text>
           <view class="cy-hint-btn" @tap="retryLocation">重新加载</view>
+        </view>
+        <view v-else-if="fallbackUsed" class="cy-hint-card">
+          <text>已按{{ cityStore.current || '成都' }}生成默认推荐，开启定位可获得附近真实推荐</text>
+          <view class="cy-hint-btn" @tap="retryLocation">重新定位</view>
         </view>
         <view class="cy-nearby-card">
           <view v-if="feedLoading && !nearbyVisible.length" class="cy-hint-muted"><text>正在加载附近推荐…</text></view>

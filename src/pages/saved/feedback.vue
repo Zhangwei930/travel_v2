@@ -89,7 +89,7 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { api } from '../../api/index.js'
-import { getUserProfile, addMyFeedback, getMyFeedback, removeMyFeedback, clearMyFeedback, setPendingLoginRedirect } from '../../api/storage.js'
+import { ensureDefaultProfile, addMyFeedback, getMyFeedback, removeMyFeedback, clearMyFeedback } from '../../api/storage.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 
 const TYPES = ['功能异常', '内容纠错', '体验建议', '其他']
@@ -101,17 +101,12 @@ const submitting = ref(false)
 const history    = ref([])
 
 onShow(() => {
-  profile.value = getUserProfile()
+  profile.value = ensureDefaultProfile()   // 进小程序即有默认档，反馈不再需要登录拦截
   history.value = getMyFeedback()
 })
 
 function goLogin() {
-  const redirect = '/pages/saved/feedback'
-  setPendingLoginRedirect(redirect)
-  uni.switchTab({
-    url: '/pages/profile/profile',
-    success: () => uni.$emit('profileLoginRequest', { redirect }),
-  })
+  uni.switchTab({ url: '/pages/profile/profile' })
 }
 
 function chooseImages() {

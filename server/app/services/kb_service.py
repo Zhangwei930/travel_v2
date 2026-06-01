@@ -46,14 +46,21 @@ def _score(question: str, faq: FaqKnowledge) -> float:
 
 
 _AREA_RE = re.compile(r"([一-龥]{2,5}?(?:区|县|镇|新区))")
+# 这些"区"不是行政区，别拿去地理编码（否则误定位/白跑一次高德）
+_AREA_BLOCKLIST = ("小区", "市区", "景区", "郊区", "社区", "地区", "园区",
+                   "城区", "片区", "辖区", "库区", "山区", "林区", "矿区")
 
 
 def _area_in_question(question: str | None) -> str:
-    """问题里提到的区/县/镇（如"温江区"），用于把推荐定位到那里而非用户当前位置。"""
+    """问题里提到的区/县/镇（如"温江区"），用于把推荐定位到那里而非用户当前位置。
+    剔除 小区/市区/景区 等非行政区误命中。"""
     if not question:
         return ""
-    m = _AREA_RE.search(question)
-    return m.group(1) if m else ""
+    for m in _AREA_RE.finditer(question):
+        area = m.group(1)
+        if not any(b in area for b in _AREA_BLOCKLIST):
+            return area
+    return ""
 
 
 # 自由文本里推断场景，让卡片搜对类型（带孩子→亲子点，而非通用/酒吧）
@@ -240,8 +247,9 @@ def ask(payload: AskIn, db: Session) -> AskOut:
         return AskOut(text=p["text"], sources=[p["source"]], chips=[], from_kb=True,
                       destinations=destinations, routes=routes, kb_status="hit")
     answer = ai_provider.generate_text(p["prompt"], fallback=p["fallback"])
-    # 卡片只保留答案里实际推荐到的地点：文字没提到的不展示，杜绝"文字推甲、卡片显示乙"
-    destinations = [d for d in destinations if _mentioned(answer, d.name)]
+    # 卡片只保留答案里实际推荐到的地点；全都没匹配上时退回前 3 个热门候选，避免 0 卡片
+    picked = [d for d in destinations if _mentioned(answer, d.name)]
+    destinations = picked or destinations[:3]
     websearch.create_pending(question=p["question"], answer=answer, results=p["results"],
                              city=p["city"], category="出游助手", db=db)
     return AskOut(text=answer, sources=[], chips=[], from_kb=False,
