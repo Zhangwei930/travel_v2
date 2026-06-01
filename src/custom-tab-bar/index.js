@@ -16,6 +16,7 @@ Component({
   data: {
     tabs: TABS,
     selected: 0,
+    hidden: false,
   },
   lifetimes: {
     attached() {

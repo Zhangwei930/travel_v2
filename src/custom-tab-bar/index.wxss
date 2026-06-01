@@ -12,6 +12,10 @@
   z-index: 999;
 }
 
+.tabbar-hidden {
+  display: none;
+}
+
 .tab-item {
   flex: 1;
   display: flex;

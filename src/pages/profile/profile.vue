@@ -64,12 +64,12 @@
           <input class="cy-name-input" type="nickname" name="nickname" :value="editName" placeholder="点这里填微信昵称" placeholder-style="color:#9CA3AF" @input="onNameInput" />
           <button class="cy-save-btn" form-type="submit">保存</button>
         </form>
-        <text class="cy-cancel-link" @tap="showEditSheet = false">取消</text>
+        <text class="cy-cancel-link" @tap="closeEditSheet">取消</text>
       </view>
     </view>
 
     <!-- 离线地图引导 -->
-    <view v-if="showOfflineSheet" class="cy-sheet-mask" @tap.self="showOfflineSheet = false">
+    <view v-if="showOfflineSheet" class="cy-sheet-mask" @tap.self="closeOfflineSheet">
       <view class="cy-sheet" :style="{ paddingBottom: safeBottom }">
         <view class="cy-sheet-handle" />
         <text class="cy-sheet-title">离线地图</text>
@@ -79,7 +79,7 @@
           <view class="cy-step-row"><text class="cy-step-num">2</text><text class="cy-step-text">「我的」→「离线地图」</text></view>
           <view class="cy-step-row"><text class="cy-step-num">3</text><text class="cy-step-text">搜索城市，下载地图包</text></view>
         </view>
-        <button class="cy-save-btn" @tap="showOfflineSheet = false">知道了</button>
+        <button class="cy-save-btn" @tap="closeOfflineSheet">知道了</button>
       </view>
     </view>
   </view>
@@ -87,10 +87,10 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onHide, onShow } from '@dcloudio/uni-app'
 import { cacheAvatarFile } from '../../api/avatar.js'
 import { ensureDefaultProfile, getProfileStats, setUserProfile } from '../../api/storage.js'
-import { setTabBarSelected } from '../../api/tabbar.js'
+import { setTabBarHidden, setTabBarSelected } from '../../api/tabbar.js'
 import CyIcon from '../../components/cy/cy-icon.vue'
 
 const tabBarH    = ref('80px')
@@ -116,7 +116,7 @@ const funcItems = [
   { iconKey: 'star',     label: '我的收藏', onTap: () => uni.navigateTo({ url: '/pages/saved/pois' }) },
   { iconKey: 'history',  label: '浏览历史', onTap: () => uni.navigateTo({ url: '/pages/saved/visited' }) },
   { iconKey: 'route',    label: '我的路线', onTap: () => uni.navigateTo({ url: '/pages/saved/plans' }) },
-  { iconKey: 'offline',  label: '离线地图', onTap: () => { showOfflineSheet.value = true } },
+  { iconKey: 'offline',  label: '离线地图', onTap: openOfflineSheet },
   { iconKey: 'settings', label: '设置',    onTap: goSettings },
 ]
 
@@ -142,10 +142,15 @@ onMounted(() => {
 
 onShow(() => {
   setTabBarSelected(3)
+  setTabBarHidden(showOfflineSheet.value || showEditSheet.value)
   refreshStats()
   loadUserProfile()
 })
+onHide(() => {
+  setTabBarHidden(false)
+})
 onUnmounted(() => {
+  setTabBarHidden(false)
   uni.$off('cityChanged', refreshStats)
 })
 
@@ -158,7 +163,23 @@ function loadUserProfile() {
 function openEdit() {
   editAvatar.value = userProfile.value?.avatar || DEFAULT_AVATAR
   editName.value = userProfile.value?.name || ''
+  setTabBarHidden(true)
   showEditSheet.value = true
+}
+
+function closeEditSheet() {
+  showEditSheet.value = false
+  setTabBarHidden(false)
+}
+
+function openOfflineSheet() {
+  setTabBarHidden(true)
+  showOfflineSheet.value = true
+}
+
+function closeOfflineSheet() {
+  showOfflineSheet.value = false
+  setTabBarHidden(false)
 }
 
 // #ifdef MP-WEIXIN
@@ -185,7 +206,7 @@ function onSaveProfile(e) {
   setUserProfile(profile)
   userProfile.value = profile
   avatarBroken.value = false
-  showEditSheet.value = false
+  closeEditSheet()
   uni.showToast({ title: '已保存', icon: 'success' })
 }
 
