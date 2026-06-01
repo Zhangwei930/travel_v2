@@ -31,14 +31,25 @@ def _provider() -> str:
 def generate_text(prompt: str, *, fallback: str = "") -> str:
     """通用文本生成。优先 z-ai/GLM → MiMo → Dify → Ollama → stub。"""
     provider = _provider()
+    if provider == "zai":
+        # 主模型(如 70b 可能被 NIM 限流 429)失败/返空时，回退到备用小模型(8b)，
+        # 二者都失败才给兜底语，避免一限流就"找不到"
+        for model in (settings.zai_model, settings.zai_model_fallback):
+            if not model:
+                continue
+            try:
+                text = _generate_openai_compatible(
+                    base=settings.zai_api_base, api_key=settings.zai_api_key,
+                    model=model, prompt=prompt, fallback="",
+                    # 关思考链仅 GLM 支持；换其他模型不发该参数，避免 NIM 400
+                    extra=({"chat_template_kwargs": {"thinking": False}} if "glm" in model.lower() else {}),
+                )
+            except (httpx.HTTPError, ValueError):
+                text = ""
+            if text:
+                return text
+        return fallback
     try:
-        if provider == "zai":
-            return _generate_openai_compatible(
-                base=settings.zai_api_base, api_key=settings.zai_api_key,
-                model=settings.zai_model, prompt=prompt, fallback=fallback,
-                # 关思考链仅 GLM 推理模型支持/需要；换其他模型(如 qwen)不发该参数，避免 NIM 400
-                extra=({"chat_template_kwargs": {"thinking": False}} if "glm" in settings.zai_model.lower() else {}),
-            )
         if provider == "mimo":
             return _generate_openai_compatible(
                 base=settings.mimo_api_base, api_key=settings.mimo_api_key,
@@ -135,7 +146,7 @@ def _generate_openai_compatible(*, base: str, api_key: str, model: str,
             "Content-Type": "application/json",
         },
         json=body,
-        timeout=90.0,
+        timeout=15.0,   # 主模型慢于 15s 直接超时 → 上层回退到更快的备用小模型
     )
     resp.raise_for_status()
     choices = resp.json().get("choices", [])

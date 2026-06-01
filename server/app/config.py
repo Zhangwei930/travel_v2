@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     zai_api_base: str = "https://integrate.api.nvidia.com/v1"
     zai_api_key: str = ""
     zai_model: str = "z-ai/glm-5.1"
+    # 主模型被 NIM 限流(429)时回退到更稳的小模型，避免给用户兜底语
+    zai_model_fallback: str = "meta/llama-3.1-8b-instruct"
 
     @property
     def cors_origin_list(self) -> list[str]:

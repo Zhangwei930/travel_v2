@@ -344,6 +344,9 @@ def ask(payload: AskIn, db: Session) -> AskOut:
     # 卡片只保留答案里实际推荐到的地点；全都没匹配上时退回前 3 个热门候选，避免 0 卡片
     picked = [d for d in destinations if _mentioned(answer, d.name)]
     destinations = picked or destinations[:3]
+    # 两个模型都挂了给的是兜底语，但卡片还在 → 换成与卡片一致的话，别"找不到"打架
+    if answer == p["fallback"] and destinations:
+        answer = "这附近给你挑了几个，看看下面的推荐～"
     websearch.create_pending(question=p["question"], answer=answer, results=p["results"],
                              city=p["city"], category="出游助手", db=db)
     return AskOut(text=answer, sources=[], chips=[], from_kb=False,
