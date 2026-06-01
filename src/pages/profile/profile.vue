@@ -47,7 +47,7 @@
 
     <!-- 编辑资料：选择微信头像 + 填微信昵称（不填则用默认） -->
     <view v-if="showEditSheet" class="cy-sheet-mask">
-      <view class="cy-sheet">
+      <view class="cy-sheet" :style="{ paddingBottom: safeBottom }">
         <view class="cy-sheet-handle" />
         <text class="cy-sheet-title">设置头像昵称</text>
         <text class="cy-sheet-sub">点头像选微信头像，点昵称栏填微信昵称（仅存本机）</text>
@@ -70,7 +70,7 @@
 
     <!-- 离线地图引导 -->
     <view v-if="showOfflineSheet" class="cy-sheet-mask" @tap.self="showOfflineSheet = false">
-      <view class="cy-sheet">
+      <view class="cy-sheet" :style="{ paddingBottom: safeBottom }">
         <view class="cy-sheet-handle" />
         <text class="cy-sheet-title">离线地图</text>
         <text class="cy-sheet-sub">本应用使用高德地图，可在高德 App 内下载离线地图包，断网环境下导航使用。</text>
@@ -95,6 +95,7 @@ import CyIcon from '../../components/cy/cy-icon.vue'
 
 const tabBarH    = ref('80px')
 const statusBarH = ref(44)
+const safeBottom = ref('40px')   // 弹窗底部留安全区，避免保存按钮被 home 指示条挡住
 const userProfile    = ref(null)
 const showOfflineSheet = ref(false)
 const showEditSheet = ref(false)
@@ -131,6 +132,7 @@ onMounted(() => {
     const sys = uni.getWindowInfo()
     statusBarH.value = sys.statusBarHeight || 44
     tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
+    safeBottom.value = ((sys.safeAreaInsets?.bottom || 0) + 32) + 'px'
   } catch (_) {}
   loadUserProfile()
   refreshStats()
