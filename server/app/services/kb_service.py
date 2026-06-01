@@ -101,6 +101,29 @@ def _infer_scene(question: str | None) -> str | None:
     return None
 
 
+def _recent_user_texts(history, n: int = 3) -> list[str]:
+    """最近 n 句用户消息（多轮上下文只看最近几句，避免老话题污染）。"""
+    return [t.text for t in (history or []) if t.role == "user" and (t.text or "").strip()][-n:]
+
+
+def _recent_scene(history) -> str | None:
+    """从最近的历史用户消息往前找最近一个能推断出的场景。"""
+    for txt in reversed(_recent_user_texts(history)):
+        s = _infer_scene(txt)
+        if s:
+            return s
+    return None
+
+
+def _recent_area(history) -> str:
+    """从最近的历史用户消息往前找最近一个提到的地点。"""
+    for txt in reversed(_recent_user_texts(history)):
+        a = _area_in_question(txt)
+        if a:
+            return a
+    return ""
+
+
 _MAX_KM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:公里|千米|km|KM|Km)")
 
 
@@ -118,16 +141,38 @@ def _max_km_in_question(question: str | None) -> float | None:
     return km if 0 < km <= 100 else None
 
 
-def _location_cards(payload: AskIn, city: str, db: Session):
-    # 上文里的用户消息（多轮上下文：场景/地点可沿用）
-    hist_user = " ".join((t.text or "") for t in (payload.history or []) if t.role == "user")
+# 场景 → 专属过滤函数（与场景索引页 catalog 一致，让助手推荐同样干净）
+_SCENE_FILTERS = {
+    "hike": map_provider.is_hike_destination,
+    "food": map_provider.is_food_destination,
+    "cycle": map_provider.is_cycle_destination,
+    "camp": map_provider.is_camp_destination,
+    "fish": map_provider.is_fish_destination,
+}
 
+
+def _filter_rows(rows, scene):
+    """对高德召回的点做与场景索引页一致的过滤：先剔除餐馆/公司/汽修等非目的地，
+    再按场景剔专属噪声（钓鱼去渔具店、露营去装备店等）。"""
+    scene_filter = _SCENE_FILTERS.get(scene or "")
+    out = []
+    for poi, kn in rows:
+        if not map_provider.is_outing_destination(poi.name, poi.category, None, poi.address,
+                                                  allow_food=(scene == "food")):
+            continue
+        if scene_filter and not scene_filter(poi.name, poi.category, None):
+            continue
+        out.append((poi, kn))
+    return out
+
+
+def _location_cards(payload: AskIn, city: str, db: Session):
     # 用户问到某个区/县/镇/地标时，把搜索点定位到那里；否则用用户当前位置
     search_lat, search_lng = payload.lat, payload.lng
     area = _area_in_question(payload.question)
-    # 当前没说地点、也没说"附近/这边"时，沿用上文提到的地点（温江金马河露营→"10公里内呢"）
+    # 当前没说地点、也没说"附近/这边"时，沿用最近历史里提到的地点（温江金马河露营→"10公里内呢"）
     if not area and not any(s in (payload.question or "") for s in ("附近", "周边", "身边", "这边", "我这")):
-        area = _area_in_question(hist_user)
+        area = _recent_area(payload.history)
     if area:
         coords = map_provider.amap_geocode(f"{city}{area}", city=city)
         if coords:
@@ -140,8 +185,8 @@ def _location_cards(payload: AskIn, city: str, db: Session):
     search_radius = max_km or (20.0 if area else 15.0)
     search_pages = 2
 
-    # 场景：当前问句优先；当前没说则看上文（"附近露营"→"10公里内"沿用露营）
-    eff_scene = payload.scene or _infer_scene(payload.question) or _infer_scene(hist_user)
+    # 场景：当前问句优先；当前没说则看最近历史（"附近露营"→"10公里内"沿用露营）
+    eff_scene = payload.scene or _infer_scene(payload.question) or _recent_scene(payload.history)
 
     # 优先实时高德召回附近点（带场景类型、按热度横跨半径，单页控延迟）；
     # stub/无 key 或无结果时回落到种子库 POI。
@@ -151,6 +196,7 @@ def _location_cards(payload: AskIn, city: str, db: Session):
                 or "景点|景区|公园|古镇|绿道|网红打卡|博物馆|商圈")
     rows = _amap_rows(db, search_lat, search_lng, city, eff_scene,
                       radius_km=search_radius, pages=search_pages, sortrule="weight", keyword=scene_kw)
+    rows = _filter_rows(rows, eff_scene)   # 与场景索引页一致：去餐馆/公司/汽修 + 场景专属噪声
     from_amap = bool(rows)   # 高德热度序，用 preserve_order 直推热门点
     if not rows:
         kn_rows = db.query(TravelKnowledge).filter(TravelKnowledge.review_status == "approved").all()
@@ -212,7 +258,7 @@ def _prepare(payload: AskIn, db: Session) -> dict:
     # 能推断出场景的问题（露营/钓鱼/带孩子/雨天…）走 LLM + 实时卡片，不让 FAQ 抢答；
     # FAQ 只接非场景的资讯类问题（门票/停车/怎么去），且只用当前问句匹配，
     # 避免历史污染（之前问过"雨天去哪"串进"周末露营"问句 → 答非所问）。
-    q_scene = _infer_scene(question) or _infer_scene(" ".join(user_history))
+    q_scene = _infer_scene(question) or _recent_scene(history)
     if not q_scene:
         rows = db.query(FaqKnowledge).filter(FaqKnowledge.review_status == "approved").all()
         faqs = [faq for faq in rows if _city_matches(faq.city, city)]

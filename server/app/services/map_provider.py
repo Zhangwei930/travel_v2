@@ -271,6 +271,17 @@ def is_camp_destination(name: str | None, category: str | None = None,
     return any(t in text for t in CAMP_POSITIVE_TERMS)
 
 
+# 钓鱼场景：剔除渔具/钓具店等售卖类（"飞度渔具"这种不是钓点）
+FISH_NEGATIVE_TERMS = ("渔具", "钓具", "装备", "用品", "器材", "专卖", "销售", "批发", "商行")
+
+
+def is_fish_destination(name: str | None, category: str | None = None,
+                        tags: list[str] | None = None) -> bool:
+    """钓鱼场景：剔除渔具/钓具售卖店，只留真实钓点。"""
+    text = " ".join([name or "", category or "", " ".join(tags or [])])
+    return not any(t in text for t in FISH_NEGATIVE_TERMS)
+
+
 # 通用"非出游目的地"过滤：去类型搜索后会混进餐馆/公司/汽修等，按高德顶级类别+名称剔除
 _NON_DEST_CATEGORIES = ("公司企业", "汽车", "金融", "保险", "医疗", "政府")
 # 餐饮类词：一般场景算噪声剔除，但「美食」场景下这些正是目的地 → allow_food 豁免
