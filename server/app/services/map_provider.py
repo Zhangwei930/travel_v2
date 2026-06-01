@@ -169,11 +169,11 @@ SCENE_KEYWORDS: dict[str, str] = {
     "night":  "夜市|酒吧|商业街|步行街|夜景|观景|江滩|塔",
     "walk":   "公园|绿道|古镇|街区|步行街|湖|江滩",
     "photo":  "古镇|景区|花海|湖|公园|植物园|美术馆|网红|打卡",
-    "fish":   "钓鱼场|垂钓|钓鱼园|渔场|钓场",
+    "fish":   "钓鱼场|垂钓|钓鱼园|渔场|钓场|水库|湿地",
     "old":    "公园|景区|古镇|博物馆|植物园|寺|湖",
     "hike":   "登山|爬山|徒步|山峰|山地|国家森林公园|森林公园|风景区",
     "food":   "美食|火锅|川菜|特色菜|小吃|本地菜|苍蝇馆子|老字号",
-    "cycle":  "绿道|骑行道|自行车道|环湖|江滩|滨河|郊野公园|骑行营地",
+    "cycle":  "绿道|骑行道|自行车道|碧道|健身步道|绿道驿站|环湖路",
 }
 
 HIKE_POSITIVE_TERMS = (
@@ -227,6 +227,26 @@ def is_food_destination(name: str | None, category: str | None = None,
     """美食场景过滤：剔除纯饮品/连锁奶茶咖啡店，让正餐/特色馆子先行。"""
     text = " ".join([name or "", category or "", " ".join(tags or [])])
     return not any(t in text for t in _FOOD_NOISE_TERMS)
+
+
+# 骑行场景：只保留绿道/骑行道，剔除关键词命中的沿线设施与非骑行点
+CYCLE_POSITIVE_TERMS = (
+    "绿道", "骑行", "自行车", "碧道", "步道", "健身道", "环湖路", "滨江路", "滨河路",
+)
+CYCLE_NEGATIVE_TERMS = (
+    "店", "公交", "地铁", "停车", "雕塑", "雕像", "博物", "乐园", "游乐", "营地",
+    "售楼", "楼盘", "出租", "出售", "房产", "篮球", "网球", "厕所", "公厕",
+    "卫生间", "公测", "加油", "服务区", "收费", "大门", "入口", "牌坊", "管理处",
+)
+
+
+def is_cycle_destination(name: str | None, category: str | None = None,
+                         tags: list[str] | None = None) -> bool:
+    """骑行场景：只保留绿道/骑行道，剔除沿线公交站/停车场/雕塑/乐园/营地/售楼等。"""
+    text = " ".join([name or "", category or "", " ".join(tags or [])])
+    if any(t in text for t in CYCLE_NEGATIVE_TERMS):
+        return False
+    return any(t in text for t in CYCLE_POSITIVE_TERMS)
 
 
 # 通用"非出游目的地"过滤：去类型搜索后会混进餐馆/公司/汽修等，按高德顶级类别+名称剔除
