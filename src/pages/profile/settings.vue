@@ -31,7 +31,7 @@
       <view class="cy-group-card">
         <view class="cy-row">
           <text class="cy-row-label">版本</text>
-          <text class="cy-row-value">v1.0.0</text>
+          <text class="cy-row-value">v2.0.0</text>
         </view>
         <view class="cy-divider" />
         <view class="cy-row" @tap="showPrivacy">

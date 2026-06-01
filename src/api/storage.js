@@ -93,16 +93,17 @@ export function getUserProfile() {
 export function setUserProfile(p) {
   try { uni.setStorageSync(KEY_USER, p) } catch (_) {}
 }
-// 无登录态时自动建一个默认档（默认头像 + 默认昵称），进小程序即"已登录"
+const DEFAULT_AVATAR = '/static/images/avatar-default.png'
+// 无登录态时自动建一个默认档（默认头像图 + 默认昵称），进小程序即"已登录"
 export function ensureDefaultProfile() {
   let p = getUserProfile()
   if (!p) {
     const suffix = String(Date.now()).slice(-5) + Math.floor(Math.random() * 10)
-    p = { name: '出游者' + suffix, avatar: '', loginAt: Date.now() }
+    p = { name: '出游者' + suffix, avatar: DEFAULT_AVATAR, loginAt: Date.now() }
     setUserProfile(p)
-  } else if (p.avatar) {
-    // 不再支持自定义头像：清掉旧档残留的头像路径（svg/缓存在真机渲染空白），统一走图标兜底
-    p = { ...p, avatar: '' }
+  } else if (!p.avatar || p.avatar === '/static/images/avatar-default.svg') {
+    // 旧档头像为空或旧版 svg（真机渲染空白）→ 迁到默认头像图（PNG 必显示）
+    p = { ...p, avatar: DEFAULT_AVATAR }
     setUserProfile(p)
   }
   return p
