@@ -158,6 +158,17 @@ const SCENE_FILTERS = {
     { id: 'museum', label: '博物馆', re: /博物|展馆|美术/ },
     { id: 'green',  label: '绿道',   re: /绿道|步道/ },
     { id: 'water',  label: '江湖',   re: /江|河|湖/ }],
+  food: [ALL,
+    { id: 'hotpot',  label: '火锅',   re: /火锅|串串|冒菜|麻辣烫|钵钵鸡/ },
+    { id: 'sichuan', label: '川菜',   re: /川菜|家常|小炒|酒楼|饭庄|食府/ },
+    { id: 'bbq',     label: '烧烤',   re: /烧烤|烤肉|烤鱼|铁板|江湖菜/ },
+    { id: 'snack',   label: '小吃',   re: /小吃|面|粉|抄手|水饺|包子|快餐|钟水饺/ },
+    { id: 'western', label: '西餐日韩', re: /西餐|牛排|披萨|汉堡|日料|韩式|料理|寿司|自助/ }],
+  hike: [ALL,
+    { id: 'mountain', label: '山峰',     re: /山|峰|岭|崖|峡/ },
+    { id: 'forest',   label: '森林公园', re: /森林|国家.*公园|自然保护/ },
+    { id: 'trail',    label: '徒步道',   re: /步道|栈道|古道/ },
+    { id: 'scenic',   label: '风景区',   re: /风景|景区|景点/ }],
 }
 
 const filters = computed(() => SCENE_FILTERS[sceneId.value] || DEFAULT_FILTERS)
