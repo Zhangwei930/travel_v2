@@ -46,30 +46,46 @@ def _score(question: str, faq: FaqKnowledge) -> float:
 
 
 _AREA_RE = re.compile(r"([一-龥]{2,5}?(?:区|县|镇|新区))")
-# 这些"区"不是行政区，别拿去地理编码（否则误定位/白跑一次高德）
+# "X附近/周边/一带"里的地标（如"温江金马河附近"→温江金马河，可直接地理编码）
+_NEARBY_RE = re.compile(r"([一-龥]{2,8})(?:附近|周边|周围|那边|一带)")
+_LOC_PREFIX_RE = re.compile(r"^(带我去|我想去|我要去|想去|要去|我们|咱们|想在|这边|那边|这|那|在)")
+# 这些词不是可定位地点，别拿去地理编码（否则误定位/白跑一次高德）
 _AREA_BLOCKLIST = ("小区", "市区", "景区", "郊区", "社区", "地区", "园区",
-                   "城区", "片区", "辖区", "库区", "山区", "林区", "矿区")
+                   "城区", "片区", "辖区", "库区", "山区", "林区", "矿区",
+                   "公司", "单位", "我家", "学校", "这里", "那里", "附近", "周边")
 
 
 def _area_in_question(question: str | None) -> str:
-    """问题里提到的区/县/镇（如"温江区"），用于把推荐定位到那里而非用户当前位置。
-    剔除 小区/市区/景区 等非行政区误命中。"""
-    if not question:
+    """问题里的地点（行政区，或"X附近"里的地标，如"温江区"/"温江金马河"），用于把
+    推荐定位到那里而非用户当前位置。剔除 小区/市区/公司 等非地点误命中。"""
+    q = question or ""
+    if not q:
         return ""
-    for m in _AREA_RE.finditer(question):
-        area = m.group(1)
+    # 优先"X附近/周边"里的地标
+    m = _NEARBY_RE.search(q)
+    if m:
+        loc = _LOC_PREFIX_RE.sub("", m.group(1))
+        if len(loc) >= 2 and not any(b in loc for b in _AREA_BLOCKLIST):
+            return loc
+    # 其次行政区/县/镇
+    for mm in _AREA_RE.finditer(q):
+        area = mm.group(1)
         if not any(b in area for b in _AREA_BLOCKLIST):
             return area
     return ""
 
 
-# 自由文本里推断场景，让卡片搜对类型（带孩子→亲子点，而非通用/酒吧）
+# 自由文本里推断场景，让卡片搜对类型（露营→营地，带孩子→亲子点）。
+# 活动类（露营/骑行/钓鱼/登山/美食）放前面，比人群类（带孩子）优先，
+# 这样"带孩子露营"按露营搜而不是亲子点。
 _SCENE_HINTS = [
-    ("family", ("带孩子", "亲子", "小孩", "儿童", "娃", "宝宝")),
+    ("camp", ("露营", "营地", "野营", "扎营", "帐篷")),
+    ("cycle", ("骑行", "绿道", "自行车道")),
     ("fish", ("钓鱼", "垂钓")),
     ("hike", ("登山", "爬山", "徒步", "爬坡")),
     ("food", ("美食", "好吃", "餐厅", "吃饭", "馆子", "火锅")),
     ("photo", ("拍照", "打卡", "出片")),
+    ("family", ("带孩子", "亲子", "小孩", "儿童", "娃", "宝宝")),
     ("couple", ("情侣", "约会")),
     ("rainy", ("雨天", "下雨", "室内")),
     ("night", ("夜市", "夜游", "夜景")),
@@ -86,13 +102,16 @@ def _infer_scene(question: str | None) -> str | None:
 
 
 def _location_cards(payload: AskIn, city: str, db: Session):
-    # 用户问到某个区/县/镇时，把搜索点定位到那里；否则用用户当前位置
+    # 用户问到某个区/县/镇/地标时，把搜索点定位到那里；否则用用户当前位置
     search_lat, search_lng = payload.lat, payload.lng
+    search_radius, search_pages = 15.0, 2
     area = _area_in_question(payload.question)
     if area:
         coords = map_provider.amap_geocode(f"{city}{area}", city=city)
         if coords:
             search_lat, search_lng = coords
+            # 问到某片区域（如"温江金马河附近"）时放大半径，覆盖整片而非定位点周边
+            search_radius = 20.0
     if search_lat is None or search_lng is None:
         return [], []
 
@@ -106,7 +125,7 @@ def _location_cards(payload: AskIn, city: str, db: Session):
     scene_kw = (map_provider.SCENE_KEYWORDS.get(eff_scene or "", "")
                 or "景点|景区|公园|古镇|绿道|网红打卡|博物馆|商圈")
     rows = _amap_rows(db, search_lat, search_lng, city, eff_scene,
-                      radius_km=15.0, pages=2, sortrule="weight", keyword=scene_kw)
+                      radius_km=search_radius, pages=search_pages, sortrule="weight", keyword=scene_kw)
     from_amap = bool(rows)   # 高德热度序，用 preserve_order 直推热门点
     if not rows:
         kn_rows = db.query(TravelKnowledge).filter(TravelKnowledge.review_status == "approved").all()
