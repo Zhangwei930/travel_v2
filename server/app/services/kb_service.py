@@ -95,8 +95,12 @@ def _location_cards(payload: AskIn, city: str, db: Session):
     # 优先实时高德召回附近点（带场景类型、按热度横跨半径，单页控延迟）；
     # stub/无 key 或无结果时回落到种子库 POI。
     from app.routers.home import _amap_rows  # 局部 import，避免 service↔router 顶层耦合
+    # 带场景关键词搜（如"乐园|动物园|古镇"），召回知名点而非身边杂点；无场景用通用知名词
+    scene_kw = (map_provider.SCENE_KEYWORDS.get(eff_scene or "", "")
+                or "景点|景区|公园|古镇|绿道|网红打卡|博物馆|商圈")
     rows = _amap_rows(db, search_lat, search_lng, city, eff_scene,
-                      radius_km=15.0, pages=1, sortrule="weight")
+                      radius_km=15.0, pages=2, sortrule="weight", keyword=scene_kw)
+    from_amap = bool(rows)   # 高德热度序，用 preserve_order 直推热门点
     if not rows:
         kn_rows = db.query(TravelKnowledge).filter(TravelKnowledge.review_status == "approved").all()
         kn_by_id = {kn.poi_id: kn for kn in kn_rows if kn.poi_id}
@@ -120,7 +124,8 @@ def _location_cards(payload: AskIn, city: str, db: Session):
         origin=dist_origin,
         scene=eff_scene,
         weather=weather,
-        limit=3,
+        limit=6,
+        preserve_order=from_amap,
     )
     routes = build_home_routes(
         db,
@@ -188,12 +193,12 @@ def _prepare(payload: AskIn, db: Session) -> dict:
         f"你是用户身边的出游小助手，帮ta找附近好玩的地方。\n"
         f"背景：{location_ctx}{weather_ctx}（现在{time_now}，仅供参考，别据此假设用户什么时候去）\n\n"
         f"回答要求：\n"
-        f"- 直接推荐 2-3 个具体地点，简单说说为啥适合（人群、远近）\n"
+        f"- 推荐 5-6 个具体地点，每个用一句话说为啥适合（人群、远近）\n"
         f"- 除非用户明确问到时段，否则别假设ta晚上去、别硬套夜游\n"
         f"- 若问题提到时间限制（如2小时内），评估下路程+游玩来不来得及\n"
         f"- 营业时间、票价说「以实时查询为准」，别编数字或地点\n"
         f"- 别在文字里写具体距离/公里/车程数字（容易算错，下方卡片已显示真实距离），只说「离得近/有点远」即可\n"
-        f"- 像跟朋友聊天那样口语、自然、简洁，150 字内；别分 Day1/Day2、别加小标题或内部术语\n\n"
+        f"- 像跟朋友聊天那样口语、自然、简洁，220 字内；别分 Day1/Day2、别加小标题或内部术语\n\n"
         f"{context_block}"
         f"用户问题：{question}\n"
         f"参考资料：\n{snippets or '（无搜索结果）'}"
@@ -222,8 +227,8 @@ def _inject_destinations(prompt_info: dict, destinations) -> None:
     prompt_info["prompt"] += (
         "\n\n【可推荐的附近地点——下方卡片就是这几个】\n"
         f"{lines}\n"
-        "请只从上面这些地点里挑 2-3 个推荐，逐个说明为何适合（人群/距离/当前时段），"
-        "不要推荐列表以外的地方。"
+        "请把上面这些地点都推荐给用户（5-6 个），每个用一句话说明为何适合"
+        "（人群/距离），不要推荐列表以外的地方。"
     )
 
 

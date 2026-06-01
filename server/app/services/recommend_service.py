@@ -154,6 +154,7 @@ def recommend_pois(
     scene: str | None = None,
     weather: WeatherOut | None = None,
     limit: int = 8,
+    preserve_order: bool = False,
 ) -> list[RecommendPoiOut]:
     scored = [
         card for card in (
@@ -162,7 +163,9 @@ def recommend_pois(
         )
         if card and card.nav_ready
     ]
-    scored.sort(key=lambda item: (-item.score, _distance_value(item.distance)))
+    # preserve_order：保留输入(高德 weight=热度)顺序，优先推热门点而非最近的冷门点
+    if not preserve_order:
+        scored.sort(key=lambda item: (-item.score, _distance_value(item.distance)))
     return scored[:limit]
 
 
