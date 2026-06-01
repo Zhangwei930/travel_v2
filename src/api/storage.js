@@ -100,6 +100,10 @@ export function ensureDefaultProfile() {
     const suffix = String(Date.now()).slice(-5) + Math.floor(Math.random() * 10)
     p = { name: '出游者' + suffix, avatar: '', loginAt: Date.now() }
     setUserProfile(p)
+  } else if (p.avatar) {
+    // 不再支持自定义头像：清掉旧档残留的头像路径（svg/缓存在真机渲染空白），统一走图标兜底
+    p = { ...p, avatar: '' }
+    setUserProfile(p)
   }
   return p
 }
