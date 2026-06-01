@@ -169,6 +169,11 @@ const SCENE_FILTERS = {
     { id: 'forest',   label: '森林公园', re: /森林|国家.*公园|自然保护/ },
     { id: 'trail',    label: '徒步道',   re: /步道|栈道|古道/ },
     { id: 'scenic',   label: '风景区',   re: /风景|景区|景点/ }],
+  cycle: [ALL,
+    { id: 'greenway', label: '绿道',   re: /绿道|骑行|自行车/ },
+    { id: 'lake',     label: '环湖',   re: /环湖|湖/ },
+    { id: 'river',    label: '江滩',   re: /江|河|滨/ },
+    { id: 'suburb',   label: '郊野',   re: /郊野|湿地|公园/ }],
 }
 
 const filters = computed(() => SCENE_FILTERS[sceneId.value] || DEFAULT_FILTERS)
