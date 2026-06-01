@@ -4,14 +4,14 @@
 
       <!-- 用户头部卡 -->
       <view class="cy-user-card" :style="{ paddingTop: statusBarH + 'px' }">
-        <view class="cy-user-main">
+        <view class="cy-user-main" @tap="openEdit">
           <view class="cy-avatar">
             <image v-if="profileAvatarSrc && !avatarBroken" :src="profileAvatarSrc" class="cy-avatar-img" mode="aspectFill" @error="onAvatarError" />
             <CyIcon v-else name="user-fill-muted" :size="88" />
           </view>
           <view class="cy-user-info">
             <text class="cy-user-name">{{ userProfile?.name || '游客用户' }}</text>
-            <text class="cy-user-hint">资料仅存本机</text>
+            <text class="cy-user-hint">点击设置头像昵称</text>
           </view>
         </view>
       </view>
@@ -45,6 +45,29 @@
       <view style="height: 32rpx;" />
     </scroll-view>
 
+    <!-- 编辑资料：选择微信头像 + 填微信昵称（不填则用默认） -->
+    <view v-if="showEditSheet" class="cy-sheet-mask">
+      <view class="cy-sheet">
+        <view class="cy-sheet-handle" />
+        <text class="cy-sheet-title">设置头像昵称</text>
+        <text class="cy-sheet-sub">点头像选微信头像，点昵称栏填微信昵称（仅存本机）</text>
+        <form class="cy-sheet-form" @submit="onSaveProfile">
+          <!-- #ifdef MP-WEIXIN -->
+          <button class="cy-avatar-btn-lg" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
+            <image class="cy-avatar-preview" :src="editAvatar" mode="aspectFill" />
+            <text class="cy-avatar-tip">点击选择微信头像</text>
+          </button>
+          <!-- #endif -->
+          <!-- #ifdef H5 -->
+          <image class="cy-avatar-preview" :src="editAvatar" mode="aspectFill" />
+          <!-- #endif -->
+          <input class="cy-name-input" type="nickname" name="nickname" :value="editName" placeholder="点这里填微信昵称" placeholder-style="color:#9CA3AF" @input="onNameInput" />
+          <button class="cy-save-btn" form-type="submit">保存</button>
+        </form>
+        <text class="cy-cancel-link" @tap="showEditSheet = false">取消</text>
+      </view>
+    </view>
+
     <!-- 离线地图引导 -->
     <view v-if="showOfflineSheet" class="cy-sheet-mask" @tap.self="showOfflineSheet = false">
       <view class="cy-sheet">
@@ -65,7 +88,8 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { ensureDefaultProfile, getProfileStats } from '../../api/storage.js'
+import { cacheAvatarFile } from '../../api/avatar.js'
+import { ensureDefaultProfile, getProfileStats, setUserProfile } from '../../api/storage.js'
 import { setTabBarSelected } from '../../api/tabbar.js'
 import CyIcon from '../../components/cy/cy-icon.vue'
 
@@ -73,7 +97,11 @@ const tabBarH    = ref('80px')
 const statusBarH = ref(44)
 const userProfile    = ref(null)
 const showOfflineSheet = ref(false)
+const showEditSheet = ref(false)
+const editAvatar = ref('')
+const editName = ref('')
 const avatarBroken = ref(false)
+const DEFAULT_AVATAR = '/static/images/avatar-default.png'
 
 const profileAvatarSrc = computed(() => userProfile.value?.avatar || '')
 
@@ -122,6 +150,40 @@ onUnmounted(() => {
 function loadUserProfile() {
   userProfile.value = ensureDefaultProfile()
   avatarBroken.value = false
+}
+
+function openEdit() {
+  editAvatar.value = userProfile.value?.avatar || DEFAULT_AVATAR
+  editName.value = userProfile.value?.name || ''
+  showEditSheet.value = true
+}
+
+// #ifdef MP-WEIXIN
+// chooseAvatar 拿真实微信头像（临时路径），cacheAvatarFile 持久化到本地
+async function onChooseAvatar(e) {
+  const url = e.detail.avatarUrl
+  if (!url) { uni.showToast({ title: '头像获取失败，请重试', icon: 'none' }); return }
+  editAvatar.value = url                     // 临时路径先显示
+  const cached = await cacheAvatarFile(url)
+  if (cached) editAvatar.value = cached
+}
+// #endif
+
+function onNameInput(e) { editName.value = e?.detail?.value || '' }
+
+// 用 form 提交读 name=nickname 最稳（type=nickname 的 input 事件时序会丢值）
+function onSaveProfile(e) {
+  const name = (e?.detail?.value?.nickname || editName.value || '').trim()
+  const profile = {
+    ...userProfile.value,
+    name: name || userProfile.value?.name || '出游者',
+    avatar: editAvatar.value || DEFAULT_AVATAR,
+  }
+  setUserProfile(profile)
+  userProfile.value = profile
+  avatarBroken.value = false
+  showEditSheet.value = false
+  uni.showToast({ title: '已保存', icon: 'success' })
 }
 
 function funcIconName(key) {
