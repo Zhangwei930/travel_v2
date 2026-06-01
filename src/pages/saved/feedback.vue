@@ -52,7 +52,10 @@
 
         <!-- 我的反馈历史（本地） -->
         <view v-if="history.length" class="cy-history">
-          <text class="cy-history-title">我的反馈</text>
+          <view class="cy-history-head">
+            <text class="cy-history-title">我的反馈</text>
+            <text class="cy-clear" @tap="clearAllFeedback">清空</text>
+          </view>
           <view v-for="h in history" :key="h.id" class="cy-hist-card">
             <view class="cy-hist-meta">
               <text class="cy-hist-type">{{ h.type || '反馈' }}</text>
@@ -71,6 +74,7 @@
             </view>
             <view class="cy-hist-foot">
               <text class="cy-hist-status">已提交</text>
+              <text class="cy-hist-del" @tap="removeFeedback(h)">删除</text>
             </view>
           </view>
         </view>
@@ -85,7 +89,7 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { api } from '../../api/index.js'
-import { getUserProfile, addMyFeedback, getMyFeedback, setPendingLoginRedirect } from '../../api/storage.js'
+import { getUserProfile, addMyFeedback, getMyFeedback, removeMyFeedback, clearMyFeedback, setPendingLoginRedirect } from '../../api/storage.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 
 const TYPES = ['功能异常', '内容纠错', '体验建议', '其他']
@@ -186,6 +190,29 @@ async function submit() {
   } finally {
     submitting.value = false
   }
+}
+
+function removeFeedback(h) {
+  uni.showModal({
+    title: '删除反馈', content: '确定删除这条反馈记录？（仅删本机记录）',
+    success: (r) => {
+      if (!r.confirm) return
+      removeMyFeedback(h.id)
+      history.value = getMyFeedback()
+      uni.showToast({ title: '已删除', icon: 'none' })
+    },
+  })
+}
+function clearAllFeedback() {
+  uni.showModal({
+    title: '清空反馈', content: '确定清空全部本机反馈记录？',
+    success: (r) => {
+      if (!r.confirm) return
+      clearMyFeedback()
+      history.value = getMyFeedback()
+      uni.showToast({ title: '已清空', icon: 'none' })
+    },
+  })
 }
 
 function formatDate(ts) {
@@ -312,7 +339,9 @@ function formatDate(ts) {
 
 // ── 历史 ───────────────────────────────────────────────────
 .cy-history { margin-top: 32rpx; }
-.cy-history-title { display: block; font-size: 28rpx; font-weight: 800; color: $cy-text; margin-bottom: 16rpx; }
+.cy-history-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16rpx; }
+.cy-history-title { display: block; font-size: 28rpx; font-weight: 800; color: $cy-text; }
+.cy-clear { font-size: 24rpx; color: $cy-muted; }
 
 .cy-hist-card {
   background: $cy-card;
@@ -329,5 +358,6 @@ function formatDate(ts) {
 .cy-hist-imgs-row { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 14rpx; }
 .cy-hist-thumb { width: 120rpx; height: 120rpx; border-radius: 12rpx; background: $cy-green-ls; }
 .cy-hist-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12rpx; }
-.cy-hist-status { font-size: 22rpx; color: $cy-green; margin-left: auto; }
+.cy-hist-status { font-size: 22rpx; color: $cy-green; }
+.cy-hist-del { font-size: 22rpx; color: #E0533D; padding: 4rpx 8rpx; }
 </style>

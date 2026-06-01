@@ -140,6 +140,8 @@ export function addMyFeedback(item) {
   set(KEY_FEEDBACK, list.slice(0, 50))
 }
 export function getMyFeedback() { return get(KEY_FEEDBACK) }
+export function removeMyFeedback(id) { set(KEY_FEEDBACK, get(KEY_FEEDBACK).filter(f => f.id !== id)) }
+export function clearMyFeedback() { set(KEY_FEEDBACK, []) }
 
 // 清除临时缓存（首页 feed + 助手上下文），不清除用户数据
 export function clearTempCache() {
