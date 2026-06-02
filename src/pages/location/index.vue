@@ -51,6 +51,7 @@
 import { ref, onMounted } from 'vue'
 import { useCityStore } from '../../store/city.js'
 import { api } from '../../api/index.js'
+import { ensureLocationAuthorize } from '../../api/privacy.js'
 import CyNavBar from '../../components/cy/cy-nav-bar.vue'
 import CyIcon from '../../components/cy/cy-icon.vue'
 
@@ -79,9 +80,10 @@ async function reverseCity(lat, lng) {
   } catch (_) {}
 }
 
-function doLocate() {
+async function doLocate() {
   pending.value = true
   showActions.value = false
+  await ensureLocationAuthorize()   // 先过微信隐私授权，再定位
   uni.getLocation({
     type: 'gcj02',
     success: async (r) => {

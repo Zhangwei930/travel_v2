@@ -7,6 +7,7 @@
 <script setup>
 import { onShow } from '@dcloudio/uni-app'
 import { useCityStore } from '../../store/city.js'
+import { ensureLocationAuthorize } from '../../api/privacy.js'
 
 const cityStore = useCityStore()
 
@@ -41,6 +42,9 @@ function navigate(dest) {
 async function bootstrap() {
   // 等框架完成 appLaunch 渲染周期
   await new Promise(r => setTimeout(r, 600))
+
+  // 正式版：先过微信隐私授权，再调定位（否则 getLocation 直接被拒）
+  await ensureLocationAuthorize()
 
   let settled = false
 
