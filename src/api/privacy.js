@@ -6,7 +6,7 @@
 //
 // 当前：后台指引未生效，本函数空转（不拦定位）。后台配好后，把下面 PRIVACY_READY 改 true
 // 并在 manifest mp-weixin 加回 "__usePrivacyCheck__": true 即可启用。
-const PRIVACY_READY = false
+const PRIVACY_READY = true
 
 export function ensureLocationAuthorize() {
   return new Promise((resolve) => {
