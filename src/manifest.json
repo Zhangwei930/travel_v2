@@ -16,7 +16,6 @@
       "minified": true
     },
     "usingComponents": true,
-    "__usePrivacyCheck__": true,
     "permission": {
       "scope.userLocation": {
         "desc": "用于推荐你当前位置附近的出游地点和路线"
