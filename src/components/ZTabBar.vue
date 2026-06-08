@@ -24,7 +24,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import CyIcon from './cy/cy-icon.vue'
 
 const props = defineProps({
@@ -32,6 +32,7 @@ const props = defineProps({
 })
 
 const safeBottom = ref('18px')
+const consultOn = ref(false)
 
 onMounted(() => {
   try {
@@ -39,14 +40,16 @@ onMounted(() => {
     const b = sys.safeAreaInsets?.bottom || 0
     safeBottom.value = Math.max(b, 18) + 'px'
   } catch (_) {}
+  try { consultOn.value = uni.getStorageSync('zhoumi_consult_on') === true } catch (_) {}
 })
 
-const items = [
+const ALL_ITEMS = [
   { id: 'home',      path: '/pages/index/index',       label: '出游', tab: true },
   { id: 'scenes',    path: '/pages/scenes/scenes',     label: '发现', tab: true },
   { id: 'assistant', path: '/pages/assistant/chat',    label: '咨询', tab: true },
   { id: 'profile',   path: '/pages/profile/profile',   label: '我的',  tab: true },
 ]
+const items = computed(() => ALL_ITEMS.filter(it => it.id !== 'assistant' || consultOn.value))
 
 function isActive(item) {
   return props.current === item.id

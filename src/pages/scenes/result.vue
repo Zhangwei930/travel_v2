@@ -1,6 +1,6 @@
 <template>
   <view class="cy-page">
-    <cy-nav-bar :title="currentScene?.label || '场景结果'" right-icon="search" @right="onSearch" />
+    <cy-nav-bar :title="currentScene?.label || '场景结果'" :right-icon="consultOn ? 'search' : ''" @right="onSearch" />
 
     <!-- 筛选 chips -->
     <scroll-view scroll-x class="cy-filter-scroll" :show-scrollbar="false">
@@ -180,6 +180,7 @@ const sortMode = ref('distance')
 const active = ref('all')
 const allPois = ref([])
 const loading = ref(false)
+const consultOn = ref(false)
 const brokenPoi = ref({})
 
 const PAGE_SIZE = 20
@@ -265,6 +266,7 @@ onMounted(async () => {
     const sys = uni.getWindowInfo()
     tabBarH.value = ((sys.safeAreaInsets?.bottom || 18) + 56) + 'px'
   } catch (_) {}
+  try { consultOn.value = uni.getStorageSync('zhoumi_consult_on') === true } catch (_) {}
   await ensureLocation()
   try { scenes.value = await api.getScenes() } catch (_) {}
   if (sceneId.value) loadScene(sceneId.value)
@@ -274,6 +276,7 @@ onMounted(async () => {
 function goPoi(id) { uni.navigateTo({ url: `/pages/poi/detail?id=${id}` }) }
 
 function onSearch() {
+  if (!consultOn.value) return
   const context = {
     city: cityStore.current,
     lat: cityStore.coords?.lat ?? '',

@@ -284,6 +284,7 @@ function goPoi(id) {
 }
 
 function onSearch() {
+  if (!consultOn.value) return
   const ctx = { ...buildCtx(), intent: 'search' }
   setAssistantContext(ctx)
   uni.switchTab({ url: '/pages/assistant/chat', success: () => uni.$emit('assistantContext', ctx) })

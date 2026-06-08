@@ -1,6 +1,6 @@
 <template>
   <view class="cy-page">
-    <cy-nav-bar title="附近现在适合去" right-icon="search" @right="onSearch" />
+    <cy-nav-bar title="附近现在适合去" :right-icon="consultOn ? 'search' : ''" @right="onSearch" />
 
     <scroll-view scroll-x class="cy-filter-scroll" :show-scrollbar="false">
       <view class="cy-filter-row">
@@ -90,6 +90,7 @@ const active = ref('all')
 const pois = ref([])
 const loading = ref(false)
 const locationError = ref(false)
+const consultOn = ref(false)
 const brokenPoi = ref({})
 
 const PAGE_SIZE = 20
@@ -165,6 +166,7 @@ function goPoi(id) {
 }
 
 function onSearch() {
+  if (!consultOn.value) return
   const context = {
     city: cityStore.current,
     lat: cityStore.coords?.lat ?? '',
@@ -180,6 +182,7 @@ onMounted(() => {
     const sys = uni.getWindowInfo()
     safeBottom.value = (Math.max(sys.safeAreaInsets?.bottom || 18, 18) + 84) + 'px'
   } catch (_) {}
+  try { consultOn.value = uni.getStorageSync('zhoumi_consult_on') === true } catch (_) {}
   reload()
   measureScroll()
 })
