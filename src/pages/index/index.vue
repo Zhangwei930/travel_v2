@@ -29,7 +29,7 @@
           <cy-entry-card icon-type="place"  title="按场所索引"   desc="景点 / 周边 / 趣游"   @tap="goEntry('place_index')" />
           <cy-entry-card icon-type="nearby" title="附近现在适合去" desc="短距离 / 即刻推荐"  @tap="goEntry('nearby_now')" />
           <cy-entry-card icon-type="routes" title="精选路线"     desc="2小时 / 半日 / 一日" @tap="goEntry('hot_routes')" />
-          <cy-entry-card icon-type="chat"   title="直接咨询"     desc="告诉我你的需求"       @tap="goEntry('assistant')" />
+          <cy-entry-card v-if="consultOn" icon-type="chat" title="直接咨询" desc="告诉我你的需求" @tap="goEntry('assistant')" />
         </view>
       </view>
 
@@ -132,6 +132,8 @@ const locationError = ref(false)
 const feedError = ref(false)   // 定位成功但 feed 请求失败（网络/超时），区别于定位失败
 const brokenPoi = ref({})
 const landmark = ref('')
+const consultOn = ref(false)   // 在线咨询入口开关（后台控制）
+function readConsultFlag() { try { consultOn.value = uni.getStorageSync('zhoumi_consult_on') === true } catch (_) {} }
 
 const routeDurationEntries = [
   { id: '2h', title: '2小时游', sub: '短线组合 · 多条路线可选', stops: 2 },
@@ -237,6 +239,7 @@ onLoad(async () => {
 
 onShow(() => {
   setTabBarSelected(0)
+  readConsultFlag()
   if (!loaded.value && !cityStore.locating && !locationError.value) loadFeed()
 })
 

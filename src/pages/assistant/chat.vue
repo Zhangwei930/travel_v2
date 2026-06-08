@@ -204,7 +204,13 @@ onMounted(() => {
   scrollToBottom()
 })
 
-onShow(() => { setTabBarSelected(2); applyChatContext(); userAvatar.value = getUserProfile()?.avatar || '' })
+onShow(() => {
+  // 入口未开放时不可进入，回到首页
+  let on = false
+  try { on = uni.getStorageSync('zhoumi_consult_on') === true } catch (_) {}
+  if (!on) { uni.switchTab({ url: '/pages/index/index' }); return }
+  setTabBarSelected(2); applyChatContext(); userAvatar.value = getUserProfile()?.avatar || ''
+})
 onUnmounted(() => { uni.$off('assistantContext', applyChatContext) })
 
 function chooseImage() {

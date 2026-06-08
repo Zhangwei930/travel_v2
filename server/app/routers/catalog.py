@@ -136,6 +136,7 @@ def capability():
         "map_amap": map_provider.provider_name() == "amap",
         "websearch": bool(settings.searxng_base),
         "ai": ai_provider.is_live(),
+        "consult": settings.consult_enabled,   # 在线咨询入口是否对外开放
     }
 
 

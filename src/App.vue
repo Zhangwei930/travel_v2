@@ -1,8 +1,17 @@
 <script>
 import { ensureDefaultProfile } from './api/storage.js'
+import { api } from './api/index.js'
 
 export default {
-  onLaunch() { ensureDefaultProfile() },   // 进小程序即自动以默认头像+昵称登录
+  onLaunch() {
+    ensureDefaultProfile()
+    // 拉取后台配置，决定是否展示在线咨询入口（默认关闭）
+    api.getCapability().then((c) => {
+      const on = !!(c && c.consult)
+      try { uni.setStorageSync('zhoumi_consult_on', on) } catch (_) {}
+      uni.$emit('consultFlag', on)
+    }).catch(() => {})
+  },
   onShow() {},
   onHide() {},
 }

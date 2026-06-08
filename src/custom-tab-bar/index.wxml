@@ -6,21 +6,8 @@
     data-index="{{index}}"
     bindtap="onTap"
   >
-    <!-- 出游 -->
-    <view wx:if="{{index === 0}}" class="tab-icon">
-      <view class="icon-home {{selected === 0 ? 'icon-active' : ''}}" />
-    </view>
-    <!-- 发现 -->
-    <view wx:elif="{{index === 1}}" class="tab-icon">
-      <view class="icon-scenes {{selected === 1 ? 'icon-active' : ''}}" />
-    </view>
-    <!-- 咨询 -->
-    <view wx:elif="{{index === 2}}" class="tab-icon">
-      <view class="icon-chat {{selected === 2 ? 'icon-active' : ''}}" />
-    </view>
-    <!-- 我的 -->
-    <view wx:elif="{{index === 3}}" class="tab-icon">
-      <view class="icon-profile {{selected === 3 ? 'icon-active' : ''}}" />
+    <view class="tab-icon">
+      <view class="icon-{{item.icon}} {{selected === index ? 'icon-active' : ''}}" />
     </view>
     <text class="tab-label">{{item.text}}</text>
   </view>

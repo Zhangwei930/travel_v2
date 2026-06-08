@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
     default_city: str = "成都"
 
+    # 在线咨询入口总开关（默认关；过审后置 CONSULT_ENABLED=true 即对外开放）
+    consult_enabled: bool = False
+
     map_provider: str = "stub"
     amap_key: str = ""
     tencent_map_key: str = ""
