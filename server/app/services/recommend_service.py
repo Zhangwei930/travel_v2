@@ -150,13 +150,28 @@ def score_poi(
     )
 
 
+_SCENIC_SUFFIXES = (
+    "风景名胜区", "国家森林公园", "森林公园", "旅游度假区", "度假区",
+    "旅游景区", "风景名胜", "风景区", "景区", "景点", "旅游区",
+)
+
+
 def _core_name(name: str | None) -> str:
-    """主名：取分隔符前的主体（"大槐树寻根祭祖园-财神殿"→"大槐树寻根祭祖园"），
-    用于同一景区子点位去重；主名太短时退回整名，避免误并。"""
+    """主名：取分隔符前的主体并剥掉景区类后缀，让同一目的地的多种叫法归并
+    （"西岭雪山风景名胜区"/"西岭雪山景区-云海"/"西岭雪山"→ 都成"西岭雪山"；
+    "大槐树寻根祭祖园-财神殿"→"大槐树寻根祭祖园"）。太短时退回整名，避免误并。"""
     if not name:
         return ""
     core = re.split(r"[-（(·•|/]", name)[0].strip()
-    return core if len(core) >= 3 else name.strip()
+    changed = True
+    while changed and len(core) > 3:
+        changed = False
+        for suf in _SCENIC_SUFFIXES:
+            if core.endswith(suf) and len(core) - len(suf) >= 2:
+                core = core[: -len(suf)]
+                changed = True
+                break
+    return core if len(core) >= 2 else name.strip()
 
 
 def dedup_by_core(cards):
