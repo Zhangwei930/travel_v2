@@ -33,16 +33,25 @@ def _city_matches(row_city: str | None, requested_city: str | None) -> bool:
 
 
 def _score(question: str, faq: FaqKnowledge) -> float:
-    """简易相似度：字面重合 + 关键词命中比例。生产环境替换为向量检索。"""
+    """简易相似度：关键词命中 + 字符级重合。生产环境可替换为向量检索。"""
+    q = question or ""
     # FAQ 原问题（去尾部标点）整体出现在用户问题中，视为强命中
     faq_q = (faq.question or "").rstrip("？?。.！! ")
-    if faq_q and faq_q in question:
-        return 1.0
-    keywords = faq.keywords or []
-    if not keywords:
+    if not faq_q:
         return 0.0
-    hit = sum(1 for k in keywords if k and k in question)
-    return hit / len(keywords)
+    if faq_q in q:
+        return 1.0
+    keywords = [k for k in (faq.keywords or []) if k]
+    # 守卫：没有任何关键词命中时直接 0，避免共用字（"吗""的"）造成误命中
+    if not any(k in q for k in keywords):
+        return 0.0
+    qset, fset = set(q), set(faq_q)
+    char_overlap = (len(qset & fset) / len(fset)) if fset else 0.0
+    # 命中的关键词若同时出现在 FAQ 问句里（=本题主题词，如"停车"在"热门景点停车方便吗"中）
+    # → 强命中保底 0.6；只命中泛标签（如"公园"只在停车 FAQ 的标签里、不在问句中）
+    # → 仅看字面重合，避免"公园好玩吗"答成停车。
+    topic_hit = any(k in q and k in faq_q for k in keywords)
+    return min(1.0, max(0.6, char_overlap)) if topic_hit else char_overlap
 
 
 _AREA_RE = re.compile(r"([一-龥]{2,5}?(?:区|县|镇|新区))")

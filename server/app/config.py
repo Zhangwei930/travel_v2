@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5:3b"
 
     searxng_base: str = ""
-    kb_similarity_threshold: float = 0.55
+    kb_similarity_threshold: float = 0.5
     admin_token: str = "change-me"
     weather_api_key: str = ""
 
