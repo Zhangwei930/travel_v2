@@ -298,7 +298,7 @@ def _prepare(payload: AskIn, db: Session) -> dict:
         f"- 除非用户明确问到时段，否则别假设ta晚上去、别硬套夜游\n"
         f"- 若问题提到时间限制（如2小时内），评估下路程+游玩来不来得及\n"
         f"- 营业时间、票价说「以实时查询为准」，别编数字或地点\n"
-        f"- 别在文字里写具体距离/公里/车程数字（容易算错，下方卡片已显示真实距离），只说「离得近/有点远」即可\n"
+        f"- 别写具体距离/公里/车程数字（下方卡片已显示真实距离）；每个地点的远近，严格按下方【可推荐的附近地点】里每条括号标注的来描述，别自己判断\n"
         f"- 像跟朋友聊天那样口语、自然、简洁，220 字内；别分 Day1/Day2、别加小标题或内部术语\n\n"
         f"{context_block}"
         f"用户问题：{question}\n"
@@ -319,17 +319,43 @@ def _mentioned(answer: str, name: str) -> bool:
     return len(core) >= 3 and core in answer
 
 
+def _km_of(distance: str | None) -> float | None:
+    """把卡片距离串（如 "683m"/"1.3km"）解析成 km，用于判定远近。"""
+    if not distance:
+        return None
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(km|m)", distance)
+    if not m:
+        return None
+    v = float(m.group(1))
+    return v if m.group(2) == "km" else v / 1000.0
+
+
+def _near_far_tag(km: float | None) -> str:
+    """按真实距离给一个远近用词喂给 LLM，避免它自己把远近说反。"""
+    if km is None:
+        return "距离见卡片"
+    if km < 2:
+        return "很近"
+    if km < 6:
+        return "不太远"
+    return "有点远"
+
+
 def _inject_destinations(prompt_info: dict, destinations) -> None:
     """把卡片用的真实附近地点注入 prompt，让 LLM 只从这些点里推荐，
     保证文字推荐与下方卡片一致（避免文字推甲、卡片显示乙的"乱推"）。"""
     if prompt_info.get("mode") != "llm" or not destinations:
         return
-    lines = "\n".join(f"- {d.name}（{d.distance}·{d.category}）" for d in destinations)
+    lines = "\n".join(
+        f"- {d.name}（{d.distance}，{_near_far_tag(_km_of(d.distance))}·{d.category}）"
+        for d in destinations
+    )
     prompt_info["prompt"] += (
         "\n\n【可推荐的附近地点——下方卡片就是这几个】\n"
         f"{lines}\n"
-        "请把上面这些地点都推荐给用户（5-6 个），每个用一句话说明为何适合"
-        "（人群/距离），不要推荐列表以外的地方。"
+        "请把上面这些地点都推荐给用户（5-6 个），每个用一句话说明为何适合（人群/远近）。"
+        "远近必须照每条括号里标注的「很近/不太远/有点远」来写，别自己判断、"
+        "别写具体公里数，也别推荐列表以外的地方。"
     )
 
 
