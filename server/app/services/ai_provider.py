@@ -71,13 +71,16 @@ def generate_text(prompt: str, *, fallback: str = "") -> str:
 
 
 def supports_stream() -> bool:
-    """当前 provider 是否支持流式（OpenAI 兼容的 zai / mimo）。"""
-    return _provider() in ("zai", "mimo")
+    """当前 provider 是否支持流式（OpenAI 兼容的 zai/mimo，或 Dify 工作流）。"""
+    return _provider() in ("zai", "mimo", "dify")
 
 
 def generate_stream(prompt: str):
-    """流式生成，逐段 yield 文本增量。仅 zai/mimo 支持；其他直接返回（调用方走非流式兜底）。"""
+    """流式生成，逐段 yield 文本增量。zai/mimo/dify 支持；其他直接返回（调用方走非流式兜底）。"""
     provider = _provider()
+    if provider == "dify":
+        yield from _stream_with_dify(prompt)
+        return
     if provider == "zai":
         base, key, model = settings.zai_api_base, settings.zai_api_key, settings.zai_model
         # 关思考链仅 GLM 支持；其他模型(如 qwen)不发，避免 NIM 400
@@ -153,6 +156,37 @@ def _generate_openai_compatible(*, base: str, api_key: str, model: str,
     if choices:
         return choices[0].get("message", {}).get("content", "") or fallback
     return fallback
+
+
+def _stream_with_dify(prompt: str):
+    """Dify 工作流流式：response_mode=streaming，逐段 yield text_chunk 文本增量。"""
+    base = settings.dify_api_base.rstrip("/")
+    try:
+        with httpx.stream(
+            "POST", f"{base}/workflows/run",
+            headers={"Authorization": f"Bearer {settings.dify_api_key}",
+                     "Content-Type": "application/json"},
+            json={"inputs": {"query": prompt, "prompt": prompt},
+                  "response_mode": "streaming", "user": "zhoumi"},
+            timeout=120.0,
+        ) as resp:
+            resp.raise_for_status()
+            for raw in resp.iter_lines():
+                if not raw:
+                    continue
+                line = raw.decode() if isinstance(raw, bytes) else raw
+                if not line.startswith("data:"):
+                    continue
+                try:
+                    obj = json.loads(line[5:].strip())
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("event") == "text_chunk":
+                    text = (obj.get("data") or {}).get("text")
+                    if text:
+                        yield text
+    except httpx.HTTPError:
+        return
 
 
 def _generate_with_dify(prompt: str, *, fallback: str) -> str:
