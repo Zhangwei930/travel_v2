@@ -1,4 +1,5 @@
 """Simple scoring for nearby destination cards."""
+import re
 from datetime import datetime
 
 from app.models import PoiIndex, TravelKnowledge
@@ -149,6 +150,28 @@ def score_poi(
     )
 
 
+def _core_name(name: str | None) -> str:
+    """主名：取分隔符前的主体（"大槐树寻根祭祖园-财神殿"→"大槐树寻根祭祖园"），
+    用于同一景区子点位去重；主名太短时退回整名，避免误并。"""
+    if not name:
+        return ""
+    core = re.split(r"[-（(·•|/]", name)[0].strip()
+    return core if len(core) >= 3 else name.strip()
+
+
+def dedup_by_core(cards):
+    """同一主名只保留第一个（列表已排序时即最优那个），去掉景区子点位重复。"""
+    seen: set[str] = set()
+    out = []
+    for c in cards:
+        key = _core_name(getattr(c, "name", None))
+        if key and key in seen:
+            continue
+        seen.add(key)
+        out.append(c)
+    return out
+
+
 def recommend_pois(
     poi_rows: list[tuple[PoiIndex, TravelKnowledge | None]],
     origin: tuple[float, float],
@@ -169,7 +192,7 @@ def recommend_pois(
     # preserve_order：保留输入(高德 weight=热度)顺序，优先推热门点而非最近的冷门点
     if not preserve_order:
         scored.sort(key=lambda item: (-item.score, _distance_value(item.distance)))
-    return scored[:limit]
+    return dedup_by_core(scored)[:limit]
 
 
 def _distance_value(distance: str) -> float:
