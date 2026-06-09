@@ -229,6 +229,8 @@ def poi_list(
                 rows = [p for p in rows if map_provider.is_cycle_destination(p.name, p.cat, p.tags)]
             if scene == "camp":
                 rows = [p for p in rows if map_provider.is_camp_destination(p.name, p.cat, p.tags)]
+            if scene == "night":
+                rows = [p for p in rows if map_provider.is_night_destination(p.name, p.cat, p.tags)]
             return dedup_by_core(rows)
 
         if scene == "hike" and radius > map_provider.AMAP_AROUND_MAX_RADIUS_KM:

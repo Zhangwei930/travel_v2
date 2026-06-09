@@ -23,7 +23,7 @@ AMAP_TYPES_BY_SCENE: dict[str, str] = {
     "budget": "110000|140100|061000",
     "fish": "",
     "photo": "110000|140000|061000|080600",
-    "night": "050000|060100|061000|080600",
+    "night": "110000|050000|060100|080600",
     "walk": "061000|110000|140000",
     "old": "110000|140100|060100",
     "hike": "",
@@ -167,7 +167,7 @@ SCENE_KEYWORDS: dict[str, str] = {
     "couple": "公园|湖|景区|古镇|植物园|美术馆|博物馆|观景|江滩|花海",
     "rainy":  "博物馆|美术馆|科技馆|水族馆|海洋馆|图书馆|商场|影院",
     "budget": "公园|绿道|博物馆|广场|湖|景区|江滩",
-    "night":  "夜市|酒吧|商业街|步行街|夜景|观景|江滩|塔",
+    "night":  "夜景|江滩|绿道|夜市|酒吧街|步行街|不夜城|灯光秀|江滩公园",
     "walk":   "公园|绿道|古镇|街区|步行街|湖|江滩",
     "photo":  "古镇|景区|花海|湖|公园|植物园|美术馆|网红|打卡",
     "fish":   "钓鱼场|垂钓|钓鱼园|渔场|钓场|水库|湿地",
@@ -236,6 +236,26 @@ def is_food_destination(name: str | None, category: str | None = None,
     """美食场景过滤：剔除纯饮品/连锁奶茶咖啡店，让正餐/特色馆子先行。"""
     text = " ".join([name or "", category or "", " ".join(tags or [])])
     return not any(t in text for t in _FOOD_NOISE_TERMS)
+
+
+# 夜晚场景：剔除奶茶/商场，以及光叫"观景台/广场"没有具体身份的通用点
+_NIGHT_NOISE_TERMS = (
+    "茶百道", "蜜雪", "星巴克", "瑞幸", "奶茶", "茶饮", "便利店", "超市",
+    "购物中心", "商场", "咖啡", "椰", "蛋糕", "烘焙", "面包",
+)
+_NIGHT_GENERIC_NAMES = (
+    "观景台", "观景塔", "观景平台", "观景长廊", "观景点", "观景", "夜景", "码头", "广场",
+)
+
+
+def is_night_destination(name: str | None, category: str | None = None,
+                         tags: list[str] | None = None) -> bool:
+    """夜晚场景过滤：去掉商场/通用观景点名，以及（复用美食负向词）奶茶/快餐连锁
+    ——它们常带"(XX滨江店)"后缀蹭进来。"""
+    if (name or "").strip() in _NIGHT_GENERIC_NAMES:
+        return False
+    text = " ".join([name or "", category or "", " ".join(tags or [])])
+    return not any(t in text for t in _NIGHT_NOISE_TERMS + _FOOD_NOISE_TERMS)
 
 
 # 骑行场景：只保留绿道/骑行道，剔除关键词命中的沿线设施与非骑行点
