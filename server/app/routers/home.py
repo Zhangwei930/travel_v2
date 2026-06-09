@@ -60,6 +60,12 @@ def _amap_rows(db: Session, lat: float, lng: float, city: str, scene: str | None
         raw = map_provider.amap_search_around(lat, lng, radius_km=radius_km, types=types,
                                               keyword=keyword, pages=pages, sortrule=sortrule)
     parsed = [p for p in (map_provider.parse_amap_poi(item) for item in raw) if p and p["name"]]
+    # 通用过滤：附近召回会混进餐馆/酒吧/美容养生/商务住宅等非出游点，与场景索引口径一致剔除
+    parsed = [
+        p for p in parsed
+        if map_provider.is_outing_destination(p["name"], p.get("category"), None,
+                                              p.get("address"), allow_food=(scene == "food"))
+    ]
     if not parsed:
         return []
 
